@@ -1,0 +1,85 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../../core/fmp_config.dart';
+import 'fmp_models.dart';
+
+class FmpService {
+  static final FmpService _instance = FmpService._();
+  FmpService._();
+  factory FmpService() => _instance;
+
+  final _client = http.Client();
+
+  Uri _url(String path, [Map<String, String>? params]) {
+    final query = {
+      'apikey': FmpConfig.apiKey,
+      ...?params,
+    };
+    return Uri.parse('${FmpConfig.baseUrl}$path').replace(queryParameters: query);
+  }
+
+  Future<StockQuote?> getQuote(String symbol) async {
+    try {
+      final res = await _client.get(_url('/quote', {'symbol': symbol}));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      if (data is List && data.isNotEmpty) {
+        return StockQuote.fromJson(data.first as Map<String, dynamic>);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<StockQuote>> getQuotes(List<String> symbols) async {
+    if (symbols.isEmpty) return [];
+    try {
+      final res = await _client.get(
+        _url('/quote', {'symbol': symbols.join(',')}),
+      );
+      if (res.statusCode != 200) return [];
+      final data = jsonDecode(res.body);
+      if (data is List) {
+        return data
+            .map((e) => StockQuote.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<TickerSearchResult>> searchTicker(String query) async {
+    if (query.isEmpty) return [];
+    try {
+      final res = await _client.get(_url('/search-symbol', {'query': query}));
+      if (res.statusCode != 200) return [];
+      final data = jsonDecode(res.body);
+      if (data is List) {
+        return data
+            .take(8)
+            .map((e) => TickerSearchResult.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<StockProfile?> getProfile(String symbol) async {
+    try {
+      final res = await _client.get(_url('/profile', {'symbol': symbol}));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      if (data is List && data.isNotEmpty) {
+        return StockProfile.fromJson(data.first as Map<String, dynamic>);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+}
