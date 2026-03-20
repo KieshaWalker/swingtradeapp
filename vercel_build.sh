@@ -4,6 +4,9 @@ set -e
 FLUTTER_VERSION="3.41.2"
 FLUTTER_DIR="$HOME/flutter"
 
+# Vercel runs as root — Flutter requires this flag
+export FLUTTER_ALLOW_ROOT=true
+
 echo "→ Installing Flutter $FLUTTER_VERSION..."
 git clone https://github.com/flutter/flutter.git \
   --branch "$FLUTTER_VERSION" \
@@ -20,8 +23,8 @@ echo "→ Getting dependencies..."
 flutter pub get
 
 echo "→ Building for web (release)..."
+# Note: --web-renderer was removed in Flutter 3.22+ (canvaskit is the default)
 flutter build web --release \
-  --web-renderer canvaskit \
   --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
   --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
   --dart-define=FMP_API_KEY="${FMP_API_KEY}" \
