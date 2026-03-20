@@ -90,9 +90,12 @@ final routerProvider = Provider<GoRouter>((ref) {
     initialLocation: '/',
     redirect: (context, state) {
       final isAuthed = authState.valueOrNull?.session != null;
-      final isAuthRoute =
-          state.matchedLocation == '/login' || state.matchedLocation == '/signup';
+      final location = state.matchedLocation;
+      final isAuthRoute = location == '/login' || location == '/signup';
+      final isCallback = location == '/auth/callback';
 
+      // Let the callback route through — Supabase handles the token exchange
+      if (isCallback) return null;
       if (!isAuthed && !isAuthRoute) return '/login';
       if (isAuthed && isAuthRoute) return '/';
       return null;
@@ -101,6 +104,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Auth
       GoRoute(path: '/login', builder: (context, _) => const LoginScreen()),
       GoRoute(path: '/signup', builder: (context, _) => const SignupScreen()),
+      GoRoute(path: '/auth/callback', builder: (context, _) => const _AuthCallbackScreen()),
 
       // Shell routes (with bottom nav)
       GoRoute(
@@ -170,3 +174,25 @@ final routerProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+// Shown briefly while Supabase exchanges the PKCE token from the email link.
+// The authStateProvider stream will fire and GoRouter will redirect to '/' automatically.
+class _AuthCallbackScreen extends StatelessWidget {
+  const _AuthCallbackScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Confirming your account…'),
+          ],
+        ),
+      ),
+    );
+  }
+}
