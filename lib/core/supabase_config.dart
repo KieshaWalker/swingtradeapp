@@ -5,10 +5,10 @@
 class SupabaseConfig {
   static const String url = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://nbhjlxvofdlfcidkgnoo.supabase.co',
+    defaultValue: 'https://hnuokvosmgmkzpetimtm.supabase.co',
   );
   static const String anonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: 'sb_publishable_Ket_RxhstMXPm_wwtdR-Sw_mVsA35tx',
+    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhudW9rdm9zbWdta3pwZXRpbXRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMjY2NDUsImV4cCI6MjA4OTYwMjY0NX0.tl3lTUEh_hG0c0BG3zy_Yq70lbqv_TJcRUl_QsvfT0Q',
   );
 }
