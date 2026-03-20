@@ -22,12 +22,14 @@ flutter config --enable-web --no-analytics
 echo "→ Getting dependencies..."
 flutter pub get
 
+# Build --dart-define flags only for env vars that are actually set
+DART_DEFINES=""
+[ -n "${SUPABASE_URL}" ]      && DART_DEFINES="$DART_DEFINES --dart-define=SUPABASE_URL=${SUPABASE_URL}"
+[ -n "${SUPABASE_ANON_KEY}" ] && DART_DEFINES="$DART_DEFINES --dart-define=SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
+[ -n "${FMP_API_KEY}" ]       && DART_DEFINES="$DART_DEFINES --dart-define=FMP_API_KEY=${FMP_API_KEY}"
+[ -n "${SEC_API_KEY}" ]       && DART_DEFINES="$DART_DEFINES --dart-define=SEC_API_KEY=${SEC_API_KEY}"
+
 echo "→ Building for web (release)..."
-# Note: --web-renderer was removed in Flutter 3.22+ (canvaskit is the default)
-flutter build web --release \
-  --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
-  --dart-define=SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY}" \
-  --dart-define=FMP_API_KEY="${FMP_API_KEY}" \
-  --dart-define=SEC_API_KEY="${SEC_API_KEY}"
+flutter build web --release $DART_DEFINES
 
 echo "✓ Build complete → build/web"
