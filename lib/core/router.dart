@@ -124,8 +124,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuthRoute = location == '/login' || location == '/signup';
       final isCallback = location == '/auth/callback';
 
-      // Let the callback route through — Supabase handles the token exchange
-      if (isCallback) return null;
+      // After Supabase exchanges the token, redirect to the desired landing page.
+      // Change '/' below to any route (e.g. '/trades') to land somewhere else.
+      if (isCallback) return isAuthed ? '/' : null;
       if (!isAuthed && !isAuthRoute) return '/login';
       if (isAuthed && isAuthRoute) return '/';
       return null;
