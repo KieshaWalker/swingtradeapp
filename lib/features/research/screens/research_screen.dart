@@ -1,3 +1,34 @@
+// =============================================================================
+// features/research/screens/research_screen.dart — SEC EDGAR research
+// =============================================================================
+// Widgets defined here:
+//   • ResearchScreen    (ConsumerStatefulWidget) — scaffold + 2-tab TabBar;
+//                        holds search text state passed into _SearchTab
+//   • _SearchTab        (ConsumerWidget)         — search input + results list;
+//                        watches secSearchProvider(query) as user types
+//   • _RecentEventsTab  (ConsumerWidget)         — recent 8-K feed;
+//                        watches secRecentEventsProvider; pull-to-refresh
+//   • _FilingCard       (StatelessWidget)        — shared card used in both tabs;
+//                        color-coded form-type badge, ticker, date, company name,
+//                        form label, "View on SEC EDGAR" link + optional XBRL link
+//
+// Route: '/research' in router.dart, tab index 4 in _AppShell
+//
+// Providers consumed:
+//   • secSearchProvider(query)    — free-text filing search (_SearchTab)
+//   • secRecentEventsProvider     — recent 8-K events (_RecentEventsTab)
+//
+// External links:
+//   • _FilingCard tap / "View on SEC EDGAR" → launchUrl(filing.linkToHtml)
+//   • "XBRL" text tap                       → launchUrl(filing.linkToXbrl!)
+//   Both use url_launcher with LaunchMode.externalApplication.
+//
+// Badge color legend (mirrors _SecFilingRow in trade_detail_screen.dart):
+//   earnings → blue   (#58A6FF)  — 10-K, 10-Q
+//   event    → yellow (#E3B341)  — 8-K
+//   insider  → green  (profitColor) — Form 4
+//   holder   → purple (#D2A8FF)  — SC 13G, SC 13D
+// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -191,7 +222,8 @@ class _RecentEventsTab extends ConsumerWidget {
 }
 
 // ----------------------------------------------------------------
-// Shared filing card
+// Shared filing card — used in both _SearchTab and _RecentEventsTab.
+// Also mirrors _SecFilingRow in trade_detail_screen.dart.
 // ----------------------------------------------------------------
 class _FilingCard extends StatelessWidget {
   final SecFiling filing;

@@ -1,3 +1,23 @@
+// =============================================================================
+// services/fmp/fmp_models.dart — FMP API response models
+// =============================================================================
+// Classes & where they surface in the UI:
+//
+//   StockQuote
+//     Fields: symbol, name, price, change, changePercent, open, dayHigh,
+//             dayLow, previousClose, volume
+//     Getter: isPositive — drives green/red color in _LiveQuoteCard & _OpenTradeRow
+//     Used in: TradeDetailScreen (_LiveQuoteCard)
+//              DashboardScreen   (_OpenTradeRow subtitle)
+//
+//   TickerSearchResult
+//     Fields: symbol, name, exchange
+//     Used in: AddTradeScreen (_TickerAutocomplete dropdown rows)
+//
+//   StockProfile
+//     Fields: symbol, companyName, sector, industry, beta, mktCap
+//     Used in: available for future features (not rendered yet)
+// =============================================================================
 class StockQuote {
   final String symbol;
   final String name;

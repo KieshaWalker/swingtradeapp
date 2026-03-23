@@ -1,3 +1,33 @@
+// =============================================================================
+// features/trades/models/trade.dart — Core trade data model
+// =============================================================================
+// Enums:
+//   OptionType      { call, put }
+//   TradeStrategy   { longCall, longPut, bullCallSpread, bearPutSpread,
+//                     bullPutSpread, bearCallSpread, ironCondor, other }
+//   TradeStatus     { open, closed, expired }
+//
+// TradeStrategyExt (extension):
+//   .label    — display string used in TradesScreen (_Badge), TradeDetailScreen,
+//               AddTradeScreen dropdown, DashboardScreen (_OpenTradeRow subtitle)
+//   .dbValue  — snake_case string stored in Supabase 'trades.strategy' column
+//   fromDb()  — parses dbValue back to enum; called in Trade.fromJson()
+//
+// Trade (class):
+//   Computed getters used in UI:
+//     costBasis   — entryPrice × contracts × 100
+//                   shown in: TradeDetailScreen, CalculatorScreen
+//     realizedPnl — (exitPrice - entryPrice) × contracts × 100
+//                   shown in: TradesScreen (_TradeCard), TradeDetailScreen header,
+//                             DashboardScreen (_Dashboard stats & _PnLChart)
+//     pnlPercent  — realizedPnl / costBasis × 100
+//                   shown in: TradesScreen (_TradeCard), TradeDetailScreen
+//     isProfitable— used in DashboardScreen win-rate calculation
+//
+//   Serialization:
+//     fromJson() — called by tradesProvider when reading from Supabase
+//     toJson()   — called by TradesNotifier.addTrade() when inserting to Supabase
+// =============================================================================
 import 'package:intl/intl.dart';
 
 enum OptionType { call, put }

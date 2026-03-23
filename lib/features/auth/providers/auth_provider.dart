@@ -1,3 +1,22 @@
+// =============================================================================
+// features/auth/providers/auth_provider.dart — Auth state & actions
+// =============================================================================
+// Providers defined here:
+//
+//   supabaseClientProvider  — SupabaseClient singleton; read by tradesProvider,
+//                             journalProvider, TradesNotifier, JournalNotifier
+//
+//   authStateProvider       — Stream<AuthState>; watched by routerProvider
+//                             (core/router.dart) to trigger auth redirects
+//
+//   currentUserProvider     — Current User?; read in AddTradeScreen and
+//                             AddJournalScreen to attach user_id on insert
+//
+//   authNotifierProvider    — AuthNotifier (AsyncNotifier); provides:
+//       signUp(email, pw) → called from SignupScreen
+//       signIn(email, pw) → called from LoginScreen
+//       signOut()         → called from DashboardScreen logout button
+// =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 

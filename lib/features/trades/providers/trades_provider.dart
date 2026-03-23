@@ -1,3 +1,28 @@
+// =============================================================================
+// features/trades/providers/trades_provider.dart — Trades state management
+// =============================================================================
+// Providers defined here:
+//
+//   tradesProvider         — FutureProvider<List<Trade>>
+//     Fetches all trades for current user from Supabase 'trades' table,
+//     ordered by opened_at DESC.
+//     Watched by: DashboardScreen, TradesScreen (_TradeList),
+//                 openTradesProvider, closedTradesProvider
+//
+//   openTradesProvider     — Provider<AsyncValue<List<Trade>>>
+//     Derived filter: status == open
+//     Available for use; TradesScreen filters tradesProvider directly
+//
+//   closedTradesProvider   — Provider<AsyncValue<List<Trade>>>
+//     Derived filter: status != open
+//     Available for use; TradesScreen filters tradesProvider directly
+//
+//   tradesNotifierProvider — AsyncNotifierProvider<TradesNotifier, void>
+//     Mutations — each method invalidates tradesProvider to refresh UI:
+//       addTrade(trade)              ← called from AddTradeScreen on submit
+//       closeTrade(tradeId,exitPrice)← called from TradeDetailScreen close dialog
+//       deleteTrade(tradeId)         ← called from TradeDetailScreen delete dialog
+// =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/providers/auth_provider.dart';

@@ -1,3 +1,26 @@
+// =============================================================================
+// services/sec/sec_service.dart — SEC EDGAR HTTP client
+// =============================================================================
+// Singleton service; accessed via secServiceProvider (sec_providers.dart).
+// Uses Elasticsearch query syntax against the SEC Filing Data API.
+//
+// Methods & where they are used:
+//   • getFilingsForTicker(ticker, formTypes, limit)
+//       → secFilingsForTickerProvider
+//       → TradeDetailScreen (_SecFilingsSection) — shows recent 10-K/10-Q/8-K/4
+//         filings for the trade's ticker symbol
+//
+//   • searchFilings(query, limit)
+//       → secSearchProvider
+//       → ResearchScreen (_SearchTab) — free-text search across 18M+ filings
+//
+//   • getRecentEvents(limit)
+//       → secRecentEventsProvider
+//       → ResearchScreen (_RecentEventsTab) — recent 8-K market events feed
+//
+// Config: SecConfig.baseUrl + SecConfig.apiKey (core/sec_config.dart)
+// Models: SecFiling (sec_models.dart)
+// =============================================================================
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../core/sec_config.dart';

@@ -1,3 +1,28 @@
+// =============================================================================
+// features/trades/screens/trades_screen.dart — Trade log with open/closed tabs
+// =============================================================================
+// Widgets defined here:
+//   • TradesScreen  (ConsumerStatefulWidget) — scaffold + TabBar (Open / Closed)
+//                                              + FAB "New Trade" → /trades/add
+//   • _TradeList    (ConsumerWidget)         — filtered ListView of _TradeCard;
+//                                              pull-to-refresh via tradesProvider
+//   • _TradeCard    (ConsumerWidget)         — tappable card per trade showing:
+//                                              ticker, CALL/PUT badge, strategy badge,
+//                                              PnL $, strike, expiration, contracts,
+//                                              entry→exit price, PnL %
+//   • _Badge        — colored pill label (option type or strategy)
+//   • _InfoChip     — icon + text chip (strike, expiration, contracts)
+//
+// Route: '/trades' in router.dart, tab index 1 in _AppShell
+//
+// Providers consumed:
+//   • tradesProvider — all trades; filtered here to open or closed list
+//
+// Navigation out:
+//   • _TradeCard tap → context.push('/trades/${trade.id}', extra: trade)
+//     → TradeDetailScreen
+//   • FAB            → context.push('/trades/add') → AddTradeScreen
+// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -224,6 +249,7 @@ class _TradeCard extends ConsumerWidget {
   }
 }
 
+// _Badge: colored pill used for option type (CALL=green, PUT=red) and strategy name.
 class _Badge extends StatelessWidget {
   final String label;
   final Color color;
@@ -246,6 +272,7 @@ class _Badge extends StatelessWidget {
   }
 }
 
+// _InfoChip: small icon + label used for strike, expiration date, contract count.
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;

@@ -1,3 +1,25 @@
+// =============================================================================
+// core/theme.dart — Global dark theme & semantic color palette
+// =============================================================================
+// Exports:
+//   • AppTheme.dark       — ThemeData applied in main.dart → MaterialApp.router
+//   • AppTheme.profitColor — green (#00C896); used for profit values, Call badges,
+//                            FABs, focused borders, selected nav items
+//   • AppTheme.lossColor   — red  (#FF4D6A); used for loss values, Put badges,
+//                            error states, delete actions
+//   • AppTheme.neutralColor — gray (#8B949E); used for labels, subtitles,
+//                             inactive icons
+//
+// Consumers (every screen imports this for colors):
+//   • DashboardScreen  — _StatCard, _PnLChart, _OpenTradeRow
+//   • TradesScreen     — _TradeCard, _Badge, _InfoChip
+//   • AddTradeScreen   — option type toggle, section labels
+//   • TradeDetailScreen— _LiveQuoteCard, _SecFilingRow, _StatusBadge
+//   • CalculatorScreen — result rows, R:R badge
+//   • JournalScreen    — _JournalCard tags, FAB
+//   • AddJournalScreen — mood picker, tag chips
+//   • ResearchScreen   — _FilingCard category colors
+// =============================================================================
 import 'package:flutter/material.dart';
 
 class AppTheme {

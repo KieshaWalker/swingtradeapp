@@ -1,3 +1,22 @@
+// =============================================================================
+// features/auth/screens/signup_screen.dart — Account creation screen
+// =============================================================================
+// Widgets defined here:
+//   • SignupScreen (ConsumerStatefulWidget) — account registration form
+//
+// Navigation:
+//   • Reached via /signup route (router.dart) or "Sign Up" link from LoginScreen
+//   • Back button → context.go('/login')
+//   • On success → shows "Check your email" snackbar → navigates to /login
+//
+// Providers used:
+//   • authNotifierProvider.notifier.signUp() — creates Supabase account
+//   • authNotifierProvider (isLoading) — shows CircularProgressIndicator
+//
+// UI elements:
+//   Email field, password field with show/hide toggle,
+//   ElevatedButton (Create Account)
+// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

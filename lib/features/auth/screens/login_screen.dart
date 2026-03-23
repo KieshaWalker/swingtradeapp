@@ -1,3 +1,23 @@
+// =============================================================================
+// features/auth/screens/login_screen.dart — Sign-in screen
+// =============================================================================
+// Widgets defined here:
+//   • LoginScreen (ConsumerStatefulWidget) — full-screen login form
+//
+// Navigation:
+//   • Reached via GoRouter redirect when user is not authenticated
+//   • "Sign Up" link → context.go('/signup') → SignupScreen
+//   • On successful sign-in → GoRouter auto-redirects to '/' (DashboardScreen)
+//     via routerProvider watching authStateProvider
+//
+// Providers used:
+//   • authNotifierProvider.notifier.signIn() — submits credentials to Supabase
+//   • authNotifierProvider (isLoading) — shows CircularProgressIndicator
+//
+// UI elements:
+//   Email field, password field with show/hide toggle,
+//   ElevatedButton (Sign In), TextButton (Sign Up link)
+// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

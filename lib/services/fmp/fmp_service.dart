@@ -1,3 +1,18 @@
+// =============================================================================
+// services/fmp/fmp_service.dart — Financial Modeling Prep HTTP client
+// =============================================================================
+// Singleton service; accessed via fmpServiceProvider (fmp_providers.dart).
+//
+// Methods & where they are used:
+//   • getQuote(symbol)         → quoteProvider    → TradeDetailScreen (_LiveQuoteCard)
+//                                                 → DashboardScreen   (_OpenTradeRow)
+//   • getQuotes(symbols)       → quotesProvider   → (available for batch lookups)
+//   • searchTicker(query)      → tickerSearchProvider → AddTradeScreen (_TickerAutocomplete)
+//   • getProfile(symbol)       → stockProfileProvider → (available for future use)
+//
+// Config: FmpConfig.baseUrl + FmpConfig.apiKey (core/fmp_config.dart)
+// Models: StockQuote, TickerSearchResult, StockProfile (fmp_models.dart)
+// =============================================================================
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../core/fmp_config.dart';

@@ -1,3 +1,30 @@
+// =============================================================================
+// features/dashboard/screens/dashboard_screen.dart — Home overview
+// =============================================================================
+// Widgets defined here:
+//   • DashboardScreen (ConsumerWidget) — root scaffold; watches tradesProvider
+//   • _Dashboard      (StatelessWidget) — main content; computes stats from trades
+//   • _StatCard       — icon + value + label card; used in 2×2 grid
+//   • _PnLChart       — cumulative P&L LineChart (fl_chart); built from closed trades
+//   • _OpenTradeRow   (ConsumerWidget) — single open position row with live quote
+//
+// Route: '/' in router.dart, tab index 0 in _AppShell
+//
+// Providers consumed:
+//   • tradesProvider       — all user trades (Supabase 'trades' table)
+//   • currentUserProvider  — email for greeting
+//   • authNotifierProvider — signOut() on logout button press
+//   • quoteProvider(ticker)— live FMP price shown per open trade in _OpenTradeRow
+//
+// Data flow:
+//   tradesProvider → _Dashboard splits into _closed / _open lists
+//     _closed → _totalPnl, _winRate, _avgReturn, _PnLChart
+//     _open   → open trades count, _OpenTradeRow list (first 3)
+//
+// Navigation out:
+//   _OpenTradeRow tap → context.push('/trades/${trade.id}', extra: trade)
+//     → TradeDetailScreen
+// =============================================================================
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -296,6 +323,9 @@ class _PnLChart extends StatelessWidget {
   }
 }
 
+// _OpenTradeRow: one row per open trade in the "Open Positions" preview.
+// Fetches a live FMP quote (quoteProvider) to show current stock price & change.
+// Tapping navigates to TradeDetailScreen via /trades/:id.
 class _OpenTradeRow extends ConsumerWidget {
   final Trade trade;
   const _OpenTradeRow({required this.trade});

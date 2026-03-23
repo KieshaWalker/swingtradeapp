@@ -1,3 +1,25 @@
+// =============================================================================
+// services/sec/sec_models.dart — SEC filing data model
+// =============================================================================
+// Classes:
+//   SecFiling
+//     Fields: accessionNo, cik, ticker, companyName, formType,
+//             linkToHtml, linkToXbrl?, filedAt
+//
+//     Getters:
+//       formLabel — human-readable label shown in _SecFilingRow & _FilingCard
+//                   e.g. "10-K  Annual Report", "Form 4  Insider Trade"
+//       category  — drives badge color in _SecFilingRow & _FilingCard:
+//                   'earnings' → blue   (10-K, 10-Q)
+//                   'event'    → yellow (8-K)
+//                   'insider'  → green  (Form 4)
+//                   'holder'   → purple (SC 13G, SC 13D)
+//
+//   Used in:
+//     • TradeDetailScreen — _SecFilingsSection → _SecFilingRow (ticker-specific feed)
+//     • ResearchScreen    — _SearchTab → _FilingCard
+//                         — _RecentEventsTab → _FilingCard
+// =============================================================================
 class SecFiling {
   final String accessionNo;
   final String cik;

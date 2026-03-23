@@ -1,3 +1,26 @@
+// =============================================================================
+// features/journal/screens/add_journal_screen.dart — New journal entry form
+// =============================================================================
+// Widgets defined here:
+//   • AddJournalScreen (ConsumerStatefulWidget) — full form for a new entry;
+//     navigated to from JournalScreen FAB via context.push('/journal/add')
+//
+// Route: '/journal/add' (child of /journal in router.dart)
+//
+// Providers consumed:
+//   • currentUserProvider          — attaches user_id to new JournalEntry
+//   • journalNotifierProvider      — .addEntry(entry) inserts to Supabase,
+//                                    then invalidates journalProvider
+//
+// Form sections:
+//   1. Mood picker — 5 animated emoji buttons (TradeMood enum);
+//      selected mood highlighted with profitColor ring
+//   2. Title text field (required)
+//   3. Body textarea, 8 lines (required)
+//   4. Tag input — text field + add button; added tags shown as dismissible Chips
+//
+// On success: context.pop() back to JournalScreen
+// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

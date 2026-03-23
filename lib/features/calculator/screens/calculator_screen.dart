@@ -1,3 +1,29 @@
+// =============================================================================
+// features/calculator/screens/calculator_screen.dart — Trading calculators
+// =============================================================================
+// Widgets defined here:
+//   • CalculatorScreen  (StatefulWidget)   — scaffold + 2-tab TabBar
+//   • _PnLEstimator     (StatefulWidget)   — tab 1: estimate trade outcome
+//   • _PositionSizer    (StatefulWidget)   — tab 2: size a position by risk %
+//   • _ResultRow        (StatelessWidget)  — label ↔ colored value row used
+//                                            in both calculator result sections
+//
+// Route: '/calculator' in router.dart, tab index 2 in _AppShell
+//
+// No providers — purely local state; no Supabase or API calls.
+//
+// _PnLEstimator inputs & outputs:
+//   Inputs:  Entry premium, contracts, profit target %, stop loss %
+//   Outputs: Cost basis, target profit $, max loss $, risk:reward ratio
+//            R:R badge: green if ≥ 2:1, red if below
+//
+// _PositionSizer inputs & outputs:
+//   Inputs:  Account size, max risk %, option premium, stop loss %
+//   Outputs: Max risk $, loss per contract, recommended contracts (large display),
+//            total cost $
+//
+// All calculations are reactive — setState on every input change.
+// =============================================================================
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
@@ -232,6 +258,8 @@ class _PnLEstimatorState extends State<_PnLEstimator> {
   }
 }
 
+// _ResultRow: label (gray) on left, colored value on right.
+// Used in both _PnLEstimator and _PositionSizer result sections.
 class _ResultRow extends StatelessWidget {
   final String label;
   final String value;

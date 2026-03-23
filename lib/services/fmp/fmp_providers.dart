@@ -1,3 +1,20 @@
+// =============================================================================
+// services/fmp/fmp_providers.dart — Riverpod providers for FMP data
+// =============================================================================
+// Providers & where they are watched:
+//
+//   fmpServiceProvider        — FmpService singleton; used by all providers below
+//
+//   quoteProvider(symbol)     → TradeDetailScreen: _LiveQuoteCard (live price card)
+//                             → DashboardScreen:   _OpenTradeRow  (price in subtitle)
+//
+//   quotesProvider(symbols)   → available for batch quote lookups (not used yet)
+//
+//   tickerSearchProvider(q)   → AddTradeScreen: _TickerAutocomplete
+//                               shows symbol/name/exchange dropdown as user types
+//
+//   stockProfileProvider(sym) → available for sector/industry display (not used yet)
+// =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'fmp_models.dart';
 import 'fmp_service.dart';

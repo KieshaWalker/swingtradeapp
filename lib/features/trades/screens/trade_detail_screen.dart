@@ -1,3 +1,32 @@
+// =============================================================================
+// features/trades/screens/trade_detail_screen.dart — Full trade view
+// =============================================================================
+// Widgets defined here:
+//   • TradeDetailScreen  (ConsumerWidget) — receives Trade via GoRouter extra;
+//                          scrollable detail view with header, quote, details,
+//                          Greeks, notes, SEC filings sections
+//   • _LiveQuoteCard     (ConsumerWidget) — live FMP price card with open/high/
+//                          low/prev-close stats; powered by quoteProvider(symbol)
+//   • _QuoteStat         — label + value column used inside _LiveQuoteCard
+//   • _StatusBadge       — OPEN/CLOSED/EXPIRED pill; color from AppTheme
+//   • _DetailRow         — label ↔ value row used in the details grid card
+//   • _GreekBox          — Delta / IV Rank box; shown only if values were entered
+//   • _SecFilingsSection (ConsumerWidget) — recent SEC filings for the trade's
+//                          ticker; powered by secFilingsForTickerProvider(ticker)
+//   • _SecFilingRow      — tappable row per filing; opens EDGAR link via url_launcher
+//
+// Route: '/trades/:id' (child of /trades in router.dart)
+//        — reached by tapping a _TradeCard or _OpenTradeRow
+//
+// Providers consumed:
+//   • quoteProvider(trade.ticker)              — live stock price (_LiveQuoteCard)
+//   • secFilingsForTickerProvider(trade.ticker)— SEC filings feed (_SecFilingsSection)
+//   • tradesNotifierProvider                   — close / delete mutations
+//
+// AppBar actions:
+//   Close trade → _showCloseDialog → tradesNotifierProvider.closeTrade()
+//   Delete trade → _confirmDelete  → tradesNotifierProvider.deleteTrade()
+// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -249,6 +278,8 @@ class TradeDetailScreen extends ConsumerWidget {
 
 // ----------------------------------------------------------------
 // Live quote card powered by FMP
+// Watches quoteProvider(symbol) → FmpService.getQuote()
+// Shows: price, change $/%,  open / high / low / prev close
 // ----------------------------------------------------------------
 class _LiveQuoteCard extends ConsumerWidget {
   final String symbol;
@@ -346,6 +377,7 @@ class _LiveQuoteCard extends ConsumerWidget {
   }
 }
 
+// _QuoteStat: label + value column used in _LiveQuoteCard OHLC row.
 class _QuoteStat extends StatelessWidget {
   final String label;
   final String value;
@@ -369,6 +401,7 @@ class _QuoteStat extends StatelessWidget {
   }
 }
 
+// _StatusBadge: OPEN (green) / CLOSED (gray) / EXPIRED (red) pill.
 class _StatusBadge extends StatelessWidget {
   final TradeStatus status;
   const _StatusBadge(this.status);
@@ -396,6 +429,7 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
+// _DetailRow: label on left, value on right — used in the details grid card.
 class _DetailRow extends StatelessWidget {
   final String label;
   final String value;
@@ -416,6 +450,7 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
+// _GreekBox: dark inset box showing a single Greek value (Delta or IV Rank).
 class _GreekBox extends StatelessWidget {
   final String label;
   final String value;
@@ -448,6 +483,8 @@ class _GreekBox extends StatelessWidget {
 
 // ----------------------------------------------------------------
 // SEC filings mini-feed for this ticker
+// Watches secFilingsForTickerProvider(ticker) → SecService.getFilingsForTicker()
+// Renders up to 5 _SecFilingRow items with EDGAR link launching.
 // ----------------------------------------------------------------
 class _SecFilingsSection extends ConsumerWidget {
   final String ticker;
@@ -506,6 +543,9 @@ class _SecFilingsSection extends ConsumerWidget {
   }
 }
 
+// _SecFilingRow: tappable row showing form-type badge, label, and date.
+// Color-coded by SecFiling.category: earnings=blue, event=yellow,
+// insider=green, holder=purple. Tap opens EDGAR HTML link.
 class _SecFilingRow extends StatelessWidget {
   final SecFiling filing;
   const _SecFilingRow({required this.filing});

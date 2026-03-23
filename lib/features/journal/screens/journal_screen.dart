@@ -1,3 +1,22 @@
+// =============================================================================
+// features/journal/screens/journal_screen.dart — Journal feed
+// =============================================================================
+// Widgets defined here:
+//   • JournalScreen  (ConsumerWidget) — scaffold + ListView of _JournalCard;
+//                     FAB navigates to /journal/add (AddJournalScreen)
+//   • _JournalCard   (StatelessWidget) — card per entry showing:
+//                     mood emoji, title, body preview (3 lines), tags (green pills),
+//                     date; delete button with confirmation dialog
+//
+// Route: '/journal' in router.dart, tab index 3 in _AppShell
+//
+// Providers consumed:
+//   • journalProvider          — all entries for current user, newest first
+//   • journalNotifierProvider  — .deleteEntry(id) called from _JournalCard dialog
+//
+// Navigation out:
+//   • FAB → context.push('/journal/add') → AddJournalScreen
+// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -57,6 +76,9 @@ class JournalScreen extends ConsumerWidget {
   }
 }
 
+// _JournalCard: displays one journal entry with mood emoji, title, body preview,
+// tags, and date. Delete icon opens a confirmation AlertDialog that calls
+// journalNotifierProvider.deleteEntry().
 class _JournalCard extends StatelessWidget {
   final JournalEntry entry;
   final WidgetRef ref;

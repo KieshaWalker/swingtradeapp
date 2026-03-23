@@ -1,3 +1,18 @@
+// =============================================================================
+// features/journal/providers/journal_provider.dart — Journal state management
+// =============================================================================
+// Providers defined here:
+//
+//   journalProvider         — FutureProvider<List<JournalEntry>>
+//     Fetches all journal entries for current user from Supabase
+//     'journal_entries' table, ordered by created_at DESC.
+//     Watched by: JournalScreen
+//
+//   journalNotifierProvider — AsyncNotifierProvider<JournalNotifier, void>
+//     Mutations — each method invalidates journalProvider to refresh UI:
+//       addEntry(entry)    ← called from AddJournalScreen on submit
+//       deleteEntry(id)    ← called from _JournalCard delete confirmation dialog
+// =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/providers/auth_provider.dart';

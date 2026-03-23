@@ -1,3 +1,29 @@
+// =============================================================================
+// features/trades/screens/add_trade_screen.dart — Log a new trade
+// =============================================================================
+// Widgets defined here:
+//   • AddTradeScreen      (ConsumerStatefulWidget) — full form; navigated to
+//                          from TradesScreen FAB via context.push('/trades/add')
+//   • _TickerAutocomplete (ConsumerStatefulWidget) — text field that fires
+//                          tickerSearchProvider on each keystroke and shows a
+//                          dropdown of TickerSearchResult rows (symbol/name/exchange)
+//   • _SectionLabel       — small gray section heading used between form groups
+//
+// Route: '/trades/add' (child of /trades in router.dart)
+//
+// Providers consumed:
+//   • tickerSearchProvider(query)  — FMP ticker search; drives _TickerAutocomplete
+//   • currentUserProvider          — attaches user_id to new Trade
+//   • tradesNotifierProvider       — .addTrade(trade) inserts to Supabase,
+//                                    then invalidates tradesProvider
+//
+// Form fields:
+//   Ticker (with autocomplete), Option Type (Call/Put toggle),
+//   Strategy (dropdown), Strike + Expiration date picker, DTE auto-calc,
+//   Contracts + Entry Premium, IV Rank + Delta (optional), Notes
+//
+// On success: context.pop() back to TradesScreen
+// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -295,6 +321,9 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
 
 // ----------------------------------------------------------------
 // Ticker autocomplete using FMP search-symbol
+// Watches tickerSearchProvider(query) on every keystroke.
+// Renders a dropdown list of up to 8 TickerSearchResult matches.
+// Tapping a result fills the text field and collapses the dropdown.
 // ----------------------------------------------------------------
 class _TickerAutocomplete extends ConsumerStatefulWidget {
   final TextEditingController controller;
@@ -415,6 +444,7 @@ class _TickerAutocompleteState extends ConsumerState<_TickerAutocomplete> {
   }
 }
 
+// _SectionLabel: small gray heading used between form sections.
 class _SectionLabel extends StatelessWidget {
   final String text;
   const _SectionLabel(this.text);

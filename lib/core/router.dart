@@ -1,3 +1,33 @@
+// =============================================================================
+// core/router.dart — Navigation & route definitions
+// =============================================================================
+// Widgets defined here:
+//   • _AppShell       — persistent scaffold with 5-tab NavigationBar;
+//                       wraps every main-feature screen
+//   • _AuthCallbackScreen — loading screen shown while Supabase exchanges
+//                           the email-link token; auto-redirects on auth event
+//
+// Providers defined here:
+//   • routerProvider  — GoRouter instance; consumed by App in main.dart
+//
+// Route map:
+//   /login             → LoginScreen      (features/auth)
+//   /signup            → SignupScreen     (features/auth)
+//   /auth/callback     → _AuthCallbackScreen
+//   /                  → DashboardScreen  (features/dashboard)   [tab 0]
+//   /trades            → TradesScreen     (features/trades)      [tab 1]
+//   /trades/add        → AddTradeScreen   (features/trades)
+//   /trades/:id        → TradeDetailScreen(features/trades) — receives Trade via extra
+//   /calculator        → CalculatorScreen (features/calculator)  [tab 2]
+//   /journal           → JournalScreen    (features/journal)     [tab 3]
+//   /journal/add       → AddJournalScreen (features/journal)
+//   /research          → ResearchScreen   (features/research)    [tab 4]
+//
+// Auth guard (redirect):
+//   Unauthenticated users → /login
+//   Authenticated users on /login or /signup → /
+//   Watches authStateProvider (features/auth/providers/auth_provider.dart)
+// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';

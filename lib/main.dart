@@ -1,3 +1,16 @@
+// =============================================================================
+// main.dart — App entry point
+// =============================================================================
+// Widgets defined here:
+//   • App (ConsumerWidget) — root widget; watches routerProvider and builds
+//     MaterialApp.router with AppTheme.dark applied globally
+//
+// Integrations:
+//   • Initializes Supabase via SupabaseConfig (core/supabase_config.dart)
+//   • Wraps everything in ProviderScope so all Riverpod providers are available
+//   • Hands routing to routerProvider (core/router.dart)
+//   • Applies dark theme from AppTheme (core/theme.dart)
+// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';

@@ -1,3 +1,28 @@
+// =============================================================================
+// features/journal/models/journal_entry.dart — Journal entry data model
+// =============================================================================
+// Enums:
+//   TradeMood { confident, neutral, anxious, frustrated, excited }
+//
+// TradeMoodExt (extension):
+//   .emoji  — single emoji string shown in _JournalCard and AddJournalScreen
+//             mood picker (😎 😐 😰 😤 🚀)
+//   .label  — capitalized name shown below emoji in mood picker
+//
+// JournalEntry (class):
+//   Fields:  id, userId, tradeId?, title, body, mood?, tags[], createdAt
+//
+//   Serialization:
+//     fromJson() — called by journalProvider when reading from Supabase
+//                  'journal_entries' table
+//     toJson()   — called by JournalNotifier.addEntry() when inserting;
+//                  excludes id/userId/createdAt (set server-side)
+//
+//   Used in:
+//     • JournalScreen     (_JournalCard) — mood emoji, title, body preview, tags, date
+//     • AddJournalScreen               — mood picker, title/body fields, tag chips
+//     • journalProvider / JournalNotifier (journal_provider.dart)
+// =============================================================================
 enum TradeMood { confident, neutral, anxious, frustrated, excited }
 
 extension TradeMoodExt on TradeMood {
