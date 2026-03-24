@@ -44,3 +44,15 @@ final stockProfileProvider =
     FutureProvider.family<StockProfile?, String>((ref, symbol) {
   return ref.watch(fmpServiceProvider).getProfile(symbol);
 });
+
+// Daily OHLCV candles — TickerProfileScreen price history chart
+final tickerHistoricalPricesProvider =
+    FutureProvider.family<List<FmpHistoricalPrice>, String>((ref, symbol) {
+  return ref.watch(fmpServiceProvider).getHistoricalPrices(symbol);
+});
+
+// Next scheduled earnings date — TickerProfileScreen Overview tab
+final tickerNextEarningsProvider =
+    FutureProvider.family<FmpEarningsDate?, String>((ref, symbol) {
+  return ref.watch(fmpServiceProvider).getNextEarnings(symbol);
+});

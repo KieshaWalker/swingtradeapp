@@ -104,3 +104,71 @@ class StockProfile {
         mktCap: (json['mktCap'] as num?)?.toDouble() ?? 0,
       );
 }
+
+// ─── Ticker Profile additions ─────────────────────────────────────────────
+
+// Daily OHLCV candle — used in TickerProfileScreen price history chart.
+// Fetched via FmpService.getHistoricalPrices() → /historical-price-eod/full
+class FmpHistoricalPrice {
+  final DateTime date;
+  final double open;
+  final double high;
+  final double low;
+  final double close;
+  final int volume;
+
+  const FmpHistoricalPrice({
+    required this.date,
+    required this.open,
+    required this.high,
+    required this.low,
+    required this.close,
+    required this.volume,
+  });
+
+  factory FmpHistoricalPrice.fromJson(Map<String, dynamic> json) =>
+      FmpHistoricalPrice(
+        date: DateTime.parse(json['date'] as String),
+        open: (json['open'] as num?)?.toDouble() ?? 0,
+        high: (json['high'] as num?)?.toDouble() ?? 0,
+        low: (json['low'] as num?)?.toDouble() ?? 0,
+        close: (json['close'] as num?)?.toDouble() ?? 0,
+        volume: (json['volume'] as num?)?.toInt() ?? 0,
+      );
+}
+
+// Next scheduled earnings date — used in the Overview tab Earnings card.
+// Fetched via FmpService.getNextEarnings() → /earnings-calendar
+class FmpEarningsDate {
+  final DateTime date;
+  final String symbol;
+  final double? epsEstimated;
+  final double? revenueEstimated;
+  final String? fiscalDateEnding;
+  final String? time; // 'bmo' (before market open) | 'amc' (after market close)
+
+  const FmpEarningsDate({
+    required this.date,
+    required this.symbol,
+    this.epsEstimated,
+    this.revenueEstimated,
+    this.fiscalDateEnding,
+    this.time,
+  });
+
+  String get timeLabel => switch (time) {
+        'bmo' => 'Before Open',
+        'amc' => 'After Close',
+        _ => '',
+      };
+
+  factory FmpEarningsDate.fromJson(Map<String, dynamic> json) =>
+      FmpEarningsDate(
+        date: DateTime.parse(json['date'] as String),
+        symbol: json['symbol'] as String? ?? '',
+        epsEstimated: (json['epsEstimated'] as num?)?.toDouble(),
+        revenueEstimated: (json['revenueEstimated'] as num?)?.toDouble(),
+        fiscalDateEnding: json['fiscalDateEnding'] as String?,
+        time: json['time'] as String?,
+      );
+}

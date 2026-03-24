@@ -412,6 +412,7 @@ class _OpenTradeRow extends ConsumerWidget {
           ],
         ),
         onTap: () => context.push('/trades/${trade.id}', extra: trade),
+        onLongPress: () => context.push('/ticker/${trade.ticker}'),
       ),
     );
   }

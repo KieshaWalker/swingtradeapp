@@ -11,7 +11,13 @@
 //   • getProfile(symbol)       → stockProfileProvider → (available for future use)
 //
 // Config: FmpConfig.baseUrl + FmpConfig.apiKey (core/fmp_config.dart)
-// Models: StockQuote, TickerSearchResult, StockProfile (fmp_models.dart)
+// Models: StockQuote, TickerSearchResult, StockProfile, FmpHistoricalPrice,
+//         FmpEarningsDate (fmp_models.dart)
+//
+//   • getHistoricalPrices(symbol, {days}) → tickerHistoricalPricesProvider
+//                                          → TickerProfileScreen (price chart)
+//   • getNextEarnings(symbol)             → tickerNextEarningsProvider
+//                                          → TickerProfileScreen (Overview tab)
 // =============================================================================
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -91,6 +97,56 @@ class FmpService {
       final data = jsonDecode(res.body);
       if (data is List && data.isNotEmpty) {
         return StockProfile.fromJson(data.first as Map<String, dynamic>);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Daily OHLCV candles for [symbol] going back [days] calendar days.
+  Future<List<FmpHistoricalPrice>> getHistoricalPrices(
+    String symbol, {
+    int days = 90,
+  }) async {
+    try {
+      final to = DateTime.now();
+      final from = to.subtract(Duration(days: days));
+      String fmt(DateTime d) =>
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      final res = await _client.get(_url(
+        '/historical-price-eod/full',
+        {'symbol': symbol, 'from': fmt(from), 'to': fmt(to)},
+      ));
+      if (res.statusCode != 200) return [];
+      final body = jsonDecode(res.body) as Map<String, dynamic>?;
+      final hist = body?['historical'];
+      if (hist is List) {
+        return hist
+            .map((e) => FmpHistoricalPrice.fromJson(e as Map<String, dynamic>))
+            .toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Next scheduled earnings date for [symbol] (returns first upcoming entry).
+  Future<FmpEarningsDate?> getNextEarnings(String symbol) async {
+    try {
+      final from = DateTime.now();
+      final to = from.add(const Duration(days: 180));
+      String fmt(DateTime d) =>
+          '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      final res = await _client.get(_url(
+        '/earnings-calendar',
+        {'symbol': symbol, 'from': fmt(from), 'to': fmt(to)},
+      ));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      if (data is List && data.isNotEmpty) {
+        return FmpEarningsDate.fromJson(data.first as Map<String, dynamic>);
       }
       return null;
     } catch (_) {

@@ -22,6 +22,7 @@
 //   /journal           → JournalScreen    (features/journal)     [tab 3]
 //   /journal/add       → AddJournalScreen (features/journal)
 //   /research          → ResearchScreen   (features/research)    [tab 4]
+//   /ticker/:symbol    → TickerProfileScreen (features/ticker_profile) — no shell
 //
 // Auth guard (redirect):
 //   Unauthenticated users → /login
@@ -42,6 +43,7 @@ import '../features/research/screens/research_screen.dart';
 import '../features/trades/models/trade.dart';
 import '../features/trades/screens/add_trade_screen.dart';
 import '../features/trades/screens/trade_detail_screen.dart';
+import '../features/ticker_profile/screens/ticker_profile_screen.dart';
 import '../features/trades/screens/trades_screen.dart';
 
 // Shell scaffold with bottom nav bar
@@ -200,6 +202,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             currentIndex: 4,
             child: const ResearchScreen(),
           ),
+        ),
+      ),
+      GoRoute(
+        path: '/ticker/:symbol',
+        builder: (_, state) => TickerProfileScreen(
+          symbol: state.pathParameters['symbol']!,
         ),
       ),
     ],

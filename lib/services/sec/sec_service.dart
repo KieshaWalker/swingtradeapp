@@ -39,11 +39,13 @@ class SecService {
       };
 
   /// Fetch recent filings for a given ticker symbol.
+  /// API maximum is 50 filings per request.
   Future<List<SecFiling>> getFilingsForTicker(
     String ticker, {
     List<String> formTypes = const ['10-K', '10-Q', '8-K', '4'],
     int limit = 20,
   }) async {
+    assert(limit <= 50, 'SEC API maximum size is 50');
     try {
       final formTypeFilter = formTypes.map((f) => '"$f"').join(' OR ');
       final body = jsonEncode({
@@ -81,10 +83,12 @@ class SecService {
   }
 
   /// Search filings by free-text query (company name, form type, etc.)
+  /// API maximum is 50 filings per request.
   Future<List<SecFiling>> searchFilings(
     String query, {
     int limit = 20,
   }) async {
+    assert(limit <= 50, 'SEC API maximum size is 50');
     try {
       final body = jsonEncode({
         'query': {
@@ -121,7 +125,9 @@ class SecService {
   }
 
   /// Get recent 8-K filings across all tickers (market events feed)
+  /// API maximum is 50 filings per request.
   Future<List<SecFiling>> getRecentEvents({int limit = 30}) async {
+    assert(limit <= 50, 'SEC API maximum size is 50');
     try {
       final body = jsonEncode({
         'query': {

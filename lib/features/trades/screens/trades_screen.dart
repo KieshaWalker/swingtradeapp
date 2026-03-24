@@ -154,6 +154,7 @@ class _TradeCard extends ConsumerWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => context.push('/trades/${trade.id}', extra: trade),
+        onLongPress: () => context.push('/ticker/${trade.ticker}'),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

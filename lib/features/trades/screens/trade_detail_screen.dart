@@ -56,6 +56,11 @@ class TradeDetailScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Text('${trade.ticker} ${trade.strategy.label}'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.candlestick_chart_outlined),
+            tooltip: 'Ticker Profile',
+            onPressed: () => context.push('/ticker/${trade.ticker}'),
+          ),
           if (trade.status == TradeStatus.open)
             TextButton.icon(
               onPressed: () => _showCloseDialog(context, ref),
