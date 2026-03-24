@@ -45,7 +45,7 @@ import '../features/trades/screens/add_trade_screen.dart';
 import '../features/trades/screens/trade_detail_screen.dart';
 import '../features/ticker_profile/screens/ticker_profile_screen.dart';
 import '../features/trades/screens/trades_screen.dart';
-
+import '../features/ticker_profile/screens/ticker_profile_screen.dart';
 // Shell scaffold with bottom nav bar
 class _AppShell extends StatelessWidget {
   final Widget child;
@@ -210,6 +210,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           symbol: state.pathParameters['symbol']!,
         ),
       ),
+      
     ],
   );
 });
