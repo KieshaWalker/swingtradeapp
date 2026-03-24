@@ -19,6 +19,7 @@
 // =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/app_config.dart';
 
 final supabaseClientProvider = Provider<SupabaseClient>(
   (ref) => Supabase.instance.client,
@@ -41,7 +42,11 @@ class AuthNotifier extends AsyncNotifier<void> {
   Future<void> signUp({required String email, required String password}) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(
-      () => _client.auth.signUp(email: email, password: password),
+      () => _client.auth.signUp(
+        email: email,
+        password: password,
+        emailRedirectTo: '${AppConfig.appUrl}/auth/callback',
+      ),
     );
   }
 

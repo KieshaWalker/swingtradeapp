@@ -48,18 +48,23 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
           email: _emailController.text.trim(),
           password: _passwordController.text,
         );
+    if (!mounted) return;
     final authState = ref.read(authNotifierProvider);
-    if (authState.hasError && mounted) {
+    if (authState.hasError) {
+      final err = authState.error;
+      final message = err is Exception
+          ? err.toString().replaceFirst('Exception: ', '')
+          : err.toString();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(authState.error.toString()),
+          content: Text(message),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
-    } else if (!authState.isLoading && mounted) {
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Account created! Check your email to confirm.'),
+          content: Text('Check your email to confirm your account.'),
         ),
       );
       context.go('/login');

@@ -49,14 +49,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           email: _emailController.text.trim(),
           password: _passwordController.text,
         );
+    if (!mounted) return;
     final authState = ref.read(authNotifierProvider);
-    if (authState.hasError && mounted) {
+    if (authState.hasError) {
+      final err = authState.error;
+      final message = err is Exception
+          ? err.toString().replaceFirst('Exception: ', '')
+          : err.toString();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(authState.error.toString()),
+          content: Text(message),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );
+    } else {
+      context.go('/');
     }
   }
 
