@@ -17,6 +17,7 @@
 //       signIn(email, pw) → called from LoginScreen
 //       signOut()         → called from DashboardScreen logout button
 // =============================================================================
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/app_config.dart';
@@ -52,9 +53,16 @@ class AuthNotifier extends AsyncNotifier<void> {
 
   Future<void> signIn({required String email, required String password}) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(
-      () => _client.auth.signInWithPassword(email: email, password: password),
-    );
+    state = await AsyncValue.guard(() async {
+      final res = await _client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      debugPrint('[Auth] signIn result — user: ${res.user?.email}, session: ${res.session != null}');
+    });
+    if (state is AsyncError) {
+      debugPrint('[Auth] signIn error: ${(state as AsyncError).error}');
+    }
   }
 
   Future<void> signOut() async {

@@ -2,7 +2,7 @@
 // core/router.dart — Navigation & route definitions
 // =============================================================================
 // Widgets defined here:
-//   • _AppShell       — persistent scaffold with 5-tab NavigationBar;
+//   • _AppShell       — persistent scaffold with 6-tab NavigationBar;
 //                       wraps every main-feature screen
 //   • _AuthCallbackScreen — loading screen shown while Supabase exchanges
 //                           the email-link token; auto-redirects on auth event
@@ -11,18 +11,19 @@
 //   • routerProvider  — GoRouter instance; consumed by App in main.dart
 //
 // Route map:
-//   /login             → LoginScreen      (features/auth)
-//   /signup            → SignupScreen     (features/auth)
+//   /login             → LoginScreen           (features/auth)
+//   /signup            → SignupScreen          (features/auth)
 //   /auth/callback     → _AuthCallbackScreen
-//   /                  → DashboardScreen  (features/dashboard)   [tab 0]
-//   /trades            → TradesScreen     (features/trades)      [tab 1]
-//   /trades/add        → AddTradeScreen   (features/trades)
-//   /trades/:id        → TradeDetailScreen(features/trades) — receives Trade via extra
-//   /calculator        → CalculatorScreen (features/calculator)  [tab 2]
-//   /journal           → JournalScreen    (features/journal)     [tab 3]
-//   /journal/add       → AddJournalScreen (features/journal)
-//   /research          → ResearchScreen   (features/research)    [tab 4]
-//   /ticker/:symbol    → TickerProfileScreen (features/ticker_profile) — no shell
+//   /                  → DashboardScreen       (features/dashboard)    [tab 0]
+//   /trades            → TradesScreen          (features/trades)       [tab 1]
+//   /trades/add        → AddTradeScreen        (features/trades)
+//   /trades/:id        → TradeDetailScreen     (features/trades) — extra: Trade
+//   /calculator        → CalculatorScreen      (features/calculator)   [tab 2]
+//   /journal           → JournalScreen         (features/journal)      [tab 3]
+//   /journal/add       → AddJournalScreen      (features/journal)
+//   /economy           → EconomyPulseScreen    (features/economy)       [tab 4]
+//   /ticker            → TickerDashboardScreen (features/ticker_profile)[tab 5]
+//   /ticker/:symbol    → TickerProfileScreen   (features/ticker_profile) — no shell
 //
 // Auth guard (redirect):
 //   Unauthenticated users → /login
@@ -36,15 +37,17 @@ import '../features/auth/providers/auth_provider.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/signup_screen.dart';
 import '../features/calculator/screens/calculator_screen.dart';
+import '../features/economy/screens/economy_pulse_screen.dart';
 import '../features/dashboard/screens/dashboard_screen.dart';
 import '../features/journal/screens/add_journal_screen.dart';
 import '../features/journal/screens/journal_screen.dart';
-import '../features/research/screens/research_screen.dart';
+import '../features/ticker_profile/screens/ticker_dashboard_screen.dart';
+import '../features/ticker_profile/screens/ticker_profile_screen.dart';
 import '../features/trades/models/trade.dart';
 import '../features/trades/screens/add_trade_screen.dart';
 import '../features/trades/screens/trade_detail_screen.dart';
-import '../features/ticker_profile/screens/ticker_profile_screen.dart';
 import '../features/trades/screens/trades_screen.dart';
+
 // Shell scaffold with bottom nav bar
 class _AppShell extends StatelessWidget {
   final Widget child;
@@ -71,7 +74,9 @@ class _AppShell extends StatelessWidget {
             case 3:
               GoRouter.of(context).go('/journal');
             case 4:
-              GoRouter.of(context).go('/research');
+              GoRouter.of(context).go('/economy');
+            case 5:
+              GoRouter.of(context).go('/ticker');
           }
         },
         destinations: const [
@@ -96,9 +101,14 @@ class _AppShell extends StatelessWidget {
             label: 'Journal',
           ),
           NavigationDestination(
-            icon: Icon(Icons.find_in_page_outlined),
-            selectedIcon: Icon(Icons.find_in_page),
-            label: 'Research',
+            icon: Icon(Icons.bar_chart_outlined),
+            selectedIcon: Icon(Icons.bar_chart),
+            label: 'Economy',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.candlestick_chart_outlined),
+            selectedIcon: Icon(Icons.candlestick_chart),
+            label: 'Tickers',
           ),
         ],
       ),
@@ -110,7 +120,8 @@ int _shellIndex(String location) {
   if (location.startsWith('/trades')) return 1;
   if (location.startsWith('/calculator')) return 2;
   if (location.startsWith('/journal')) return 3;
-  if (location.startsWith('/research')) return 4;
+  if (location.startsWith('/economy')) return 4;
+  if (location == '/ticker') return 5;
   return 0;
 }
 
@@ -125,8 +136,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuthRoute = location == '/login' || location == '/signup';
       final isCallback = location == '/auth/callback';
 
-      // After Supabase exchanges the token, redirect to the desired landing page.
-      // Change '/' below to any route (e.g. '/trades') to land somewhere else.
       if (isCallback) return isAuthed ? '/' : null;
       if (!isAuthed && !isAuthRoute) return '/login';
       if (isAuthed && isAuthRoute) return '/';
@@ -194,22 +203,35 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
+      // Economy Pulse — tab 4
       GoRoute(
-        path: '/research',
+        path: '/economy',
         pageBuilder: (context, state) => NoTransitionPage(
           child: _AppShell(
             currentIndex: 4,
-            child: const ResearchScreen(),
+            child: const EconomyPulseScreen(),
           ),
         ),
       ),
+
+      // Tickers — dashboard (tab 5) + full-screen profile (no shell)
       GoRoute(
-        path: '/ticker/:symbol',
-        builder: (_, state) => TickerProfileScreen(
-          symbol: state.pathParameters['symbol']!,
+        path: '/ticker',
+        pageBuilder: (context, state) => NoTransitionPage(
+          child: _AppShell(
+            currentIndex: 5,
+            child: const TickerDashboardScreen(),
+          ),
         ),
+        routes: [
+          GoRoute(
+            path: ':symbol',
+            builder: (_, state) => TickerProfileScreen(
+              symbol: state.pathParameters['symbol']!,
+            ),
+          ),
+        ],
       ),
-      
     ],
   );
 });

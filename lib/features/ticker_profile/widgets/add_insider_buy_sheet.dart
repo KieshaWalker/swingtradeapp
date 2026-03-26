@@ -138,7 +138,7 @@ class _AddInsiderBuySheetState extends ConsumerState<AddInsiderBuySheet> {
             items: InsiderTransactionType.values
                 .map((t) => DropdownMenuItem(
                       value: t,
-                      child: Text(t.name[0].toUpperCase() + t.name.substring(1)),
+                      child: Text(t.label),
                     ))
                 .toList(),
             onChanged: (v) => setState(() => _txType = v!),

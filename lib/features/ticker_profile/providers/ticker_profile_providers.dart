@@ -1,29 +1,56 @@
 // =============================================================================
 // features/ticker_profile/providers/ticker_profile_providers.dart
 // =============================================================================
-// Tier 1 — Raw Supabase fetchers (FutureProvider.family):
-//   tickerNotesProvider(symbol)         — ticker_profile_notes rows
-//   tickerSRLevelsProvider(symbol)      — ticker_support_resistance rows
-//   tickerInsiderBuysProvider(symbol)   — ticker_insider_buys rows
-//   tickerEarningsReactionsProvider(s)  — ticker_earnings_reactions rows
+// Data sources used in this file:
 //
-// Tier 2 — Derived (Provider.family, no new fetches):
-//   tickerTradesProvider(symbol)        — filtered from tradesProvider
-//   tickerAnalyticsProvider(symbol)     — TickerTradeAnalytics.compute()
-//   activeSRLevelsProvider(symbol)      — active levels only
+//   ── SUPABASE (user's own data, RLS-scoped) ──────────────────────────────
+//   tickerNotesProvider          → table: ticker_profile_notes
+//   tickerSRLevelsProvider       → table: ticker_support_resistance
+//   tickerInsiderBuysProvider    → table: ticker_insider_buys
+//   tickerEarningsReactionsProvider → table: ticker_earnings_reactions
+//   tickerTradesProvider         → derived from tradesProvider (table: trades)
 //
-// Tier 3 — Timeline (Provider.family, merges 6 async sources):
-//   tickerTimelineProvider(symbol)      — AsyncValue<List<TickerTimelineEvent>>
+//   ── SEC EDGAR via secfilingdata.com ─────────────────────────────────────
+//   secFilingsForTickerProvider  → POST /live-query-api
+//                                  ticker:{symbol} AND formType:(10-K OR 10-Q OR 8-K OR 4)
+//                                  feeds into Timeline tab (secFiling events)
+//
+//   ── KALSHI (not yet integrated) ─────────────────────────────────────────
+//   TODO: add kalshiMarketProvider(symbol) → GET /markets?ticker={symbol}
+//         would feed prediction market prices into the Timeline and Overview tabs
+//
+// Tier 1 — Raw Supabase fetchers (FutureProvider.family)
+// Tier 2 — Derived (Provider.family, no new fetches)
+// Tier 3 — Timeline assembly (merges all 6 sources chronologically)
 //
 // All providers are invalidated by TickerProfileNotifier after mutations.
 // =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../trades/models/trade.dart';
 import '../../trades/providers/trades_provider.dart';
 import '../../../services/sec/sec_providers.dart';
 import '../models/ticker_profile_models.dart';
 
+// ─── Watched tickers ─────────────────────────────────────────────────────────
+// Tickers saved via search (independent of trades table).
+// Merged with trade-derived symbols in TickerDashboardScreen.
+
+final watchedTickersProvider = FutureProvider<List<String>>((ref) async {
+  final client = ref.watch(supabaseClientProvider);
+  final user = client.auth.currentUser;
+  if (user == null) return [];
+  final rows = await client
+      .from('watched_tickers')
+      .select('ticker')
+      .eq('user_id', user.id)
+      .order('added_at', ascending: false);
+  return (rows as List).map((r) => r['ticker'] as String).toList();
+});
+
 // ─── Tier 1: Raw Supabase fetchers ───────────────────────────────────────────
+// All four providers below read from Supabase (user-scoped via RLS).
+// None of these hit external APIs — data is entered manually by the user.
 
 final tickerNotesProvider =
     FutureProvider.family<List<TickerProfileNote>, String>((ref, symbol) async {
@@ -97,7 +124,7 @@ final tickerEarningsReactionsProvider =
 
 // Trades for this ticker — derived from the global tradesProvider (client-side filter)
 final tickerTradesProvider =
-    Provider.family((ref, String symbol) {
+    Provider.family<AsyncValue<List<Trade>>, String>((ref, symbol) {
   return ref.watch(tradesProvider).whenData(
         (all) => all
             .where((t) =>
@@ -163,8 +190,8 @@ final tickerTimelineProvider =
 
   final events = <TickerTimelineEvent>[];
 
-  // Trades
-  for (final t in tradesAsync.valueOrNull ?? []) {
+  // SOURCE: Supabase — trades table (user's own trade records)
+  for (final Trade t in (tradesAsync.valueOrNull ?? []).cast<Trade>()) {
     events.add(TickerTimelineEvent(
       timestamp: t.openedAt,
       type: TimelineEventType.tradeOpened,
@@ -186,7 +213,7 @@ final tickerTimelineProvider =
     }
   }
 
-  // Notes
+  // SOURCE: Supabase — ticker_profile_notes table (user-entered observations)
   for (final n in notesAsync.valueOrNull ?? []) {
     events.add(TickerTimelineEvent(
       timestamp: n.createdAt,
@@ -196,7 +223,9 @@ final tickerTimelineProvider =
     ));
   }
 
-  // SEC filings
+  // SOURCE: SEC EDGAR via secfilingdata.com — POST /live-query-api
+  //         query: ticker:{symbol} AND formType:(10-K OR 10-Q OR 8-K OR 4)
+  //         auth: Authorization header (SecConfig.apiKey)
   for (final f in secAsync.valueOrNull ?? []) {
     events.add(TickerTimelineEvent(
       timestamp: f.filedAt,
@@ -206,7 +235,8 @@ final tickerTimelineProvider =
     ));
   }
 
-  // Earnings reactions
+  // SOURCE: Supabase — ticker_earnings_reactions table (user-logged post-earnings data)
+  //         EPS estimate pre-fill comes from FMP /earnings-calendar (tickerNextEarningsProvider)
   for (final e in earningsAsync.valueOrNull ?? []) {
     final dir = e.direction ?? 'flat';
     final pct = e.movePct != null
@@ -220,7 +250,7 @@ final tickerTimelineProvider =
     ));
   }
 
-  // S/R levels
+  // SOURCE: Supabase — ticker_support_resistance table (user-marked price levels)
   for (final l in srAsync.valueOrNull ?? []) {
     events.add(TickerTimelineEvent(
       timestamp: l.notedAt,
@@ -240,7 +270,8 @@ final tickerTimelineProvider =
     }
   }
 
-  // Insider buys
+  // SOURCE: Supabase — ticker_insider_buys table (user-curated from SEC Form 4 filings)
+  //         raw Form 4 discovery comes from SEC tab (secFilingsForTickerProvider, formType:4)
   for (final b in insiderAsync.valueOrNull ?? []) {
     final val = b.totalValue != null
         ? ' (\$${(b.totalValue! / 1000).toStringAsFixed(0)}k)'
@@ -248,7 +279,7 @@ final tickerTimelineProvider =
     events.add(TickerTimelineEvent(
       timestamp: b.filedAt,
       type: TimelineEventType.insiderBuy,
-      summary: '${b.insiderName} bought ${b.shares}sh$val',
+      summary: '${b.insiderName} · ${b.transactionType.label} ${b.shares}sh$val',
       insiderBuy: b,
     ));
   }

@@ -140,7 +140,18 @@ class SupportResistanceLevel {
 // INSIDER BUY
 // ─────────────────────────────────────────────────────────────────────────────
 
-enum InsiderTransactionType { purchase, exercise, gift, other }
+enum InsiderTransactionType { purchase, sale, exercise, gift, taxWithholding, other }
+
+extension InsiderTransactionTypeLabel on InsiderTransactionType {
+  String get label => switch (this) {
+        InsiderTransactionType.purchase => 'Purchase',
+        InsiderTransactionType.sale => 'Sale',
+        InsiderTransactionType.exercise => 'Exercise',
+        InsiderTransactionType.gift => 'Gift',
+        InsiderTransactionType.taxWithholding => 'Tax Withholding',
+        InsiderTransactionType.other => 'Other',
+      };
+}
 
 class TickerInsiderBuy {
   final String id;
@@ -192,10 +203,7 @@ class TickerInsiderBuy {
             ? DateTime.parse(json['transaction_date'] as String)
             : null,
         accessionNo: json['accession_no'] as String?,
-        transactionType: InsiderTransactionType.values.firstWhere(
-          (t) => t.name == json['transaction_type'],
-          orElse: () => InsiderTransactionType.purchase,
-        ),
+        transactionType: _txTypeFromDb(json['transaction_type'] as String),
         notes: json['notes'] as String?,
       );
 
@@ -210,10 +218,23 @@ class TickerInsiderBuy {
         'transaction_date':
             transactionDate?.toIso8601String().split('T').first,
         'accession_no': accessionNo,
-        'transaction_type': transactionType.name,
+        'transaction_type': _txTypeToDb(transactionType),
         'notes': notes,
       };
 }
+
+String _txTypeToDb(InsiderTransactionType t) => switch (t) {
+      InsiderTransactionType.taxWithholding => 'tax_withholding',
+      _ => t.name,
+    };
+
+InsiderTransactionType _txTypeFromDb(String s) => switch (s) {
+      'tax_withholding' => InsiderTransactionType.taxWithholding,
+      _ => InsiderTransactionType.values.firstWhere(
+            (t) => t.name == s,
+            orElse: () => InsiderTransactionType.other,
+          ),
+    };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EARNINGS REACTION

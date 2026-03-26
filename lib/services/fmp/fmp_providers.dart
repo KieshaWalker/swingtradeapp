@@ -1,19 +1,34 @@
 // =============================================================================
 // services/fmp/fmp_providers.dart — Riverpod providers for FMP data
 // =============================================================================
-// Providers & where they are watched:
+// All providers below call Financial Modeling Prep (FMP) REST API.
+// Base URL : https://financialmodelingprep.com/stable  (FmpConfig.baseUrl)
+// Auth     : ?apikey=  query param                     (FmpConfig.apiKey)
+// Docs     : https://site.financialmodelingprep.com/developer/docs
 //
-//   fmpServiceProvider        — FmpService singleton; used by all providers below
+//   fmpServiceProvider                — FmpService singleton
 //
-//   quoteProvider(symbol)     → TradeDetailScreen: _LiveQuoteCard (live price card)
-//                             → DashboardScreen:   _OpenTradeRow  (price in subtitle)
+//   quoteProvider(symbol)             GET /quote?symbol=
+//     → TickerDashboardScreen         live price + change% on each ticker card
+//     → TickerProfileScreen AppBar    price subtitle
+//     → TradeDetailScreen             _LiveQuoteCard
+//     → DashboardScreen               _OpenTradeRow subtitle
 //
-//   quotesProvider(symbols)   → available for batch quote lookups (not used yet)
+//   quotesProvider(symbols)           GET /quote?symbol=A,B,C  (batch)
+//     → available for future batch lookups
 //
-//   tickerSearchProvider(q)   → AddTradeScreen: _TickerAutocomplete
-//                               shows symbol/name/exchange dropdown as user types
+//   tickerSearchProvider(query)       GET /search-symbol?query=
+//     → AddTradeScreen                _TickerAutocomplete dropdown
+//     → TickerDashboardScreen         _TickerSearchDialog
 //
-//   stockProfileProvider(sym) → available for sector/industry display (not used yet)
+//   stockProfileProvider(symbol)      GET /profile?symbol=
+//     → available for sector/industry display (not rendered yet)
+//
+//   tickerHistoricalPricesProvider(s) GET /historical-price-eod/full?symbol=&from=&to=
+//     → TickerProfileScreen           price history chart (not yet rendered)
+//
+//   tickerNextEarningsProvider(s)     GET /earnings-calendar?symbol=&from=&to=
+//     → TickerProfileScreen           Overview tab — next earnings date card
 // =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'fmp_models.dart';
@@ -49,6 +64,11 @@ final stockProfileProvider =
 final tickerHistoricalPricesProvider =
     FutureProvider.family<List<FmpHistoricalPrice>, String>((ref, symbol) {
   return ref.watch(fmpServiceProvider).getHistoricalPrices(symbol);
+});
+
+// All economy pulse data — EconomyPulseScreen
+final economyPulseProvider = FutureProvider<EconomyPulseData>((ref) {
+  return ref.watch(fmpServiceProvider).getEconomyPulse();
 });
 
 // Next scheduled earnings date — TickerProfileScreen Overview tab

@@ -132,6 +132,118 @@ class FmpService {
     }
   }
 
+  /// Historical monthly data points for an economic indicator.
+  /// Endpoint: GET /economic-indicators?name={name}&limit={months}
+  /// Returns oldest-first for charting.
+  Future<List<EconomicIndicatorPoint>> getEconomicIndicatorHistory(
+    String name, {
+    int months = 24,
+  }) async {
+    try {
+      final res = await _client.get(
+          _url('/economic-indicators', {'name': name, 'limit': '$months'}));
+      if (res.statusCode != 200) return [];
+      final data = jsonDecode(res.body);
+      if (data is List) {
+        final points = data
+            .map((e) => EconomicIndicatorPoint.fromJson(
+                e as Map<String, dynamic>, name))
+            .toList();
+        // FMP returns newest-first; reverse so chart reads left→right
+        return points.reversed.toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Latest value for an economic indicator by FMP identifier name.
+  /// Endpoint: GET /economic-indicators?name={name}&limit=1
+  Future<EconomicIndicatorPoint?> getEconomicIndicator(String name) async {
+    try {
+      final res = await _client
+          .get(_url('/economic-indicators', {'name': name, 'limit': '1'}));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      if (data is List && data.isNotEmpty) {
+        return EconomicIndicatorPoint.fromJson(
+            data.first as Map<String, dynamic>, name);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Latest treasury yield curve snapshot.
+  /// Endpoint: GET /treasury-rates?limit=1
+  Future<TreasuryRates?> getLatestTreasuryRates() async {
+    try {
+      final res =
+          await _client.get(_url('/treasury-rates', {'limit': '1'}));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      if (data is List && data.isNotEmpty) {
+        return TreasuryRates.fromJson(data.first as Map<String, dynamic>);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fetches all data needed for the Economy Pulse screen in parallel.
+  Future<EconomyPulseData> getEconomyPulse() async {
+    // Asset symbols: markets + commodities
+    final assetsFuture = getQuotes(
+        ['SPY', 'QQQ', 'VIXY', 'UUP', 'GC=F', 'SI=F', 'CL=F', 'NG=F']);
+
+    // Economic indicators fired in parallel
+    final treasuryFuture = getLatestTreasuryRates();
+    final fedFuture = getEconomicIndicator('federalFunds');
+    final unempFuture = getEconomicIndicator('unemploymentRate');
+    final nfpFuture = getEconomicIndicator('totalNonfarmPayrolls');
+    final claimsFuture = getEconomicIndicator('initialJoblessClaims');
+    final cpiFuture = getEconomicIndicator('CPI');
+    final gdpFuture = getEconomicIndicator('realGDP');
+    final retailFuture = getEconomicIndicator('retailSales');
+    final sentimentFuture = getEconomicIndicator('consumerSentiment');
+    final mortgageFuture =
+        getEconomicIndicator('30YearFixedRateMortgageAverage');
+    final housingFuture = getEconomicIndicator(
+        'newPrivatelyOwnedHousingUnitsStartedTotalUnits');
+    final recessionFuture =
+        getEconomicIndicator('smoothedUSRecessionProbabilities');
+
+    final assets = await assetsFuture;
+    final assetMap = <String, StockQuote>{for (final q in assets) q.symbol: q};
+
+    return EconomyPulseData(
+      sp500: assetMap['SPY'],
+      nasdaq: assetMap['QQQ'],
+      vix: assetMap['VIXY'],
+      dxy: assetMap['UUP'],
+      gold: assetMap['GC=F'],
+      silver: assetMap['SI=F'],
+      wtiCrude: assetMap['CL=F'],
+      natGas: assetMap['NG=F'],
+      treasury: await treasuryFuture,
+      fedFunds: await fedFuture,
+      unemployment: await unempFuture,
+      nfp: await nfpFuture,
+      initialClaims: await claimsFuture,
+      cpi: await cpiFuture,
+      gdp: await gdpFuture,
+      retailSales: await retailFuture,
+      consumerSentiment: await sentimentFuture,
+      mortgageRate: await mortgageFuture,
+      housingStarts: await housingFuture,
+      recessionProb: await recessionFuture,
+      fetchedAt: DateTime.now(),
+    );
+  }
+
   /// Next scheduled earnings date for [symbol] (returns first upcoming entry).
   Future<FmpEarningsDate?> getNextEarnings(String symbol) async {
     try {

@@ -105,6 +105,117 @@ class StockProfile {
       );
 }
 
+// ─── Economy Pulse additions ──────────────────────────────────────────────
+
+// Single data point from FMP /economic-indicators
+class EconomicIndicatorPoint {
+  final String identifier;
+  final DateTime date;
+  final double value;
+
+  const EconomicIndicatorPoint({
+    required this.identifier,
+    required this.date,
+    required this.value,
+  });
+
+  factory EconomicIndicatorPoint.fromJson(
+      Map<String, dynamic> json, String identifier) =>
+      EconomicIndicatorPoint(
+        identifier: identifier,
+        date: DateTime.parse(json['date'] as String),
+        value: (json['value'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+// Latest treasury yield curve from FMP /treasury-rates
+class TreasuryRates {
+  final DateTime date;
+  final double? year1;
+  final double? year2;
+  final double? year5;
+  final double? year10;
+  final double? year20;
+  final double? year30;
+
+  const TreasuryRates({
+    required this.date,
+    this.year1,
+    this.year2,
+    this.year5,
+    this.year10,
+    this.year20,
+    this.year30,
+  });
+
+  factory TreasuryRates.fromJson(Map<String, dynamic> json) => TreasuryRates(
+        date: DateTime.parse(json['date'] as String),
+        year1: (json['year1'] as num?)?.toDouble(),
+        year2: (json['year2'] as num?)?.toDouble(),
+        year5: (json['year5'] as num?)?.toDouble(),
+        year10: (json['year10'] as num?)?.toDouble(),
+        year20: (json['year20'] as num?)?.toDouble(),
+        year30: (json['year30'] as num?)?.toDouble(),
+      );
+}
+
+// Aggregated data model for the Economy Pulse screen
+class EconomyPulseData {
+  // Market snapshot (live quotes)
+  final StockQuote? sp500;
+  final StockQuote? nasdaq;
+  final StockQuote? vix;
+  final StockQuote? dxy;
+
+  // Commodities (live quotes)
+  final StockQuote? gold;
+  final StockQuote? silver;
+  final StockQuote? wtiCrude;
+  final StockQuote? natGas;
+
+  // Treasury yield curve
+  final TreasuryRates? treasury;
+
+  // Economic indicators (lagging, from /economic-indicators)
+  final EconomicIndicatorPoint? fedFunds;
+  final EconomicIndicatorPoint? unemployment;
+  final EconomicIndicatorPoint? nfp;
+  final EconomicIndicatorPoint? initialClaims;
+  final EconomicIndicatorPoint? cpi;
+  final EconomicIndicatorPoint? gdp;
+  final EconomicIndicatorPoint? retailSales;
+  final EconomicIndicatorPoint? consumerSentiment;
+  final EconomicIndicatorPoint? mortgageRate;
+  final EconomicIndicatorPoint? housingStarts;
+  final EconomicIndicatorPoint? recessionProb;
+
+  final DateTime fetchedAt;
+
+  const EconomyPulseData({
+    this.sp500,
+    this.nasdaq,
+    this.vix,
+    this.dxy,
+    this.gold,
+    this.silver,
+    this.wtiCrude,
+    this.natGas,
+    this.treasury,
+    this.fedFunds,
+    this.unemployment,
+    this.nfp,
+    this.initialClaims,
+    this.cpi,
+    this.gdp,
+    this.retailSales,
+    this.consumerSentiment,
+    this.mortgageRate,
+    this.housingStarts,
+    this.recessionProb,
+    required this.fetchedAt,
+  });
+}
+
 // ─── Ticker Profile additions ─────────────────────────────────────────────
 
 // Daily OHLCV candle — used in TickerProfileScreen price history chart.

@@ -23,6 +23,31 @@ class TickerProfileNotifier extends AsyncNotifier<void> {
   @override
   Future<void> build() async {}
 
+  // ─── Watched tickers ───────────────────────────────────────────────────────
+
+  Future<void> addWatchedTicker(String ticker) async {
+    final client = ref.read(supabaseClientProvider);
+    final user = client.auth.currentUser;
+    if (user == null) return;
+    await client.from('watched_tickers').upsert(
+      {'user_id': user.id, 'ticker': ticker.toUpperCase()},
+      onConflict: 'user_id,ticker',
+    );
+    ref.invalidate(watchedTickersProvider);
+  }
+
+  Future<void> removeWatchedTicker(String ticker) async {
+    final client = ref.read(supabaseClientProvider);
+    final user = client.auth.currentUser;
+    if (user == null) return;
+    await client
+        .from('watched_tickers')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('ticker', ticker.toUpperCase());
+    ref.invalidate(watchedTickersProvider);
+  }
+
   // ─── Notes ─────────────────────────────────────────────────────────────────
 
   Future<void> addNote(String symbol, String body, List<String> tags) async {
@@ -95,6 +120,21 @@ class TickerProfileNotifier extends AsyncNotifier<void> {
         'user_id': user.id,
         ...buy.toJson(),
       });
+      ref.invalidate(tickerInsiderBuysProvider(symbol));
+    });
+  }
+
+  Future<void> addInsiderBuys(
+      String symbol, List<TickerInsiderBuy> buys) async {
+    if (buys.isEmpty) return;
+    final client = ref.read(supabaseClientProvider);
+    final user = client.auth.currentUser;
+    if (user == null) return;
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      await client.from('ticker_insider_buys').insert(
+            buys.map((b) => {'user_id': user.id, ...b.toJson()}).toList(),
+          );
       ref.invalidate(tickerInsiderBuysProvider(symbol));
     });
   }
