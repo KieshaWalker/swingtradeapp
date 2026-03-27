@@ -84,7 +84,7 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF161B22),
+      backgroundColor: AppTheme.elevatedColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -714,7 +714,7 @@ class _InsiderActivityChart extends StatelessWidget {
               ),
               barTouchData: BarTouchData(
                 touchTooltipData: BarTouchTooltipData(
-                  getTooltipColor: (_) => const Color(0xFF1C2128),
+                  getTooltipColor: (_) => AppTheme.elevatedColor,
                   getTooltipItem: (group, _, rod, rodIdx) {
                     if (rod.toY == 0) return null;
                     final label = rodIdx == 0 ? 'Buy' : 'Sell';
@@ -1044,9 +1044,9 @@ class _InsiderStatTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF1C2128),
+        color: AppTheme.cardColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF30363D)),
+        border: Border.all(color: AppTheme.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1294,7 +1294,7 @@ class _EarningsReactionCard extends ConsumerWidget {
               onPressed: () => showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
-                backgroundColor: const Color(0xFF161B22),
+                backgroundColor: AppTheme.elevatedColor,
                 shape: const RoundedRectangleBorder(
                   borderRadius:
                       BorderRadius.vertical(top: Radius.circular(16)),
@@ -1426,14 +1426,14 @@ class _TimelineEventTile extends StatelessWidget {
             ? AppTheme.profitColor
             : AppTheme.lossColor,
         TimelineEventType.tradeOpened => AppTheme.neutralColor,
-        TimelineEventType.note => const Color(0xFF58A6FF),
-        TimelineEventType.secFiling => const Color(0xFFE3B341),
+        TimelineEventType.note => const Color(0xFF7EC8E3),       // sky-blue
+        TimelineEventType.secFiling => const Color(0xFFFFD166),   // golden-yellow
         TimelineEventType.earningsReaction =>
           event.earningsReaction?.direction == 'up'
               ? AppTheme.profitColor
               : AppTheme.lossColor,
         TimelineEventType.insiderBuy => AppTheme.profitColor,
-        TimelineEventType.srLevelAdded => const Color(0xFF79C0FF),
+        TimelineEventType.srLevelAdded => const Color(0xFFBBABFF), // bright lavender
         TimelineEventType.srLevelInvalidated => AppTheme.neutralColor,
       };
 
@@ -1471,7 +1471,7 @@ class _TimelineEventTile extends StatelessWidget {
                 child: Icon(_icon(), size: 16, color: _dotColor()),
               ),
               Container(
-                  width: 2, height: 32, color: const Color(0xFF30363D)),
+                  width: 2, height: 32, color: AppTheme.borderColor),
             ],
           ),
           const SizedBox(width: 12),

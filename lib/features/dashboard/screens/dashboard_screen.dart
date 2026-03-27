@@ -30,6 +30,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/fmp/fmp_providers.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../trades/models/trade.dart';
@@ -52,6 +53,7 @@ class DashboardScreen extends ConsumerWidget {
             onPressed: () =>
                 ref.read(authNotifierProvider.notifier).signOut(),
           ),
+          const AppMenuButton(),
         ],
       ),
       body: asyncTrades.when(

@@ -48,82 +48,16 @@ import '../features/trades/screens/add_trade_screen.dart';
 import '../features/trades/screens/trade_detail_screen.dart';
 import '../features/trades/screens/trades_screen.dart';
 
-// Shell scaffold with bottom nav bar
+// Thin shell — just provides the route transition wrapper.
+// Navigation is handled by AppMenuButton in each screen's AppBar.
 class _AppShell extends StatelessWidget {
   final Widget child;
-  final int currentIndex;
-
-  const _AppShell({required this.child, required this.currentIndex});
+  const _AppShell({required this.child});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: child,
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: const Color(0xFF161B22),
-        selectedIndex: currentIndex,
-        indicatorColor: const Color(0xFF00C896).withValues(alpha: 0.2),
-        onDestinationSelected: (i) {
-          switch (i) {
-            case 0:
-              GoRouter.of(context).go('/');
-            case 1:
-              GoRouter.of(context).go('/trades');
-            case 2:
-              GoRouter.of(context).go('/calculator');
-            case 3:
-              GoRouter.of(context).go('/journal');
-            case 4:
-              GoRouter.of(context).go('/economy');
-            case 5:
-              GoRouter.of(context).go('/ticker');
-          }
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.show_chart_outlined),
-            selectedIcon: Icon(Icons.show_chart),
-            label: 'Trades',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calculate_outlined),
-            selectedIcon: Icon(Icons.calculate),
-            label: 'Calculator',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.book_outlined),
-            selectedIcon: Icon(Icons.book),
-            label: 'Journal',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart),
-            label: 'Economy',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.candlestick_chart_outlined),
-            selectedIcon: Icon(Icons.candlestick_chart),
-            label: 'Tickers',
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => child;
 }
 
-int _shellIndex(String location) {
-  if (location.startsWith('/trades')) return 1;
-  if (location.startsWith('/calculator')) return 2;
-  if (location.startsWith('/journal')) return 3;
-  if (location.startsWith('/economy')) return 4;
-  if (location == '/ticker') return 5;
-  return 0;
-}
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
@@ -147,23 +81,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/signup', builder: (context, _) => const SignupScreen()),
       GoRoute(path: '/auth/callback', builder: (context, _) => const _AuthCallbackScreen()),
 
-      // Shell routes (with bottom nav)
       GoRoute(
         path: '/',
-        pageBuilder: (context, state) => NoTransitionPage(
-          child: _AppShell(
-            currentIndex: _shellIndex(state.matchedLocation),
-            child: const DashboardScreen(),
-          ),
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: DashboardScreen()),
         ),
       ),
       GoRoute(
         path: '/trades',
-        pageBuilder: (context, state) => NoTransitionPage(
-          child: _AppShell(
-            currentIndex: 1,
-            child: const TradesScreen(),
-          ),
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: TradesScreen()),
         ),
         routes: [
           GoRoute(
@@ -181,20 +108,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/calculator',
-        pageBuilder: (context, state) => NoTransitionPage(
-          child: _AppShell(
-            currentIndex: 2,
-            child: const CalculatorScreen(),
-          ),
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: CalculatorScreen()),
         ),
       ),
       GoRoute(
         path: '/journal',
-        pageBuilder: (context, state) => NoTransitionPage(
-          child: _AppShell(
-            currentIndex: 3,
-            child: const JournalScreen(),
-          ),
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: JournalScreen()),
         ),
         routes: [
           GoRoute(
@@ -203,25 +124,18 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      // Economy Pulse — tab 4
       GoRoute(
         path: '/economy',
-        pageBuilder: (context, state) => NoTransitionPage(
-          child: _AppShell(
-            currentIndex: 4,
-            child: const EconomyPulseScreen(),
-          ),
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: EconomyPulseScreen()),
         ),
       ),
 
-      // Tickers — dashboard (tab 5) + full-screen profile (no shell)
+      // Tickers — dashboard + full-screen profile (no shell)
       GoRoute(
         path: '/ticker',
-        pageBuilder: (context, state) => NoTransitionPage(
-          child: _AppShell(
-            currentIndex: 5,
-            child: const TickerDashboardScreen(),
-          ),
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: TickerDashboardScreen()),
         ),
         routes: [
           GoRoute(

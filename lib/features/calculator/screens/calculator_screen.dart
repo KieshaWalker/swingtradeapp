@@ -27,6 +27,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/app_menu_button.dart';
 
 class CalculatorScreen extends StatefulWidget {
   const CalculatorScreen({super.key});
@@ -56,6 +57,7 @@ class _CalculatorScreenState extends State<CalculatorScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Calculator'),
+        actions: const [AppMenuButton()],
         bottom: TabBar(
           controller: _tabs,
           indicatorColor: AppTheme.profitColor,
@@ -187,7 +189,7 @@ class _PnLEstimatorState extends State<_PnLEstimator> {
 
         // Results
         if (_costBasis != null) ...[
-          const Divider(color: Color(0xFF30363D)),
+          Divider(color: AppTheme.borderColor),
           const SizedBox(height: 16),
           _ResultRow(
             label: 'Cost Basis',
@@ -388,7 +390,7 @@ class _PositionSizerState extends State<_PositionSizer> {
         const SizedBox(height: 24),
 
         if (_maxRiskDollars != null) ...[
-          const Divider(color: Color(0xFF30363D)),
+          Divider(color: AppTheme.borderColor),
           const SizedBox(height: 16),
           _ResultRow(
             label: 'Max Risk \$',

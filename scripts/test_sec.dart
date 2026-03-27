@@ -13,24 +13,16 @@ import 'package:http/http.dart' as http;
 const baseUrl = 'https://api.secfilingdata.com';
 
 Future<void> main(List<String> args) async {
-  if (args.isEmpty) {
-    print('Usage: dart run scripts/test_sec.dart <SEC_API_KEY> [TICKER]');
-    exit(1);
-  }
+ 
 
   final apiKey = args[0];
   final ticker = args.length > 1 ? args[1] : 'AAPL';
 
-  print('Testing SEC connection...');
-  print('  Endpoint : $baseUrl/live-query-api');
-  print('  Ticker   : $ticker');
-  print('');
 
   final client = http.Client();
 
   try {
     // --- Test 1: ticker filings ---
-    print('[1] getFilingsForTicker($ticker)');
     final body = jsonEncode({
       'query': {
         'query_string': {

@@ -22,6 +22,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/fmp/fmp_providers.dart';
 import '../../trades/providers/trades_provider.dart';
 import '../providers/ticker_profile_notifier.dart';
@@ -44,6 +45,7 @@ class TickerDashboardScreen extends ConsumerWidget {
             tooltip: 'Find ticker',
             onPressed: () => _showSearch(context),
           ),
+          const AppMenuButton(),
         ],
       ),
       body: tradesAsync.when(
@@ -243,7 +245,7 @@ class _TickerCard extends ConsumerWidget {
               // ── Stats row ────────────────────────────────────────
               if (analytics.totalTrades > 0) ...[
                 const SizedBox(height: 12),
-                const Divider(height: 1, color: Color(0xFF30363D)),
+                Divider(height: 1, color: AppTheme.borderColor),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -301,7 +303,7 @@ class _StatChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: AppTheme.cardColor,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -351,7 +353,7 @@ class _TickerSearchDialogState extends ConsumerState<_TickerSearchDialog> {
     final resultsAsync = ref.watch(tickerSearchProvider(_query));
 
     return Dialog(
-      backgroundColor: const Color(0xFF161B22),
+      backgroundColor: AppTheme.elevatedColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),

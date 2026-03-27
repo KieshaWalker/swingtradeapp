@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/app_menu_button.dart';
 import '../models/journal_entry.dart';
 import '../providers/journal_provider.dart';
 
@@ -33,7 +34,10 @@ class JournalScreen extends ConsumerWidget {
     final asyncEntries = ref.watch(journalProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Journal')),
+      appBar: AppBar(
+        title: const Text('Journal'),
+        actions: const [AppMenuButton()],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/journal/add'),
         icon: const Icon(Icons.edit_outlined),
@@ -157,7 +161,7 @@ class _JournalCard extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1C2230),
+        backgroundColor: AppTheme.elevatedColor,
         title: const Text('Delete Entry?'),
         content: const Text('This cannot be undone.'),
         actions: [

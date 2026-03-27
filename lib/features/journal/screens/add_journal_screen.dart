@@ -126,12 +126,12 @@ class _AddJournalScreenState extends ConsumerState<AddJournalScreen> {
                         decoration: BoxDecoration(
                           color: selected
                               ? AppTheme.profitColor.withValues(alpha: 0.2)
-                              : const Color(0xFF1C2230),
+                              : AppTheme.cardColor,
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: selected
                                 ? AppTheme.profitColor
-                                : const Color(0xFF30363D),
+                                : AppTheme.borderColor,
                           ),
                         ),
                         child: Text(m.emoji,

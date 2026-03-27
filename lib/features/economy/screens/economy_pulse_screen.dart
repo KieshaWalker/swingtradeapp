@@ -1,29 +1,25 @@
 // =============================================================================
 // features/economy/screens/economy_pulse_screen.dart — Economy Pulse tab
 // =============================================================================
-// Displays a real-time macroeconomic dashboard sourced entirely from FMP:
+// Two-tab screen:
+//   Snapshot — real-time macroeconomic dashboard sourced from FMP
+//   Charts   — day-by-day / monthly historical charts from Supabase
 //
-// Sections & data sources:
-//   Market Snapshot   FMP /quote  (SPY, QQQ, VIXY, UUP)
-//   Interest Rates    FMP /treasury-rates + /economic-indicators (federalFunds,
-//                         30YearFixedRateMortgageAverage)
-//   Commodities       FMP /quote  (GC=F, SI=F, CL=F, NG=F)
-//   Labor Market      FMP /economic-indicators  (unemploymentRate,
-//                         totalNonfarmPayrolls, initialJoblessClaims,
-//                         consumerSentiment)
-//   Economy           FMP /economic-indicators  (CPI, realGDP, retailSales,
-//                         smoothedUSRecessionProbabilities)
-//   Housing           FMP /economic-indicators  (30YearFixedRateMortgageAverage,
-//                         newPrivatelyOwnedHousingUnitsStartedTotalUnits)
+// Each time the Snapshot data loads the latest values are upserted into the
+// three Supabase economy snapshot tables so charts accumulate over time.
 //
 // Provider: economyPulseProvider (fmp_providers.dart)
 // Model:    EconomyPulseData     (fmp_models.dart)
+// Storage:  EconomyStorageService via economyStorageServiceProvider
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/app_menu_button.dart';
+import '../../../services/economy/economy_storage_providers.dart';
 import '../../../services/fmp/fmp_models.dart';
 import '../../../services/fmp/fmp_providers.dart';
+import '../widgets/economy_charts_tab.dart';
 
 class EconomyPulseScreen extends ConsumerWidget {
   const EconomyPulseScreen({super.key});
@@ -32,36 +28,59 @@ class EconomyPulseScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final pulseAsync = ref.watch(economyPulseProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Economy Pulse'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: () => ref.invalidate(economyPulseProvider),
-          ),
-        ],
-      ),
-      body: pulseAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.wifi_off_outlined,
-                  size: 48, color: AppTheme.neutralColor),
-              const SizedBox(height: 12),
-              const Text('Could not load economic data'),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: () => ref.invalidate(economyPulseProvider),
-                child: const Text('Retry'),
-              ),
+    // Persist data to Supabase each time a fresh fetch succeeds
+    ref.listen<AsyncValue<EconomyPulseData>>(economyPulseProvider, (_, next) {
+      next.whenData((data) {
+        ref.read(economyStorageServiceProvider).saveEconomyPulse(data);
+      });
+    });
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Economy Pulse'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh',
+              onPressed: () => ref.invalidate(economyPulseProvider),
+            ),
+            const AppMenuButton(),
+          ],
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Snapshot'),
+              Tab(text: 'Charts'),
             ],
           ),
         ),
-        data: (data) => _PulseBody(data: data),
+        body: TabBarView(
+          children: [
+            pulseAsync.when(
+              loading: () =>
+                  const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.wifi_off_outlined,
+                        size: 48, color: AppTheme.neutralColor),
+                    const SizedBox(height: 12),
+                    const Text('Could not load economic data'),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: () => ref.invalidate(economyPulseProvider),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+              data: (data) => _PulseBody(data: data),
+            ),
+            const EconomyChartsTab(),
+          ],
+        ),
       ),
     );
   }
@@ -324,9 +343,9 @@ class _Tile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF1C2128),
+        color: AppTheme.cardColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF30363D)),
+        border: Border.all(color: AppTheme.borderColor),
       ),
       child: child,
     );

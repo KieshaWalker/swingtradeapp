@@ -221,7 +221,7 @@ class TradeDetailScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1C2230),
+        backgroundColor: AppTheme.elevatedColor,
         title: const Text('Close Trade'),
         content: TextField(
           controller: exitCtrl,
@@ -257,7 +257,7 @@ class TradeDetailScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1C2230),
+        backgroundColor: AppTheme.elevatedColor,
         title: const Text('Delete Trade?'),
         content: const Text('This cannot be undone.'),
         actions: [
@@ -468,7 +468,7 @@ class _GreekBox extends StatelessWidget {
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFF0D1117),
+          color: AppTheme.cardColor,
           borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
@@ -556,10 +556,10 @@ class _SecFilingRow extends StatelessWidget {
   const _SecFilingRow({required this.filing});
 
   Color get _typeColor => switch (filing.category) {
-        'earnings' => const Color(0xFF58A6FF),
-        'event' => const Color(0xFFE3B341),
-        'insider' => AppTheme.profitColor,
-        'holder' => const Color(0xFFD2A8FF),
+        'earnings' => const Color(0xFF7EC8E3), // sky-blue
+        'event'    => const Color(0xFFFFD166), // golden-yellow
+        'insider'  => AppTheme.profitColor,    // teal-green
+        'holder'   => const Color(0xFFBBABFF), // bright lavender
         _ => AppTheme.neutralColor,
       };
 

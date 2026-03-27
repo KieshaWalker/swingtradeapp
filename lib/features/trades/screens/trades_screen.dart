@@ -28,6 +28,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/app_menu_button.dart';
 import '../models/trade.dart';
 import '../providers/trades_provider.dart';
 
@@ -59,6 +60,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trade Log'),
+        actions: const [AppMenuButton()],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [

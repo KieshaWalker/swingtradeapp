@@ -230,10 +230,10 @@ class _FilingCard extends StatelessWidget {
   const _FilingCard({required this.filing});
 
   Color get _categoryColor => switch (filing.category) {
-        'earnings' => const Color(0xFF58A6FF),
-        'event' => const Color(0xFFE3B341),
-        'insider' => AppTheme.profitColor,
-        'holder' => const Color(0xFFD2A8FF),
+        'earnings' => const Color(0xFF7EC8E3), // sky-blue
+        'event'    => const Color(0xFFFFD166), // golden-yellow
+        'insider'  => AppTheme.profitColor,    // teal-green
+        'holder'   => const Color(0xFFBBABFF), // bright lavender
         _ => AppTheme.neutralColor,
       };
 

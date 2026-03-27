@@ -158,10 +158,10 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
                         decoration: BoxDecoration(
                           color: selected
                               ? color.withValues(alpha: 0.2)
-                              : const Color(0xFF1C2230),
+                              : AppTheme.cardColor,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: selected ? color : const Color(0xFF30363D),
+                            color: selected ? color : AppTheme.borderColor,
                           ),
                         ),
                         child: Text(
@@ -184,7 +184,7 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
             _SectionLabel('Strategy'),
             DropdownButtonFormField<TradeStrategy>(
               initialValue: _strategy,
-              dropdownColor: const Color(0xFF1C2230),
+              dropdownColor: AppTheme.elevatedColor,
               decoration: const InputDecoration(labelText: 'Strategy *'),
               items: TradeStrategy.values
                   .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
@@ -380,9 +380,9 @@ class _TickerAutocompleteState extends ConsumerState<_TickerAutocomplete> {
               return Container(
                 margin: const EdgeInsets.only(top: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1C2230),
+                  color: AppTheme.elevatedColor,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF30363D)),
+                  border: Border.all(color: AppTheme.borderColor),
                 ),
                 child: Column(
                   children: results.map((r) {
