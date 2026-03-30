@@ -19,7 +19,17 @@ import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/economy/economy_storage_providers.dart';
 import '../../../services/fmp/fmp_models.dart';
 import '../../../services/fmp/fmp_providers.dart';
+import '../../../services/economy/economy_storage_service.dart';
+import '../../../features/economy/providers/api_data_providers.dart';
+import '../../../services/bls/bls_models.dart';
+import '../../../services/bea/bea_models.dart';
+import '../../../services/eia/eia_models.dart';
+import '../../../services/census/census_models.dart';
 import '../widgets/economy_charts_tab.dart';
+import '../widgets/bls_tab.dart';
+import '../widgets/bea_tab.dart';
+import '../widgets/eia_tab.dart';
+import '../widgets/census_tab.dart';
 
 class EconomyPulseScreen extends ConsumerWidget {
   const EconomyPulseScreen({super.key});
@@ -28,15 +38,65 @@ class EconomyPulseScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final pulseAsync = ref.watch(economyPulseProvider);
 
-    // Persist data to Supabase each time a fresh fetch succeeds
+    final storage = ref.read(economyStorageServiceProvider);
+
+    // ── FMP — persist on each fresh fetch ────────────────────────────────────
     ref.listen<AsyncValue<EconomyPulseData>>(economyPulseProvider, (_, next) {
-      next.whenData((data) {
-        ref.read(economyStorageServiceProvider).saveEconomyPulse(data);
-      });
+      next.whenData((data) => storage.saveEconomyPulse(data));
     });
 
+    // ── BLS — persist all series responses ───────────────────────────────────
+    ref.listen<AsyncValue<BlsResponse>>(blsEmploymentProvider,
+        (_, next) => next.whenData(storage.saveBlsResponse));
+    ref.listen<AsyncValue<BlsResponse>>(blsCpiProvider,
+        (_, next) => next.whenData(storage.saveBlsResponse));
+    ref.listen<AsyncValue<BlsResponse>>(blsPpiProvider,
+        (_, next) => next.whenData(storage.saveBlsResponse));
+    ref.listen<AsyncValue<BlsResponse>>(blsJoltsProvider,
+        (_, next) => next.whenData(storage.saveBlsResponse));
+
+    // ── BEA — persist each named series ──────────────────────────────────────
+    ref.listen<AsyncValue<BeaResponse>>(beaGdpProvider,
+        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaGdpPct)));
+    ref.listen<AsyncValue<BeaResponse>>(beaRealGdpProvider,
+        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaRealGdp)));
+    ref.listen<AsyncValue<BeaResponse>>(beaCorePceProvider,
+        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaCorePce)));
+    ref.listen<AsyncValue<BeaResponse>>(beaPersonalIncomeProvider,
+        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaPersonalIncome)));
+    ref.listen<AsyncValue<BeaResponse>>(beaCorporateProfitsProvider,
+        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaCorporateProfits)));
+    ref.listen<AsyncValue<BeaResponse>>(beaNetExportsProvider,
+        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaNetExports)));
+
+    // ── EIA — persist each series ─────────────────────────────────────────────
+    ref.listen<AsyncValue<EiaResponse>>(eiaGasolinePricesProvider,
+        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaGasolinePrice)));
+    ref.listen<AsyncValue<EiaResponse>>(eiaCrudeStocksProvider,
+        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaCrudeStocks)));
+    ref.listen<AsyncValue<EiaResponse>>(eiaCrudeProdProvider,
+        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaCrudeProd)));
+    ref.listen<AsyncValue<EiaResponse>>(eiaNatGasStorageProvider,
+        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaNatGasStorage)));
+    ref.listen<AsyncValue<EiaResponse>>(eiaRefineryUtilProvider,
+        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaRefineryUtil)));
+
+    // ── Census — persist each series ──────────────────────────────────────────
+    ref.listen<AsyncValue<CensusResponse>>(censusRetailSalesProvider,
+        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusRetailTotal)));
+    ref.listen<AsyncValue<CensusResponse>>(censusMotorVehiclesProvider,
+        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusRetailVehicles)));
+    ref.listen<AsyncValue<CensusResponse>>(censusNonStoreProvider,
+        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusRetailNonStore)));
+    ref.listen<AsyncValue<CensusResponse>>(censusConstructionSpendingProvider,
+        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusConstruction)));
+    ref.listen<AsyncValue<CensusResponse>>(censusManufacturingOrdersProvider,
+        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusMfgOrders)));
+    ref.listen<AsyncValue<CensusResponse>>(censusWholesaleSalesProvider,
+        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusWholesale)));
+
     return DefaultTabController(
-      length: 2,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Economy Pulse'),
@@ -44,22 +104,50 @@ class EconomyPulseScreen extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: 'Refresh',
-              onPressed: () => ref.invalidate(economyPulseProvider),
+              onPressed: () {
+                ref.invalidate(economyPulseProvider);
+                ref.invalidate(blsEmploymentProvider);
+                ref.invalidate(blsCpiProvider);
+                ref.invalidate(blsPpiProvider);
+                ref.invalidate(blsJoltsProvider);
+                ref.invalidate(beaGdpProvider);
+                ref.invalidate(beaRealGdpProvider);
+                ref.invalidate(beaCorePceProvider);
+                ref.invalidate(beaPersonalIncomeProvider);
+                ref.invalidate(beaCorporateProfitsProvider);
+                ref.invalidate(beaNetExportsProvider);
+                ref.invalidate(eiaGasolinePricesProvider);
+                ref.invalidate(eiaCrudeStocksProvider);
+                ref.invalidate(eiaCrudeProdProvider);
+                ref.invalidate(eiaNatGasStorageProvider);
+                ref.invalidate(eiaRefineryUtilProvider);
+                ref.invalidate(censusRetailSalesProvider);
+                ref.invalidate(censusMotorVehiclesProvider);
+                ref.invalidate(censusNonStoreProvider);
+                ref.invalidate(censusConstructionSpendingProvider);
+                ref.invalidate(censusManufacturingOrdersProvider);
+                ref.invalidate(censusWholesaleSalesProvider);
+              },
             ),
             const AppMenuButton(),
           ],
           bottom: const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
             tabs: [
               Tab(text: 'Snapshot'),
               Tab(text: 'Charts'),
+              Tab(text: 'BLS'),
+              Tab(text: 'BEA'),
+              Tab(text: 'EIA'),
+              Tab(text: 'Census'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
             pulseAsync.when(
-              loading: () =>
-                  const Center(child: CircularProgressIndicator()),
+              loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -79,6 +167,10 @@ class EconomyPulseScreen extends ConsumerWidget {
               data: (data) => _PulseBody(data: data),
             ),
             const EconomyChartsTab(),
+            const BlsTab(),
+            const BeaTab(),
+            const EiaTab(),
+            const CensusTab(),
           ],
         ),
       ),

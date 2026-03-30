@@ -50,7 +50,8 @@ class StockQuote {
         name: json['name'] as String? ?? '',
         price: (json['price'] as num?)?.toDouble() ?? 0,
         change: (json['change'] as num?)?.toDouble() ?? 0,
-        changePercent: (json['changesPercentage'] as num?)?.toDouble() ?? 0,
+        changePercent: (json['changePercentage'] as num?)?.toDouble()
+            ?? (json['changesPercentage'] as num?)?.toDouble() ?? 0,
         open: (json['open'] as num?)?.toDouble() ?? 0,
         dayHigh: (json['dayHigh'] as num?)?.toDouble() ?? 0,
         dayLow: (json['dayLow'] as num?)?.toDouble() ?? 0,

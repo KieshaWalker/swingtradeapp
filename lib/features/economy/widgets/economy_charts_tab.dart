@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
 import '../../../services/economy/economy_snapshot_models.dart';
 import '../../../services/economy/economy_storage_providers.dart';
+import '../../../services/economy/economy_storage_service.dart';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ class EconomyChartsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
-      children: const [
+      children: [
         _DataNote(),
         SizedBox(height: 20),
 
@@ -174,6 +175,242 @@ class EconomyChartsTab extends StatelessWidget {
           sublabel: 'New Units (K)',
           color: _yellow,
           formatY: _fmtHousingShort,
+        ),
+        const SizedBox(height: 24),
+
+        // ── BLS Employment ────────────────────────────────────────────────────
+        const _SectionHeader('BLS — Employment'),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsUnemploymentU3,
+          title: 'Unemployment Rate U-3',
+          sublabel: 'CPS Monthly',
+          color: _red,
+          formatY: _fmtPct,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsUnemploymentU6,
+          title: 'Unemployment Rate U-6',
+          sublabel: 'Underemployment',
+          color: _orange,
+          formatY: _fmtPct,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsNfp,
+          title: 'Nonfarm Payrolls',
+          sublabel: 'CES Thousands',
+          color: _green,
+          formatY: _fmtJobsK,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsLfpr,
+          title: 'Labor Force Participation',
+          sublabel: 'CPS %',
+          color: _blue,
+          formatY: _fmtPct,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsAvgHourlyEarnings,
+          title: 'Avg Hourly Earnings',
+          sublabel: 'All Private (\$)',
+          color: _purple,
+          formatY: (v) => '\$${v.toStringAsFixed(2)}',
+        ),
+        const SizedBox(height: 24),
+
+        // ── BLS CPI ───────────────────────────────────────────────────────────
+        const _SectionHeader('BLS — Consumer Price Index'),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsCpiAll,
+          title: 'CPI All Items (SA)',
+          sublabel: 'Index 1982-84=100',
+          color: _red,
+          formatY: _fmtNum,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsCpiCore,
+          title: 'Core CPI',
+          sublabel: 'Less Food & Energy',
+          color: _orange,
+          formatY: _fmtNum,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsCpiShelter,
+          title: 'CPI Shelter',
+          sublabel: 'Housing Component',
+          color: _yellow,
+          formatY: _fmtNum,
+        ),
+        const SizedBox(height: 24),
+
+        // ── BLS PPI ───────────────────────────────────────────────────────────
+        const _SectionHeader('BLS — Producer Price Index'),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsPpiFinal,
+          title: 'PPI Final Demand',
+          sublabel: 'Index Nov 2009=100',
+          color: _teal,
+          formatY: _fmtNum,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsPpiCore,
+          title: 'Core PPI',
+          sublabel: 'Less Food & Energy',
+          color: _blue,
+          formatY: _fmtNum,
+        ),
+        const SizedBox(height: 24),
+
+        // ── BLS JOLTS ─────────────────────────────────────────────────────────
+        const _SectionHeader('BLS — JOLTS'),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsJobOpenings,
+          title: 'Job Openings',
+          sublabel: 'Total Thousands',
+          color: _green,
+          formatY: _fmtJobsK,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsQuitsRate,
+          title: 'Quits Rate',
+          sublabel: '% of Employment',
+          color: _purple,
+          formatY: _fmtPct,
+        ),
+        const SizedBox(height: 24),
+
+        // ── BEA ───────────────────────────────────────────────────────────────
+        const _SectionHeader('BEA — National Accounts'),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.beaGdpPct,
+          title: 'GDP % Change Q/Q',
+          sublabel: 'SAAR (T10101)',
+          color: _teal,
+          formatY: _fmtPct,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.beaRealGdp,
+          title: 'Real GDP',
+          sublabel: 'Chained 2017 \$ Billions',
+          color: _green,
+          formatY: _fmtGdpShort,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.beaCorePce,
+          title: 'Core PCE Price Index',
+          sublabel: 'Less Food & Energy (T20804)',
+          color: _red,
+          formatY: _fmtNum,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.beaPersonalIncome,
+          title: 'Personal Income',
+          sublabel: 'Billions SAAR (T20100)',
+          color: _blue,
+          formatY: _fmtGdpShort,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.beaCorporateProfits,
+          title: 'Corporate Profits After Tax',
+          sublabel: 'Billions \$ (T10901)',
+          color: _purple,
+          formatY: _fmtGdpShort,
+        ),
+        const SizedBox(height: 24),
+
+        // ── EIA ───────────────────────────────────────────────────────────────
+        const _SectionHeader('EIA — Energy'),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.eiaGasolinePrice,
+          title: 'Retail Gasoline Price',
+          sublabel: 'US Avg \$/gal (Weekly)',
+          color: _orange,
+          formatY: (v) => '\$${v.toStringAsFixed(3)}',
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.eiaCrudeStocks,
+          title: 'Crude Oil Stocks',
+          sublabel: 'Commercial Thousand Bbl (Weekly)',
+          color: _yellow,
+          formatY: (v) => '${(v / 1000).toStringAsFixed(0)}M',
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.eiaNatGasStorage,
+          title: 'Natural Gas Storage',
+          sublabel: 'Working Gas Bcf (Weekly)',
+          color: _blue,
+          formatY: (v) => '${v.toStringAsFixed(0)} Bcf',
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.eiaRefineryUtil,
+          title: 'Refinery Utilization',
+          sublabel: '% of Operable Capacity',
+          color: _teal,
+          formatY: _fmtPct,
+        ),
+        const SizedBox(height: 24),
+
+        // ── Census ────────────────────────────────────────────────────────────
+        const _SectionHeader('Census — Trade & Construction'),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.censusRetailTotal,
+          title: 'Total Retail Sales',
+          sublabel: 'SA \$M (MARTS)',
+          color: _green,
+          formatY: _fmtRetailShort,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.censusRetailVehicles,
+          title: 'Motor Vehicle Sales',
+          sublabel: 'SA \$M (MARTS 441)',
+          color: _blue,
+          formatY: _fmtRetailShort,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.censusRetailNonStore,
+          title: 'Non-Store / E-Commerce',
+          sublabel: 'SA \$M (MARTS 454)',
+          color: _purple,
+          formatY: _fmtRetailShort,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.censusConstruction,
+          title: 'Construction Spending',
+          sublabel: 'Value Put in Place \$M',
+          color: _yellow,
+          formatY: _fmtRetailShort,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.censusMfgOrders,
+          title: 'Manufacturers\' New Orders',
+          sublabel: 'Total SA \$M (M3)',
+          color: _orange,
+          formatY: _fmtRetailShort,
         ),
       ],
     );

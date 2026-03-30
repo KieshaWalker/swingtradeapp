@@ -1,6 +1,8 @@
 # Secrets
 .env
 .notes
+api_call_list_by_source.md.pdf
+.api_call_list_by_source.md.pdf
 # Miscellaneous
 *.class
 *.log
@@ -46,3 +48,4 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+dart_defines.json
