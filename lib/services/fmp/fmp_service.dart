@@ -195,9 +195,15 @@ class FmpService {
 
   /// Fetches all data needed for the Economy Pulse screen in parallel.
   Future<EconomyPulseData> getEconomyPulse() async {
-    // Asset symbols: markets + commodities
-    final assetsFuture = getQuotes(
-        ['SPY', 'QQQ', 'VIXY', 'UUP', 'GC=F', 'SI=F', 'CL=F', 'NG=F']);
+    // Asset quotes fired individually in parallel (batch endpoint requires higher FMP tier)
+    final spyFuture    = getQuote('SPY');
+    final qqqFuture    = getQuote('QQQ');
+    final vixyFuture   = getQuote('VIXY');
+    final uupFuture    = getQuote('UUP');
+    final goldFuture   = getQuote('GC=F');
+    final silverFuture = getQuote('SI=F');
+    final wtiFuture    = getQuote('CL=F');
+    final ngFuture     = getQuote('NG=F');
 
     // Economic indicators fired in parallel
     final treasuryFuture = getLatestTreasuryRates();
@@ -216,18 +222,15 @@ class FmpService {
     final recessionFuture =
         getEconomicIndicator('smoothedUSRecessionProbabilities');
 
-    final assets = await assetsFuture;
-    final assetMap = <String, StockQuote>{for (final q in assets) q.symbol: q};
-
     return EconomyPulseData(
-      sp500: assetMap['SPY'],
-      nasdaq: assetMap['QQQ'],
-      vix: assetMap['VIXY'],
-      dxy: assetMap['UUP'],
-      gold: assetMap['GC=F'],
-      silver: assetMap['SI=F'],
-      wtiCrude: assetMap['CL=F'],
-      natGas: assetMap['NG=F'],
+      sp500: await spyFuture,
+      nasdaq: await qqqFuture,
+      vix: await vixyFuture,
+      dxy: await uupFuture,
+      gold: await goldFuture,
+      silver: await silverFuture,
+      wtiCrude: await wtiFuture,
+      natGas: await ngFuture,
       treasury: await treasuryFuture,
       fedFunds: await fedFuture,
       unemployment: await unempFuture,

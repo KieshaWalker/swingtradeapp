@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import '../../core/kalshi_config.dart';
 import 'bea_models.dart';
@@ -9,6 +10,15 @@ class BeaService {
   factory BeaService() => _instance;
 
   final _client = http.Client();
+
+  // ── Base URL ──────────────────────────────────────────────────────────────
+
+  // On web, route through the /api/bea Vercel proxy (same origin = no CORS).
+  // On native, call BEA directly.
+  static String get _baseUrl {
+    if (kIsWeb) return '${Uri.base.origin}/api/bea';
+    return BeaConfig.baseUrl;
+  }
 
   // ── Core request ──────────────────────────────────────────────────────────
 
@@ -24,7 +34,7 @@ class BeaService {
     String frequency = 'Q',
     required String year,
   }) async {
-    final uri = Uri.parse(BeaConfig.baseUrl).replace(queryParameters: {
+    final uri = Uri.parse(_baseUrl).replace(queryParameters: {
       'UserID': BeaConfig.apiKey,
       'method': 'GetData',
       'DataSetName': 'NIPA',
@@ -44,7 +54,7 @@ class BeaService {
     String geoFips = 'STATE',
     required String year,
   }) async {
-    final uri = Uri.parse(BeaConfig.baseUrl).replace(queryParameters: {
+    final uri = Uri.parse(_baseUrl).replace(queryParameters: {
       'UserID': BeaConfig.apiKey,
       'method': 'GetData',
       'DataSetName': 'Regional',
@@ -62,7 +72,7 @@ class BeaService {
     required String datasetName,
     required Map<String, String> extraParams,
   }) async {
-    final uri = Uri.parse(BeaConfig.baseUrl).replace(queryParameters: {
+    final uri = Uri.parse(_baseUrl).replace(queryParameters: {
       'UserID': BeaConfig.apiKey,
       'method': 'GetData',
       'DataSetName': datasetName,

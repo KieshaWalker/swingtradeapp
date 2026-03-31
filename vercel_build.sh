@@ -28,6 +28,10 @@ DART_DEFINES=""
 [ -n "${SUPABASE_ANON_KEY}" ] && DART_DEFINES="$DART_DEFINES --dart-define=SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
 [ -n "${FMP_API_KEY}" ]       && DART_DEFINES="$DART_DEFINES --dart-define=FMP_API_KEY=${FMP_API_KEY}"
 [ -n "${SEC_API_KEY}" ]       && DART_DEFINES="$DART_DEFINES --dart-define=SEC_API_KEY=${SEC_API_KEY}"
+[ -n "${EIA_API_KEY}" ]       && DART_DEFINES="$DART_DEFINES --dart-define=EIA_API_KEY=${EIA_API_KEY}"
+[ -n "${BLS_API_KEY}" ]       && DART_DEFINES="$DART_DEFINES --dart-define=BLS_API_KEY=${BLS_API_KEY}"
+[ -n "${BEA_API_KEY}" ]       && DART_DEFINES="$DART_DEFINES --dart-define=BEA_API_KEY=${BEA_API_KEY}"
+[ -n "${CENSUS_API_KEY}" ]    && DART_DEFINES="$DART_DEFINES --dart-define=CENSUS_API_KEY=${CENSUS_API_KEY}"
 
 echo "→ Building for web (release)..."
 flutter build web --release $DART_DEFINES
