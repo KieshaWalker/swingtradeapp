@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/eia/eia_models.dart';
 import '../providers/api_data_providers.dart';
 import 'api_tile_widgets.dart';
+import 'gasoline_price_history_chart.dart';
+import 'nat_gas_import_chart.dart';
 
 class EiaTab extends ConsumerWidget {
   const EiaTab({super.key});
@@ -19,6 +21,7 @@ class EiaTab extends ConsumerWidget {
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(eiaGasolinePricesProvider);
+        ref.invalidate(eiaGasolinePriceHistoryProvider);
         ref.invalidate(eiaCrudeStocksProvider);
         ref.invalidate(eiaCrudeProdProvider);
         ref.invalidate(eiaNatGasStorageProvider);
@@ -61,6 +64,12 @@ class EiaTab extends ConsumerWidget {
               formatFn: _fmtThousandBbl,
             ),
           ]),
+          const SizedBox(height: 16),
+
+          // ── Gasoline Price History ────────────────────────────────────────
+          const ApiSectionHeader('Gasoline Price History'),
+          const SizedBox(height: 8),
+          const GasolinePriceHistoryChart(),
           const SizedBox(height: 20),
 
           // ── Natural Gas ──────────────────────────────────────────────────
@@ -73,6 +82,12 @@ class EiaTab extends ConsumerWidget {
               formatFn: _fmtBcf,
             ),
           ]),
+          const SizedBox(height: 16),
+
+          // ── Import Price History ──────────────────────────────────────────
+          const ApiSectionHeader('Natural Gas Import Price History'),
+          const SizedBox(height: 8),
+          const NatGasImportChart(),
         ],
       ),
     );

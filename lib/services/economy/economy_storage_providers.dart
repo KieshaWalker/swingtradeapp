@@ -35,3 +35,13 @@ final economyTreasuryHistoryProvider =
     FutureProvider<List<TreasurySnapshot>>((ref) {
   return ref.read(economyStorageServiceProvider).getTreasuryHistory();
 });
+
+final natGasImportPricesProvider =
+    FutureProvider<List<NatGasImportPoint>>((ref) {
+  return ref.read(economyStorageServiceProvider).getNatGasImportHistory();
+});
+
+final gasolinePriceHistoryStorageProvider =
+    FutureProvider<List<GasolinePricePoint>>((ref) {
+  return ref.read(economyStorageServiceProvider).getGasolinePriceHistory();
+});

@@ -14,7 +14,7 @@ class BlsService {
 
   Future<BlsResponse> fetchSeries(
     List<String> seriesIds, {
-    int startYear = 2020,
+    int startYear = 2000,
     int? endYear,
   }) async {
     final end = endYear ?? DateTime.now().year;
@@ -36,13 +36,13 @@ class BlsService {
 
   // ── Employment Situation (CES) ────────────────────────────────────────────
 
-  Future<BlsResponse> employmentSituation({int startYear = 2020}) =>
+  Future<BlsResponse> employmentSituation({int startYear = 2000}) =>
       fetchSeries(BlsSeriesIds.employmentSituation, startYear: startYear);
 
-  Future<BlsResponse> nonfarmPayrolls({int startYear = 2020}) =>
+  Future<BlsResponse> nonfarmPayrolls({int startYear = 2000}) =>
       fetchSeries([BlsSeriesIds.totalNonfarmPayrolls], startYear: startYear);
 
-  Future<BlsResponse> avgHourlyEarnings({int startYear = 2020}) =>
+  Future<BlsResponse> avgHourlyEarnings({int startYear = 2000}) =>
       fetchSeries([
         BlsSeriesIds.avgHourlyEarningsPrivate,
         BlsSeriesIds.avgHourlyEarningsManufacturing,
@@ -50,30 +50,29 @@ class BlsService {
 
   // ── Labor Force (LNS / CPS) ───────────────────────────────────────────────
 
-  Future<BlsResponse> laborForce({int startYear = 2020}) =>
+  Future<BlsResponse> laborForce({int startYear = 2000}) =>
       fetchSeries(BlsSeriesIds.laborForce, startYear: startYear);
 
-  Future<BlsResponse> unemploymentRate({int startYear = 2020}) =>
+  Future<BlsResponse> unemploymentRate({int startYear = 2000}) =>
       fetchSeries([
         BlsSeriesIds.unemploymentRateU3,
-        BlsSeriesIds.unemploymentRateU6,
       ], startYear: startYear);
 
-  Future<BlsResponse> laborForceParticipation({int startYear = 2020}) =>
+  Future<BlsResponse> laborForceParticipation({int startYear = 2000}) =>
       fetchSeries([BlsSeriesIds.laborForceParticipationRate], startYear: startYear);
 
   // ── JOLTS ─────────────────────────────────────────────────────────────────
 
-  Future<BlsResponse> jolts({int startYear = 2020}) =>
+  Future<BlsResponse> jolts({int startYear = 2000}) =>
       fetchSeries(BlsSeriesIds.jolts, startYear: startYear);
 
-  Future<BlsResponse> jobOpenings({int startYear = 2020}) =>
+  Future<BlsResponse> jobOpenings({int startYear = 2000}) =>
       fetchSeries([
         BlsSeriesIds.jobOpenings,
         BlsSeriesIds.jobOpeningsRate,
       ], startYear: startYear);
 
-  Future<BlsResponse> quits({int startYear = 2020}) =>
+  Future<BlsResponse> quits({int startYear = 2000}) =>
       fetchSeries([
         BlsSeriesIds.quits,
         BlsSeriesIds.quitsRate,
@@ -81,16 +80,16 @@ class BlsService {
 
   // ── Consumer Price Index ──────────────────────────────────────────────────
 
-  Future<BlsResponse> cpi({int startYear = 2020}) =>
+  Future<BlsResponse> cpi({int startYear = 2000}) =>
       fetchSeries(BlsSeriesIds.cpi, startYear: startYear);
 
-  Future<BlsResponse> cpiHeadlineAndCore({int startYear = 2020}) =>
+  Future<BlsResponse> cpiHeadlineAndCore({int startYear = 2000}) =>
       fetchSeries([
         BlsSeriesIds.cpiAllItemsSA,
         BlsSeriesIds.cpiCore,
       ], startYear: startYear);
 
-  Future<BlsResponse> cpiComponents({int startYear = 2020}) =>
+  Future<BlsResponse> cpiComponents({int startYear = 2000}) =>
       fetchSeries([
         BlsSeriesIds.cpiFood,
         BlsSeriesIds.cpiEnergy,
@@ -101,10 +100,10 @@ class BlsService {
 
   // ── Producer Price Index ──────────────────────────────────────────────────
 
-  Future<BlsResponse> ppi({int startYear = 2020}) =>
+  Future<BlsResponse> ppi({int startYear = 2000}) =>
       fetchSeries(BlsSeriesIds.ppi, startYear: startYear);
 
-  Future<BlsResponse> ppiHeadlineAndCore({int startYear = 2020}) =>
+  Future<BlsResponse> ppiHeadlineAndCore({int startYear = 2000}) =>
       fetchSeries([
         BlsSeriesIds.ppiFinalDemand,
         BlsSeriesIds.ppiFinalDemandLessFoodEnergy,
@@ -112,7 +111,7 @@ class BlsService {
 
   // ── Import / Export Prices ────────────────────────────────────────────────
 
-  Future<BlsResponse> importExportPrices({int startYear = 2020}) =>
+  Future<BlsResponse> importExportPrices({int startYear = 2000}) =>
       fetchSeries([
         BlsSeriesIds.importPriceAllCommodities,
         BlsSeriesIds.exportPriceAllCommodities,
@@ -122,7 +121,7 @@ class BlsService {
 
   // ── Productivity ──────────────────────────────────────────────────────────
 
-  Future<BlsResponse> productivity({int startYear = 2020}) =>
+  Future<BlsResponse> productivity({int startYear = 2000}) =>
       fetchSeries([
         BlsSeriesIds.nonfarmLaborProductivity,
         BlsSeriesIds.nonfarmUnitLaborCosts,
@@ -132,7 +131,7 @@ class BlsService {
 
   // ── Employment Cost Index ─────────────────────────────────────────────────
 
-  Future<BlsResponse> employmentCostIndex({int startYear = 2020}) =>
+  Future<BlsResponse> employmentCostIndex({int startYear = 2000}) =>
       fetchSeries([
         BlsSeriesIds.eciTotalCompensation,
         BlsSeriesIds.eciWagesSalaries,
@@ -142,7 +141,7 @@ class BlsService {
   // ── Full snapshot — all series in one call ────────────────────────────────
   // BLS v2 allows up to 50 series per request; split into two batches.
 
-  Future<List<BlsResponse>> allSeries({int startYear = 2020}) async {
+  Future<List<BlsResponse>> allSeries({int startYear = 2000}) async {
     final all = [
       ...BlsSeriesIds.employmentSituation,
       ...BlsSeriesIds.laborForce,

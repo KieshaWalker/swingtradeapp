@@ -45,7 +45,10 @@ import '../features/ticker_profile/screens/ticker_dashboard_screen.dart';
 import '../features/ticker_profile/screens/ticker_profile_screen.dart';
 import '../features/trades/models/trade.dart';
 import '../features/trades/screens/add_trade_screen.dart';
+import '../features/trades/screens/csv_import_screen.dart';
+import '../features/trades/screens/trade_blocks_screen.dart';
 import '../features/trades/screens/trade_detail_screen.dart';
+import '../features/trades/screens/trade_journal_screen.dart';
 import '../features/trades/screens/trades_screen.dart';
 
 // Thin shell — just provides the route transition wrapper.
@@ -98,11 +101,28 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, _) => const AddTradeScreen(),
           ),
           GoRoute(
+            path: 'blocks',
+            builder: (_, _) => const TradeBlocksScreen(),
+          ),
+          GoRoute(
+            path: 'import',
+            builder: (_, _) => const CsvImportScreen(),
+          ),
+          GoRoute(
             path: ':id',
             builder: (_, state) {
               final trade = state.extra as Trade;
               return TradeDetailScreen(trade: trade);
             },
+            routes: [
+              GoRoute(
+                path: 'journal',
+                builder: (_, state) {
+                  final trade = state.extra as Trade;
+                  return TradeJournalScreen(trade: trade);
+                },
+              ),
+            ],
           ),
         ],
       ),

@@ -4,22 +4,12 @@
 // Displays day-by-day / monthly line charts for every Economy Pulse metric,
 // reading from the three Supabase snapshot tables.
 //
-// Charts are organised into the same sections as the Snapshot tab:
-//   Market Snapshot   — SPY, QQQ, VIX, DXY (daily quote snapshots)
-//   Interest Rates    — Treasury multi-line (daily), Fed Funds + Mortgage (monthly)
-//   Commodities       — Gold, Silver, WTI, NatGas (daily)
-//   Labor Market      — Unemployment, NFP, Initial Claims, Sentiment (monthly)
-//   Economy           — CPI, GDP, Retail Sales, Recession Prob (monthly)
-//   Housing           — Housing Starts (monthly)
-//
-// Data note: Quote snapshots accumulate one point per calendar day the user
-// opens the app.  Economic indicators are keyed by their FMP report date so
-// they backfill all historical points immediately on the first fetch.
+// Tap any chart card to expand it full-screen with interactive touch tooltips.
 // =============================================================================
-import 'dart:math' show max;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../services/economy/economy_snapshot_models.dart';
 import '../../../services/economy/economy_storage_providers.dart';
@@ -220,6 +210,14 @@ class EconomyChartsTab extends StatelessWidget {
           color: _purple,
           formatY: (v) => '\$${v.toStringAsFixed(2)}',
         ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsAvgWeeklyHours,
+          title: 'Avg Weekly Hours',
+          sublabel: 'All Private',
+          color: _teal,
+          formatY: (v) => '${v.toStringAsFixed(1)} hrs',
+        ),
         const SizedBox(height: 24),
 
         // ── BLS CPI ───────────────────────────────────────────────────────────
@@ -248,6 +246,22 @@ class EconomyChartsTab extends StatelessWidget {
           color: _yellow,
           formatY: _fmtNum,
         ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsCpiFood,
+          title: 'CPI Food',
+          sublabel: 'Food at Home & Away',
+          color: _green,
+          formatY: _fmtNum,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsCpiEnergy,
+          title: 'CPI Energy',
+          sublabel: 'Energy Component',
+          color: _teal,
+          formatY: _fmtNum,
+        ),
         const SizedBox(height: 24),
 
         // ── BLS PPI ───────────────────────────────────────────────────────────
@@ -266,6 +280,22 @@ class EconomyChartsTab extends StatelessWidget {
           title: 'Core PPI',
           sublabel: 'Less Food & Energy',
           color: _blue,
+          formatY: _fmtNum,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsPpiGoods,
+          title: 'PPI Goods',
+          sublabel: 'Final Demand Goods',
+          color: _yellow,
+          formatY: _fmtNum,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsPpiServices,
+          title: 'PPI Services',
+          sublabel: 'Final Demand Services',
+          color: _purple,
           formatY: _fmtNum,
         ),
         const SizedBox(height: 24),
@@ -287,6 +317,38 @@ class EconomyChartsTab extends StatelessWidget {
           sublabel: '% of Employment',
           color: _purple,
           formatY: _fmtPct,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsJobOpeningsRate,
+          title: 'Job Openings Rate',
+          sublabel: '% of Employment',
+          color: _teal,
+          formatY: _fmtPct,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsHires,
+          title: 'Hires',
+          sublabel: 'Total (Thousands)',
+          color: _green,
+          formatY: _fmtJobsK,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsQuits,
+          title: 'Quits',
+          sublabel: 'Total (Thousands)',
+          color: _blue,
+          formatY: _fmtJobsK,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.blsLayoffs,
+          title: 'Layoffs & Discharges',
+          sublabel: 'Total (Thousands)',
+          color: _red,
+          formatY: _fmtJobsK,
         ),
         const SizedBox(height: 24),
 
@@ -332,6 +394,22 @@ class EconomyChartsTab extends StatelessWidget {
           color: _purple,
           formatY: _fmtGdpShort,
         ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.beaPce,
+          title: 'PCE % Change',
+          sublabel: 'Personal Consumption Q/Q (T10101)',
+          color: _blue,
+          formatY: _fmtPct,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.beaNetExports,
+          title: 'Net Exports % Change',
+          sublabel: 'Goods & Services Q/Q (T10101)',
+          color: _orange,
+          formatY: _fmtPct,
+        ),
         const SizedBox(height: 24),
 
         // ── EIA ───────────────────────────────────────────────────────────────
@@ -367,6 +445,22 @@ class EconomyChartsTab extends StatelessWidget {
           sublabel: '% of Operable Capacity',
           color: _teal,
           formatY: _fmtPct,
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.eiaCrudeProd,
+          title: 'Crude Oil Production',
+          sublabel: 'US Weekly (Mb/d)',
+          color: _yellow,
+          formatY: (v) => '${v.toStringAsFixed(0)} Mb/d',
+        ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.eiaSpr,
+          title: 'Strategic Petroleum Reserve',
+          sublabel: 'Thousand Barrels',
+          color: _red,
+          formatY: (v) => '${(v / 1000).toStringAsFixed(1)}M bbl',
         ),
         const SizedBox(height: 24),
 
@@ -412,12 +506,20 @@ class EconomyChartsTab extends StatelessWidget {
           color: _orange,
           formatY: _fmtRetailShort,
         ),
+        const SizedBox(height: 8),
+        _IndicatorChart(
+          identifier: EconIds.censusWholesale,
+          title: 'Wholesale Sales',
+          sublabel: 'Monthly SA \$M',
+          color: _purple,
+          formatY: _fmtRetailShort,
+        ),
       ],
     );
   }
 }
 
-// ─── Section header (matches Snapshot tab style) ──────────────────────────────
+// ─── Section header ───────────────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
   final String title;
@@ -458,7 +560,8 @@ class _DataNote extends StatelessWidget {
           Expanded(
             child: Text(
               'Economic indicators populate immediately from FMP history. '
-              'Market & commodity charts build one point per day you visit.',
+              'Market & commodity charts build one point per day you visit. '
+              'Tap any chart to expand.',
               style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
             ),
           ),
@@ -592,7 +695,7 @@ class _TreasuryChart extends ConsumerWidget {
   }
 }
 
-// ─── Reusable line chart card ─────────────────────────────────────────────────
+// ─── Data model for a single series ──────────────────────────────────────────
 
 class _Series {
   final String label;
@@ -600,6 +703,21 @@ class _Series {
   final Color color;
   const _Series(this.label, this.spots, this.color);
 }
+
+// ─── Pick n evenly-spaced indices from a list of length total ─────────────────
+// Uses integer arithmetic only — no floating-point label misalignment.
+
+List<int> _evenIndices(int total, int count) {
+  if (total <= 0) return [];
+  if (total <= count) return List.generate(total, (i) => i);
+  if (count == 1) return [0];
+  return List.generate(
+    count,
+    (i) => ((i * (total - 1)) / (count - 1)).round(),
+  );
+}
+
+// ─── Compact chart card (shown in the list) ───────────────────────────────────
 
 class _LineChartCard extends StatelessWidget {
   final String title;
@@ -618,18 +736,192 @@ class _LineChartCard extends StatelessWidget {
     this.showLegend = false,
   });
 
+  void _expand(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => _FullScreenChartPage(
+          title: title,
+          sublabel: sublabel,
+          dates: dates,
+          series: series,
+          formatY: formatY,
+          showLegend: showLegend,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final n = dates.length;
-    // Show ~4 x-axis labels evenly spaced
-    final xInterval = max(1, (n / 4).floor()).toDouble();
+    final labelSet = _evenIndices(n, 4).toSet();
 
-    final bars = series
+    final bars = _buildBars(compact: true);
+
+    return GestureDetector(
+      onTap: () => _expand(context),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1C2128),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFF30363D)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          sublabel,
+                          style: const TextStyle(
+                            color: AppTheme.neutralColor,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '$n pts',
+                    style: const TextStyle(
+                      color: AppTheme.neutralColor,
+                      fontSize: 10,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.open_in_full,
+                    size: 13,
+                    color: AppTheme.neutralColor,
+                  ),
+                ],
+              ),
+
+              if (showLegend) ...[
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 12,
+                  children: series
+                      .map((s) => Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(width: 12, height: 2, color: s.color),
+                              const SizedBox(width: 4),
+                              Text(
+                                s.label,
+                                style: const TextStyle(
+                                  color: AppTheme.neutralColor,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ))
+                      .toList(),
+                ),
+              ],
+
+              const SizedBox(height: 12),
+
+              SizedBox(
+                height: 140,
+                child: LineChart(
+                  LineChartData(
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      getDrawingHorizontalLine: (_) => FlLine(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        strokeWidth: 1,
+                      ),
+                    ),
+                    borderData: FlBorderData(show: false),
+                    lineTouchData: const LineTouchData(enabled: false),
+                    titlesData: FlTitlesData(
+                      topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false)),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 48,
+                          getTitlesWidget: (v, meta) {
+                            if (v != meta.min && v != meta.max) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: Text(
+                                formatY(v),
+                                style: const TextStyle(
+                                  color: AppTheme.neutralColor,
+                                  fontSize: 9,
+                                ),
+                                textAlign: TextAlign.right,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 22,
+                          // interval: 1 so we control exactly which to show
+                          interval: 1,
+                          getTitlesWidget: (v, _) {
+                            final idx = v.round();
+                            if (!labelSet.contains(idx)) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                _fmtAxisDate(dates[idx]),
+                                style: const TextStyle(
+                                  color: AppTheme.neutralColor,
+                                  fontSize: 9,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    lineBarsData: bars,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<LineChartBarData> _buildBars({required bool compact}) {
+    final n = dates.length;
+    return series
         .map((s) => LineChartBarData(
               spots: s.spots,
               isCurved: n > 3,
               color: s.color,
-              barWidth: 2,
+              barWidth: compact ? 2 : 2.5,
               dotData: FlDotData(show: n <= 2),
               belowBarData: series.length == 1
                   ? BarAreaData(
@@ -639,157 +931,210 @@ class _LineChartCard extends StatelessWidget {
                   : BarAreaData(show: false),
             ))
         .toList();
+  }
+}
 
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C2128),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF30363D)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-        child: Column(
+// ─── Full-screen expanded chart page ─────────────────────────────────────────
+
+class _FullScreenChartPage extends StatelessWidget {
+  final String title;
+  final String sublabel;
+  final List<DateTime> dates;
+  final List<_Series> series;
+  final String Function(double) formatY;
+  final bool showLegend;
+
+  const _FullScreenChartPage({
+    required this.title,
+    required this.sublabel,
+    required this.dates,
+    required this.series,
+    required this.formatY,
+    this.showLegend = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final n = dates.length;
+    // Show up to 6 labels in full-screen
+    final labelSet = _evenIndices(n, 6).toSet();
+
+    final bars = series
+        .map((s) => LineChartBarData(
+              spots: s.spots,
+              isCurved: n > 3,
+              color: s.color,
+              barWidth: 2.5,
+              dotData: FlDotData(show: n <= 10),
+              belowBarData: series.length == 1
+                  ? BarAreaData(
+                      show: true,
+                      color: s.color.withValues(alpha: 0.10),
+                    )
+                  : BarAreaData(show: false),
+            ))
+        .toList();
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D1117),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF161B22),
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        sublabel,
-                        style: const TextStyle(
-                          color: AppTheme.neutralColor,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Text(
-                  '$n pts',
-                  style: const TextStyle(
-                    color: AppTheme.neutralColor,
-                    fontSize: 10,
-                  ),
-                ),
-              ],
-            ),
-
-            // Legend for multi-series
-            if (showLegend) ...[
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 12,
-                children: series
-                    .map((s) => Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 12,
-                              height: 2,
-                              color: s.color,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              s.label,
-                              style: const TextStyle(
-                                color: AppTheme.neutralColor,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
-                        ))
-                    .toList(),
-              ),
-            ],
-
-            const SizedBox(height: 12),
-
-            // Chart
-            SizedBox(
-              height: 140,
-              child: LineChart(
-                LineChartData(
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    getDrawingHorizontalLine: (_) => FlLine(
-                      color: Colors.white.withValues(alpha: 0.05),
-                      strokeWidth: 1,
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(
-                        sideTitles: SideTitles(showTitles: false)),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 48,
-                        getTitlesWidget: (v, meta) {
-                          // Only show min, mid, max labels
-                          if (v != meta.min &&
-                              v != meta.max &&
-                              (meta.max - meta.min).abs() > 0 &&
-                              (v - (meta.min + meta.max) / 2).abs() >
-                                  (meta.max - meta.min) * 0.05) {
-                            return const SizedBox();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: Text(
-                              formatY(v),
-                              style: const TextStyle(
-                                color: AppTheme.neutralColor,
-                                fontSize: 9,
-                              ),
-                              textAlign: TextAlign.right,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 22,
-                        interval: xInterval,
-                        getTitlesWidget: (v, _) {
-                          final idx = v.round();
-                          if (idx < 0 || idx >= dates.length) {
-                            return const SizedBox();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              _fmtAxisDate(dates[idx]),
-                              style: const TextStyle(
-                                color: AppTheme.neutralColor,
-                                fontSize: 9,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  lineBarsData: bars,
-                ),
+            Text(title, style: const TextStyle(fontSize: 16)),
+            Text(
+              sublabel,
+              style: const TextStyle(
+                color: AppTheme.neutralColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ],
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Text(
+              '$n pts',
+              style: const TextStyle(
+                color: AppTheme.neutralColor,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Legend
+              if (showLegend) ...[
+                Wrap(
+                  spacing: 16,
+                  children: series
+                      .map((s) => Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(width: 16, height: 2, color: s.color),
+                              const SizedBox(width: 6),
+                              Text(
+                                s.label,
+                                style: const TextStyle(
+                                  color: AppTheme.neutralColor,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // Chart fills remaining height
+              Expanded(
+                child: LineChart(
+                  LineChartData(
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: true,
+                      getDrawingHorizontalLine: (_) => FlLine(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        strokeWidth: 1,
+                      ),
+                      getDrawingVerticalLine: (_) => FlLine(
+                        color: Colors.white.withValues(alpha: 0.04),
+                        strokeWidth: 1,
+                      ),
+                    ),
+                    borderData: FlBorderData(show: false),
+                    lineTouchData: LineTouchData(
+                      enabled: true,
+                      touchTooltipData: LineTouchTooltipData(
+                        getTooltipColor: (_) => const Color(0xFF30363D),
+                        getTooltipItems: (touchedSpots) =>
+                            touchedSpots.map((s) {
+                          final idx = s.x.round();
+                          final dateStr = (idx >= 0 && idx < dates.length)
+                              ? DateFormat('MMM d, yyyy').format(dates[idx])
+                              : '';
+                          final seriesLabel = series.length > 1 &&
+                                  s.barIndex < series.length
+                              ? '${series[s.barIndex].label}: '
+                              : '';
+                          return LineTooltipItem(
+                            '$dateStr\n$seriesLabel${formatY(s.y)}',
+                            TextStyle(
+                              color: series[s.barIndex % series.length].color,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    titlesData: FlTitlesData(
+                      topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false)),
+                      rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false)),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 56,
+                          getTitlesWidget: (v, meta) {
+                            if (v != meta.min && v != meta.max) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: Text(
+                                formatY(v),
+                                style: const TextStyle(
+                                  color: AppTheme.neutralColor,
+                                  fontSize: 10,
+                                ),
+                                textAlign: TextAlign.right,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 28,
+                          interval: 1,
+                          getTitlesWidget: (v, _) {
+                            final idx = v.round();
+                            if (!labelSet.contains(idx)) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Text(
+                                _fmtAxisDate(dates[idx]),
+                                style: const TextStyle(
+                                  color: AppTheme.neutralColor,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    lineBarsData: bars,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -867,13 +1212,7 @@ class _ChartFrame extends StatelessWidget {
 
 // ─── Date label formatter ─────────────────────────────────────────────────────
 
-String _fmtAxisDate(DateTime d) {
-  const m = [
-    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-  return "${m[d.month]} '${d.year.toString().substring(2)}";
-}
+String _fmtAxisDate(DateTime d) => DateFormat("MMM ''yy").format(d);
 
 // ─── Y-axis formatters ────────────────────────────────────────────────────────
 

@@ -38,6 +38,7 @@ import '../../../services/sec/sec_models.dart';
 import '../../../services/sec/sec_providers.dart';
 import '../models/trade.dart';
 import '../providers/trades_provider.dart';
+import 'trade_journal_screen.dart';
 
 class TradeDetailScreen extends ConsumerWidget {
   final Trade trade;
@@ -66,6 +67,18 @@ class TradeDetailScreen extends ConsumerWidget {
               onPressed: () => _showCloseDialog(context, ref),
               icon: const Icon(Icons.check_circle_outline),
               label: const Text('Close'),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.profitColor),
+            ),
+          if (trade.status != TradeStatus.open)
+            TextButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TradeJournalScreen(trade: trade),
+                ),
+              ),
+              icon: const Icon(Icons.book_outlined),
+              label: const Text('Journal'),
               style: TextButton.styleFrom(foregroundColor: AppTheme.profitColor),
             ),
           IconButton(
@@ -145,6 +158,29 @@ class TradeDetailScreen extends ConsumerWidget {
                   if (trade.exitPrice != null)
                     _DetailRow('Exit Premium',
                         '\$${trade.exitPrice!.toStringAsFixed(4)} / share'),
+                  if (trade.maxLoss != null)
+                    _DetailRow('Max Loss', '\$${trade.maxLoss!.toStringAsFixed(2)}'),
+                  if (trade.entryPointType != null)
+                    _DetailRow('Entry Point', trade.entryPointType!.label),
+                  if (trade.timeOfEntry != null)
+                    _DetailRow('Time of Entry', trade.timeOfEntry!),
+                  if (trade.timeOfExit != null)
+                    _DetailRow('Time of Exit', trade.timeOfExit!),
+                  if (trade.impliedVolEntry != null)
+                    _DetailRow('IV at Entry', '${trade.impliedVolEntry!.toStringAsFixed(1)}%'),
+                  if (trade.impliedVolExit != null)
+                    _DetailRow('IV at Exit', '${trade.impliedVolExit!.toStringAsFixed(1)}%'),
+                  if (trade.priceRangeHigh != null && trade.priceRangeLow != null)
+                    _DetailRow('Price Range',
+                        '\$${trade.priceRangeLow!.toStringAsFixed(2)} – \$${trade.priceRangeHigh!.toStringAsFixed(2)}'),
+                  if (trade.intradaySupport != null)
+                    _DetailRow('Intraday Support', '\$${trade.intradaySupport!.toStringAsFixed(2)}'),
+                  if (trade.intradayResistance != null)
+                    _DetailRow('Intraday Resistance', '\$${trade.intradayResistance!.toStringAsFixed(2)}'),
+                  if (trade.dailyBreakoutLevel != null)
+                    _DetailRow('Daily Breakout', '\$${trade.dailyBreakoutLevel!.toStringAsFixed(2)}'),
+                  if (trade.dailyBreakdownLevel != null)
+                    _DetailRow('Daily Breakdown', '\$${trade.dailyBreakdownLevel!.toStringAsFixed(2)}'),
                   _DetailRow('Opened',
                       DateFormat('MMM d, yyyy h:mm a').format(trade.openedAt)),
                   if (trade.closedAt != null)

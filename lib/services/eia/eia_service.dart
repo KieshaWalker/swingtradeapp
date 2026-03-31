@@ -17,6 +17,7 @@ class EiaService {
     String frequency = 'weekly',
     List<String> data = const ['value'],
     String? start,
+    String? end,
     int length = 52,
     Map<String, String>? facets,
   }) async {
@@ -32,6 +33,7 @@ class EiaService {
       params['data[]'] = d;
     }
     if (start != null) params['start'] = start;
+    if (end != null) params['end'] = end;
     if (facets != null) {
       facets.forEach((k, v) => params['facets[$k][]'] = v);
     }
@@ -86,11 +88,23 @@ class EiaService {
         facets: {'series': 'EMM_EPM0_PTE_NUS_DPG'},
       );
 
+  /// Full weekly gasoline price history from 1990-08-20 to present.
+  /// Series EMM_EPM0_PTE_NUS_DPG = US average, all grades, $/gallon.
+  /// Route: /v2/petroleum/pri/gnd/data/
+  Future<EiaResponse> gasolinePriceFullHistory() => _get(
+        EiaRoutes.gasolinePricesWeekly,
+        frequency: 'weekly',
+        start: '1990-08-20',
+        length: 5000,
+        facets: {'series': 'EMM_EPM0_PTE_NUS_DPG'},
+      );
+
   Future<EiaResponse> crudeOilProductionMonthly() => _get(
         EiaRoutes.crudeProdMonthly,
         frequency: 'monthly',
-        length: 24,
+        length: 5000,
       );
+      
 
   Future<EiaResponse> petroleumConsumptionMonthly() => _get(
         EiaRoutes.petroleumConsumptionMonthly,

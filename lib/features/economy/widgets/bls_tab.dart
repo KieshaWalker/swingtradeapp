@@ -36,13 +36,6 @@ class BlsTab extends ConsumerWidget {
             ),
             _BlsTile(
               async: employment,
-              seriesId: BlsSeriesIds.unemploymentRateU6,
-              label: 'Unemployment U-6',
-              sublabel: 'Underemployment',
-              suffix: '%',
-            ),
-            _BlsTile(
-              async: employment,
               seriesId: BlsSeriesIds.totalNonfarmPayrolls,
               label: 'Nonfarm Payrolls',
               sublabel: 'CES (thousands)',

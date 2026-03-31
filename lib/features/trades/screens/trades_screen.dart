@@ -30,7 +30,10 @@ import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
 import '../models/trade.dart';
+import '../providers/trade_block_provider.dart';
 import '../providers/trades_provider.dart';
+import 'csv_import_screen.dart';
+import 'trade_blocks_screen.dart';
 
 class TradesScreen extends ConsumerStatefulWidget {
   const TradesScreen({super.key});
@@ -60,7 +63,25 @@ class _TradesScreenState extends ConsumerState<TradesScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trade Log'),
-        actions: const [AppMenuButton()],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.upload_file_outlined),
+            tooltip: 'Import CSV',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CsvImportScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.analytics_outlined),
+            tooltip: 'Block Analytics',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TradeBlocksScreen()),
+            ),
+          ),
+          const AppMenuButton(),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -79,11 +100,18 @@ class _TradesScreenState extends ConsumerState<TradesScreen>
         backgroundColor: AppTheme.profitColor,
         foregroundColor: Colors.black,
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: Column(
         children: [
-          _TradeList(filter: TradeStatus.open),
-          _TradeList(filter: TradeStatus.closed),
+          _EdgeWarningBanner(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _TradeList(filter: TradeStatus.open),
+                _TradeList(filter: TradeStatus.closed),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -247,6 +275,46 @@ class _TradeCard extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// _EdgeWarningBanner: shown when the latest complete 20-trade block has < 5 wins.
+class _EdgeWarningBanner extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final eroding = ref.watch(edgeErodingProvider);
+    if (!eroding) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      color: AppTheme.lossColor.withValues(alpha: 0.12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded,
+              color: AppTheme.lossColor, size: 18),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Edge warning: last 20-trade block had fewer than 5 wins. Trade cautiously.',
+              style: TextStyle(color: AppTheme.lossColor, fontSize: 13),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TradeBlocksScreen()),
+            ),
+            child: const Text(
+              'View →',
+              style: TextStyle(
+                  color: AppTheme.lossColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13),
+            ),
+          ),
+        ],
       ),
     );
   }

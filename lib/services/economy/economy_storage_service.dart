@@ -29,6 +29,7 @@ abstract class EconIds {
   static const blsNfp                  = 'bls_nfp';
   static const blsLfpr                 = 'bls_lfpr';
   static const blsAvgHourlyEarnings    = 'bls_avg_hourly_earnings';
+  static const blsAvgWeeklyHours       = 'bls_avg_weekly_hours';
   // BLS CPI
   static const blsCpiAll               = 'bls_cpi_all';
   static const blsCpiCore              = 'bls_cpi_core';
@@ -38,14 +39,19 @@ abstract class EconIds {
   // BLS PPI
   static const blsPpiFinal             = 'bls_ppi_final';
   static const blsPpiCore              = 'bls_ppi_core';
+  static const blsPpiGoods             = 'bls_ppi_goods';
+  static const blsPpiServices          = 'bls_ppi_services';
   // BLS JOLTS
   static const blsJobOpenings          = 'bls_job_openings';
   static const blsJobOpeningsRate      = 'bls_job_openings_rate';
+  static const blsHires                = 'bls_hires';
   static const blsQuits                = 'bls_quits';
+  static const blsLayoffs              = 'bls_layoffs';
   static const blsQuitsRate            = 'bls_quits_rate';
   // BEA
   static const beaGdpPct               = 'bea_gdp_pct';
   static const beaRealGdp              = 'bea_real_gdp';
+  static const beaPce                  = 'bea_pce';
   static const beaCorePce              = 'bea_core_pce';
   static const beaPersonalIncome       = 'bea_personal_income';
   static const beaCorporateProfits     = 'bea_corporate_profits';
@@ -56,6 +62,7 @@ abstract class EconIds {
   static const eiaCrudeProd            = 'eia_crude_prod';
   static const eiaNatGasStorage        = 'eia_natgas_storage';
   static const eiaRefineryUtil         = 'eia_refinery_util';
+  static const eiaSpr                  = 'eia_spr';
   // Census
   static const censusRetailTotal       = 'census_retail_total';
   static const censusRetailVehicles    = 'census_retail_vehicles';
@@ -67,10 +74,10 @@ abstract class EconIds {
   // Maps BLS series ID → EconIds identifier
   static const Map<String, String> blsSeriesMap = {
     BlsSeriesIds.unemploymentRateU3:             blsUnemploymentU3,
-    BlsSeriesIds.unemploymentRateU6:             blsUnemploymentU6,
     BlsSeriesIds.totalNonfarmPayrolls:           blsNfp,
     BlsSeriesIds.laborForceParticipationRate:    blsLfpr,
     BlsSeriesIds.avgHourlyEarningsPrivate:       blsAvgHourlyEarnings,
+    BlsSeriesIds.avgWeeklyHoursPrivate:          blsAvgWeeklyHours,
     BlsSeriesIds.cpiAllItemsSA:                  blsCpiAll,
     BlsSeriesIds.cpiCore:                        blsCpiCore,
     BlsSeriesIds.cpiShelter:                     blsCpiShelter,
@@ -78,9 +85,13 @@ abstract class EconIds {
     BlsSeriesIds.cpiEnergy:                      blsCpiEnergy,
     BlsSeriesIds.ppiFinalDemand:                 blsPpiFinal,
     BlsSeriesIds.ppiFinalDemandLessFoodEnergy:   blsPpiCore,
+    BlsSeriesIds.ppiFinalDemandGoods:            blsPpiGoods,
+    BlsSeriesIds.ppiFinalDemandServices:         blsPpiServices,
     BlsSeriesIds.jobOpenings:                    blsJobOpenings,
     BlsSeriesIds.jobOpeningsRate:                blsJobOpeningsRate,
+    BlsSeriesIds.hires:                          blsHires,
     BlsSeriesIds.quits:                          blsQuits,
+    BlsSeriesIds.layoffsDischarges:              blsLayoffs,
     BlsSeriesIds.quitsRate:                      blsQuitsRate,
   };
 }
@@ -273,6 +284,61 @@ class EconomyStorageService {
           .eq('symbol', symbol)
           .order('date');
       return rows.map<QuoteSnapshot>(QuoteSnapshot.fromRow).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // ── EIA gasoline price history ─────────────────────────────────────────────
+
+  Future<void> saveGasolinePriceHistory(EiaResponse response) async {
+    try {
+      final rows = response.data.map((d) {
+        if (d.value == null) return null;
+        final date = DateTime.tryParse(d.period);
+        if (date == null) return null;
+        return {'date': _fmt(date), 'price': d.value!};
+      }).whereType<Map<String, dynamic>>().toList();
+      if (rows.isEmpty) return;
+      await _db
+          .from('us_gasoline_price_history')
+          .upsert(rows, onConflict: 'date');
+    } catch (_) {}
+  }
+
+  Future<List<GasolinePricePoint>> getGasolinePriceHistory() async {
+    try {
+      final rows = await _db
+          .from('us_gasoline_price_history')
+          .select('date, price')
+          .order('date');
+      return rows.map<GasolinePricePoint>((r) => GasolinePricePoint(
+            date: DateTime.parse(r['date'] as String),
+            price: (r['price'] as num).toDouble(),
+          )).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<NatGasImportPoint>> getNatGasImportHistory() async {
+    try {
+      final rows = await _db
+          .from('us_natural_gas_import_prices')
+          .select()
+          .order('year');
+      const months = ['jan','feb','mar','apr','may','jun',
+                      'jul','aug','sep','oct','nov','dec'];
+      final points = <NatGasImportPoint>[];
+      for (final row in rows) {
+        final year = (row['year'] as int);
+        for (var m = 0; m < 12; m++) {
+          final v = (row[months[m]] as num?)?.toDouble();
+          if (v == null) continue;
+          points.add(NatGasImportPoint(date: DateTime(year, m + 1, 1), price: v));
+        }
+      }
+      return points;
     } catch (_) {
       return [];
     }

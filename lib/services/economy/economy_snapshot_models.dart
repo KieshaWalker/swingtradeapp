@@ -30,6 +30,23 @@ class QuoteSnapshot {
       );
 }
 
+// One weekly US retail gasoline price point from us_gasoline_price_history.
+class GasolinePricePoint {
+  final DateTime date;
+  final double price; // $/gallon
+
+  const GasolinePricePoint({required this.date, required this.price});
+}
+
+// One month of natural gas import price data, flattened from the
+// wide us_natural_gas_import_prices table (year × month columns).
+class NatGasImportPoint {
+  final DateTime date;
+  final double price; // $/MMBTU
+
+  const NatGasImportPoint({required this.date, required this.price});
+}
+
 class TreasurySnapshot {
   final DateTime date;
   final double? year1;

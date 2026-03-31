@@ -34,7 +34,9 @@ import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/fmp/fmp_providers.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../trades/models/trade.dart';
+import '../../trades/providers/trade_block_provider.dart';
 import '../../trades/providers/trades_provider.dart';
+import '../../trades/screens/trade_blocks_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -59,7 +61,63 @@ class DashboardScreen extends ConsumerWidget {
       body: asyncTrades.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
-        data: (trades) => _Dashboard(trades: trades, email: user?.email ?? ''),
+        data: (trades) => Column(
+          children: [
+            _EdgeWarningCard(),
+            Expanded(child: _Dashboard(trades: trades, email: user?.email ?? '')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EdgeWarningCard extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final eroding = ref.watch(edgeErodingProvider);
+    if (!eroding) return const SizedBox.shrink();
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const TradeBlocksScreen()),
+      ),
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppTheme.lossColor.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.lossColor.withValues(alpha: 0.4)),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                color: AppTheme.lossColor, size: 20),
+            SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Edge Erosion Warning',
+                    style: TextStyle(
+                        color: AppTheme.lossColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Last 20-trade block: fewer than 5 wins. Trade cautiously.',
+                    style: TextStyle(color: AppTheme.lossColor, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppTheme.lossColor, size: 18),
+          ],
+        ),
       ),
     );
   }

@@ -63,7 +63,6 @@ class BlsSeriesIds {
 
   // Current Population Survey (LNS)
   static const unemploymentRateU3 = 'LNS14000000';
-  static const unemploymentRateU6 = 'LNS13327709';
   static const laborForceParticipationRate = 'LNS11300000';
   static const employmentPopulationRatio = 'LNS12300000';
   static const totalUnemployed = 'LNS13000000';
@@ -128,7 +127,7 @@ class BlsSeriesIds {
   ];
 
   static const List<String> laborForce = [
-    unemploymentRateU3, unemploymentRateU6, laborForceParticipationRate,
+    unemploymentRateU3, laborForceParticipationRate,
     employmentPopulationRatio, totalUnemployed, civilianLaborForce,
     notInLaborForce, partTimeEconomicReasons, longTermUnemployed,
   ];

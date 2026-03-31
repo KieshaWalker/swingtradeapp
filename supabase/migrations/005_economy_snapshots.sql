@@ -47,6 +47,7 @@ create table if not exists economy_treasury_snapshots (
   recorded_at timestamptz not null default now()
 );
 
+
 alter table economy_treasury_snapshots enable row level security;
 
 create policy "Authenticated users can manage treasury snapshots"

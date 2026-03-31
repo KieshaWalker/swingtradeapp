@@ -1,29 +1,6 @@
 // =============================================================================
 // features/trades/screens/add_trade_screen.dart — Log a new trade
 // =============================================================================
-// Widgets defined here:
-//   • AddTradeScreen      (ConsumerStatefulWidget) — full form; navigated to
-//                          from TradesScreen FAB via context.push('/trades/add')
-//   • _TickerAutocomplete (ConsumerStatefulWidget) — text field that fires
-//                          tickerSearchProvider on each keystroke and shows a
-//                          dropdown of TickerSearchResult rows (symbol/name/exchange)
-//   • _SectionLabel       — small gray section heading used between form groups
-//
-// Route: '/trades/add' (child of /trades in router.dart)
-//
-// Providers consumed:
-//   • tickerSearchProvider(query)  — FMP ticker search; drives _TickerAutocomplete
-//   • currentUserProvider          — attaches user_id to new Trade
-//   • tradesNotifierProvider       — .addTrade(trade) inserts to Supabase,
-//                                    then invalidates tradesProvider
-//
-// Form fields:
-//   Ticker (with autocomplete), Option Type (Call/Put toggle),
-//   Strategy (dropdown), Strike + Expiration date picker, DTE auto-calc,
-//   Contracts + Entry Premium, IV Rank + Delta (optional), Notes
-//
-// On success: context.pop() back to TradesScreen
-// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,17 +23,27 @@ class AddTradeScreen extends ConsumerStatefulWidget {
 class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _tickerCtrl = TextEditingController();
-  final _strikeCtrl = TextEditingController();
-  final _contractsCtrl = TextEditingController(text: '1');
-  final _entryCtrl = TextEditingController();
-  final _ivRankCtrl = TextEditingController();
-  final _deltaCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
+  final _tickerCtrl        = TextEditingController();
+  final _strikeCtrl        = TextEditingController();
+  final _contractsCtrl     = TextEditingController(text: '1');
+  final _entryCtrl         = TextEditingController();
+  final _ivRankCtrl        = TextEditingController();
+  final _deltaCtrl         = TextEditingController();
+  final _notesCtrl         = TextEditingController();
+  final _priceHighCtrl     = TextEditingController();
+  final _priceLowCtrl      = TextEditingController();
+  final _impliedVolEntryCtrl = TextEditingController();
+  final _intradaySupportCtrl = TextEditingController();
+  final _intradayResistanceCtrl = TextEditingController();
+  final _breakoutCtrl      = TextEditingController();
+  final _breakdownCtrl     = TextEditingController();
+  final _maxLossCtrl       = TextEditingController();
+  final _timeOfEntryCtrl   = TextEditingController();
 
-  OptionType _optionType = OptionType.call;
-  TradeStrategy _strategy = TradeStrategy.longCall;
-  DateTime _expiration = DateTime.now().add(const Duration(days: 30));
+  OptionType _optionType   = OptionType.call;
+  TradeStrategy _strategy  = TradeStrategy.longCall;
+  EntryPointType? _entryPointType;
+  DateTime _expiration     = DateTime.now().add(const Duration(days: 30));
 
   @override
   void dispose() {
@@ -67,6 +54,15 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
     _ivRankCtrl.dispose();
     _deltaCtrl.dispose();
     _notesCtrl.dispose();
+    _priceHighCtrl.dispose();
+    _priceLowCtrl.dispose();
+    _impliedVolEntryCtrl.dispose();
+    _intradaySupportCtrl.dispose();
+    _intradayResistanceCtrl.dispose();
+    _breakoutCtrl.dispose();
+    _breakdownCtrl.dispose();
+    _maxLossCtrl.dispose();
+    _timeOfEntryCtrl.dispose();
     super.dispose();
   }
 
@@ -81,6 +77,9 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
   }
 
   int get _dteAtEntry => _expiration.difference(DateTime.now()).inDays;
+
+  double? _parse(TextEditingController c) =>
+      c.text.isNotEmpty ? double.tryParse(c.text) : null;
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -99,20 +98,30 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
       contracts: int.parse(_contractsCtrl.text),
       entryPrice: double.parse(_entryCtrl.text),
       status: TradeStatus.open,
-      ivRank: _ivRankCtrl.text.isNotEmpty ? double.tryParse(_ivRankCtrl.text) : null,
-      delta: _deltaCtrl.text.isNotEmpty ? double.tryParse(_deltaCtrl.text) : null,
+      ivRank: _parse(_ivRankCtrl),
+      delta: _parse(_deltaCtrl),
       notes: _notesCtrl.text.isNotEmpty ? _notesCtrl.text : null,
       openedAt: DateTime.now(),
+      priceRangeHigh: _parse(_priceHighCtrl),
+      priceRangeLow: _parse(_priceLowCtrl),
+      impliedVolEntry: _parse(_impliedVolEntryCtrl),
+      intradaySupport: _parse(_intradaySupportCtrl),
+      intradayResistance: _parse(_intradayResistanceCtrl),
+      dailyBreakoutLevel: _parse(_breakoutCtrl),
+      dailyBreakdownLevel: _parse(_breakdownCtrl),
+      entryPointType: _entryPointType,
+      maxLoss: _parse(_maxLossCtrl),
+      timeOfEntry: _timeOfEntryCtrl.text.isNotEmpty ? _timeOfEntryCtrl.text : null,
     );
 
     await ref.read(tradesNotifierProvider.notifier).addTrade(trade);
 
     if (mounted) {
-      final state = ref.read(tradesNotifierProvider);
-      if (state.hasError) {
+      final st = ref.read(tradesNotifierProvider);
+      if (st.hasError) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: ${state.error}'),
+            content: Text('Error: ${st.error}'),
             backgroundColor: AppTheme.lossColor,
           ),
         );
@@ -133,20 +142,18 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // --- Ticker with FMP autocomplete ---
-            _TickerAutocomplete(
-              controller: _tickerCtrl,
-              ref: ref,
-            ),
+            // ── Ticker ────────────────────────────────────────────────────────
+            _TickerAutocomplete(controller: _tickerCtrl, ref: ref),
             const SizedBox(height: 16),
 
-            // --- Call / Put ---
+            // ── Call / Put ────────────────────────────────────────────────────
             _SectionLabel('Option Type'),
             Row(
               children: OptionType.values.map((type) {
                 final selected = _optionType == type;
-                final color =
-                    type == OptionType.call ? AppTheme.profitColor : AppTheme.lossColor;
+                final color = type == OptionType.call
+                    ? AppTheme.profitColor
+                    : AppTheme.lossColor;
                 return Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(right: 8),
@@ -180,7 +187,7 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
             ),
             const SizedBox(height: 16),
 
-            // --- Strategy ---
+            // ── Strategy ──────────────────────────────────────────────────────
             _SectionLabel('Strategy'),
             DropdownButtonFormField<TradeStrategy>(
               initialValue: _strategy,
@@ -193,17 +200,16 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
             ),
             const SizedBox(height: 16),
 
-            // --- Strike & Expiration ---
+            // ── Strike & Expiration ───────────────────────────────────────────
             Row(
               children: [
                 Expanded(
                   child: TextFormField(
                     controller: _strikeCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(
-                      labelText: 'Strike Price *',
-                      prefixText: '\$',
-                    ),
+                        labelText: 'Strike Price *', prefixText: '\$'),
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Required' : null,
                   ),
@@ -216,10 +222,13 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
                       child: TextFormField(
                         decoration: InputDecoration(
                           labelText: 'Expiration *',
-                          suffixIcon: const Icon(Icons.calendar_today, size: 18),
-                          hintText: DateFormat('MMM d, yyyy').format(_expiration),
+                          suffixIcon:
+                              const Icon(Icons.calendar_today, size: 18),
+                          hintText:
+                              DateFormat('MMM d, yyyy').format(_expiration),
                         ),
-                        initialValue: DateFormat('MMM d, yyyy').format(_expiration),
+                        initialValue:
+                            DateFormat('MMM d, yyyy').format(_expiration),
                       ),
                     ),
                   ),
@@ -229,11 +238,12 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
             const SizedBox(height: 8),
             Text(
               'DTE at entry: $_dteAtEntry days',
-              style: const TextStyle(color: AppTheme.neutralColor, fontSize: 13),
+              style:
+                  const TextStyle(color: AppTheme.neutralColor, fontSize: 13),
             ),
             const SizedBox(height: 16),
 
-            // --- Contracts & Entry Price ---
+            // ── Contracts & Entry ─────────────────────────────────────────────
             Row(
               children: [
                 Expanded(
@@ -241,7 +251,8 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
                     controller: _contractsCtrl,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(labelText: 'Contracts *'),
+                    decoration:
+                        const InputDecoration(labelText: 'Contracts *'),
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Required' : null,
                   ),
@@ -250,7 +261,8 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
                 Expanded(
                   child: TextFormField(
                     controller: _entryCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(
                       labelText: 'Entry Premium *',
                       prefixText: '\$',
@@ -264,29 +276,154 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
             ),
             const SizedBox(height: 16),
 
-            // --- Optional: Greeks / IV ---
-            _SectionLabel('Greeks & IV (Optional)'),
+            // ── Price Range & IV Entry ────────────────────────────────────────
+            _SectionLabel('Price Range & IV (Optional)'),
             Row(
               children: [
                 Expanded(
                   child: TextFormField(
-                    controller: _ivRankCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    controller: _priceHighCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(
-                      labelText: 'IV Rank',
-                      suffixText: '%',
-                      helperText: '0–100',
-                    ),
+                        labelText: 'Price Range High', prefixText: '\$'),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextFormField(
-                    controller: _deltaCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    controller: _priceLowCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(
-                      labelText: 'Delta',
-                      helperText: '0.01–1.00',
+                        labelText: 'Price Range Low', prefixText: '\$'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _impliedVolEntryCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                  labelText: 'Implied Volatility at Entry', suffixText: '%'),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Levels ────────────────────────────────────────────────────────
+            _SectionLabel('Key Levels (Optional)'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _intradaySupportCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Intraday Support', prefixText: '\$'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _intradayResistanceCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Intraday Resistance', prefixText: '\$'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _breakoutCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Daily Breakout', prefixText: '\$'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _breakdownCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Daily Breakdown', prefixText: '\$'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // ── Entry Point Type ──────────────────────────────────────────────
+            _SectionLabel('Entry Point'),
+            Row(
+              children: EntryPointType.values.map((type) {
+                final selected = _entryPointType == type;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _entryPointType =
+                          selected ? null : type),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? AppTheme.profitColor.withValues(alpha: 0.2)
+                              : AppTheme.cardColor,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: selected
+                                ? AppTheme.profitColor
+                                : AppTheme.borderColor,
+                          ),
+                        ),
+                        child: Text(
+                          type.label,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: selected
+                                ? AppTheme.profitColor
+                                : AppTheme.neutralColor,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Max Loss & Time of Entry ──────────────────────────────────────
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _maxLossCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Max Loss', prefixText: '\$'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _timeOfEntryCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Time of Entry',
+                      hintText: 'e.g. 9:45',
                     ),
                   ),
                 ),
@@ -294,12 +431,39 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
             ),
             const SizedBox(height: 16),
 
-            // --- Notes ---
+            // ── Greeks & IV ───────────────────────────────────────────────────
+            _SectionLabel('Greeks & IV Rank (Optional)'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _ivRankCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'IV Rank', suffixText: '%'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _deltaCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Delta', helperText: '0.01–1.00'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // ── Setup Notes ───────────────────────────────────────────────────
             TextFormField(
               controller: _notesCtrl,
               maxLines: 3,
               decoration: const InputDecoration(
-                labelText: 'Notes / Setup Rationale',
+                labelText: 'Setup Notes / Rationale',
                 alignLabelWithHint: true,
               ),
             ),
@@ -319,12 +483,7 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
   }
 }
 
-// ----------------------------------------------------------------
-// Ticker autocomplete using FMP search-symbol
-// Watches tickerSearchProvider(query) on every keystroke.
-// Renders a dropdown list of up to 8 TickerSearchResult matches.
-// Tapping a result fills the text field and collapses the dropdown.
-// ----------------------------------------------------------------
+// ── Ticker autocomplete ────────────────────────────────────────────────────────
 class _TickerAutocomplete extends ConsumerStatefulWidget {
   final TextEditingController controller;
   final WidgetRef ref;
@@ -421,8 +580,7 @@ class _TickerAutocompleteState extends ConsumerState<_TickerAutocomplete> {
                                 r.name,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    color: AppTheme.neutralColor,
-                                    fontSize: 13),
+                                    color: AppTheme.neutralColor, fontSize: 13),
                               ),
                             ),
                             Text(
@@ -444,7 +602,6 @@ class _TickerAutocompleteState extends ConsumerState<_TickerAutocomplete> {
   }
 }
 
-// _SectionLabel: small gray heading used between form sections.
 class _SectionLabel extends StatelessWidget {
   final String text;
   const _SectionLabel(this.text);

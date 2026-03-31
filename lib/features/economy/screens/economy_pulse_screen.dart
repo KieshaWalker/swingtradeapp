@@ -14,6 +14,7 @@
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/economy/economy_storage_providers.dart';
@@ -68,6 +69,8 @@ class EconomyPulseScreen extends ConsumerWidget {
         (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaCorporateProfits)));
     ref.listen<AsyncValue<BeaResponse>>(beaNetExportsProvider,
         (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaNetExports)));
+    ref.listen<AsyncValue<BeaResponse>>(beaPceProvider,
+        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaPce)));
 
     // ── EIA — persist each series ─────────────────────────────────────────────
     ref.listen<AsyncValue<EiaResponse>>(eiaGasolinePricesProvider,
@@ -80,6 +83,8 @@ class EconomyPulseScreen extends ConsumerWidget {
         (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaNatGasStorage)));
     ref.listen<AsyncValue<EiaResponse>>(eiaRefineryUtilProvider,
         (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaRefineryUtil)));
+    ref.listen<AsyncValue<EiaResponse>>(eiaSprProvider,
+        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaSpr)));
 
     // ── Census — persist each series ──────────────────────────────────────────
     ref.listen<AsyncValue<CensusResponse>>(censusRetailSalesProvider,
@@ -116,11 +121,13 @@ class EconomyPulseScreen extends ConsumerWidget {
                 ref.invalidate(beaPersonalIncomeProvider);
                 ref.invalidate(beaCorporateProfitsProvider);
                 ref.invalidate(beaNetExportsProvider);
+                ref.invalidate(beaPceProvider);
                 ref.invalidate(eiaGasolinePricesProvider);
                 ref.invalidate(eiaCrudeStocksProvider);
                 ref.invalidate(eiaCrudeProdProvider);
                 ref.invalidate(eiaNatGasStorageProvider);
                 ref.invalidate(eiaRefineryUtilProvider);
+                ref.invalidate(eiaSprProvider);
                 ref.invalidate(censusRetailSalesProvider);
                 ref.invalidate(censusMotorVehiclesProvider);
                 ref.invalidate(censusNonStoreProvider);
@@ -369,13 +376,7 @@ String _fmtHousing(double v) {
   return '${v.toStringAsFixed(0)}K';
 }
 
-String _fmtDate(DateTime d) {
-  const months = [
-    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-  return '${months[d.month]} ${d.year}';
-}
+String _fmtDate(DateTime d) => DateFormat('MMM yyyy').format(d);
 
 // ─── Layout widgets ───────────────────────────────────────────────────────────
 

@@ -75,7 +75,8 @@ class TickerSearchResult {
       TickerSearchResult(
         symbol: json['symbol'] as String? ?? '',
         name: json['name'] as String? ?? '',
-        exchange: json['exchangeShortName'] as String? ?? '',
+        // Stable API /search-symbol returns 'exchange' (short name e.g. "NASDAQ")
+        exchange: json['exchange'] as String? ?? '',
       );
 }
 

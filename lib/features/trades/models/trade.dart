@@ -6,27 +6,23 @@
 //   TradeStrategy   { longCall, longPut, bullCallSpread, bearPutSpread,
 //                     bullPutSpread, bearCallSpread, ironCondor, other }
 //   TradeStatus     { open, closed, expired }
-//
-// TradeStrategyExt (extension):
-//   .label    — display string used in TradesScreen (_Badge), TradeDetailScreen,
-//               AddTradeScreen dropdown, DashboardScreen (_OpenTradeRow subtitle)
-//   .dbValue  — snake_case string stored in Supabase 'trades.strategy' column
-//   fromDb()  — parses dbValue back to enum; called in Trade.fromJson()
+//   EntryPointType  { atm, itm, otm }
 //
 // Trade (class):
-//   Computed getters used in UI:
+//   Computed getters:
 //     costBasis   — entryPrice × contracts × 100
-//                   shown in: TradeDetailScreen, CalculatorScreen
 //     realizedPnl — (exitPrice - entryPrice) × contracts × 100
-//                   shown in: TradesScreen (_TradeCard), TradeDetailScreen header,
-//                             DashboardScreen (_Dashboard stats & _PnLChart)
 //     pnlPercent  — realizedPnl / costBasis × 100
-//                   shown in: TradesScreen (_TradeCard), TradeDetailScreen
-//     isProfitable— used in DashboardScreen win-rate calculation
+//     isProfitable— realizedPnl > 0
 //
-//   Serialization:
-//     fromJson() — called by tradesProvider when reading from Supabase
-//     toJson()   — called by TradesNotifier.addTrade() when inserting to Supabase
+//   New option-specific fields (from CSV journal):
+//     priceRangeHigh, priceRangeLow   — underlying price range at entry
+//     impliedVolEntry, impliedVolExit  — IV snapshot at entry/exit
+//     intradaySupport, intradayResistance
+//     dailyBreakoutLevel, dailyBreakdownLevel
+//     entryPointType                   — ATM / ITM / OTM selection
+//     maxLoss                          — max dollar risk for this trade
+//     timeOfEntry, timeOfExit          — HH:mm strings
 // =============================================================================
 import 'package:intl/intl.dart';
 
@@ -44,6 +40,8 @@ enum TradeStrategy {
 }
 
 enum TradeStatus { open, closed, expired }
+
+enum EntryPointType { atm, itm, otm }
 
 extension TradeStrategyExt on TradeStrategy {
   String get label => switch (this) {
@@ -80,6 +78,20 @@ extension TradeStrategyExt on TradeStrategy {
       };
 }
 
+extension EntryPointTypeExt on EntryPointType {
+  String get label => switch (this) {
+        EntryPointType.atm => 'ATM',
+        EntryPointType.itm => 'ITM',
+        EntryPointType.otm => 'OTM',
+      };
+
+  static EntryPointType fromDb(String v) => switch (v.toLowerCase()) {
+        'itm' => EntryPointType.itm,
+        'otm' => EntryPointType.otm,
+        _ => EntryPointType.atm,
+      };
+}
+
 class Trade {
   final String id;
   final String userId;
@@ -99,6 +111,20 @@ class Trade {
   final DateTime openedAt;
   final DateTime? closedAt;
 
+  // New option-specific setup fields
+  final double? priceRangeHigh;
+  final double? priceRangeLow;
+  final double? impliedVolEntry;
+  final double? impliedVolExit;
+  final double? intradaySupport;
+  final double? intradayResistance;
+  final double? dailyBreakoutLevel;
+  final double? dailyBreakdownLevel;
+  final EntryPointType? entryPointType;
+  final double? maxLoss;
+  final String? timeOfEntry;
+  final String? timeOfExit;
+
   const Trade({
     required this.id,
     required this.userId,
@@ -117,6 +143,18 @@ class Trade {
     this.notes,
     required this.openedAt,
     this.closedAt,
+    this.priceRangeHigh,
+    this.priceRangeLow,
+    this.impliedVolEntry,
+    this.impliedVolExit,
+    this.intradaySupport,
+    this.intradayResistance,
+    this.dailyBreakoutLevel,
+    this.dailyBreakdownLevel,
+    this.entryPointType,
+    this.maxLoss,
+    this.timeOfEntry,
+    this.timeOfExit,
   });
 
   double get costBasis => entryPrice * contracts * 100;
@@ -159,6 +197,38 @@ class Trade {
         closedAt: json['closed_at'] != null
             ? DateTime.parse(json['closed_at'] as String)
             : null,
+        priceRangeHigh: json['price_range_high'] != null
+            ? (json['price_range_high'] as num).toDouble()
+            : null,
+        priceRangeLow: json['price_range_low'] != null
+            ? (json['price_range_low'] as num).toDouble()
+            : null,
+        impliedVolEntry: json['implied_vol_entry'] != null
+            ? (json['implied_vol_entry'] as num).toDouble()
+            : null,
+        impliedVolExit: json['implied_vol_exit'] != null
+            ? (json['implied_vol_exit'] as num).toDouble()
+            : null,
+        intradaySupport: json['intraday_support'] != null
+            ? (json['intraday_support'] as num).toDouble()
+            : null,
+        intradayResistance: json['intraday_resistance'] != null
+            ? (json['intraday_resistance'] as num).toDouble()
+            : null,
+        dailyBreakoutLevel: json['daily_breakout_level'] != null
+            ? (json['daily_breakout_level'] as num).toDouble()
+            : null,
+        dailyBreakdownLevel: json['daily_breakdown_level'] != null
+            ? (json['daily_breakdown_level'] as num).toDouble()
+            : null,
+        entryPointType: json['entry_point_type'] != null
+            ? EntryPointTypeExt.fromDb(json['entry_point_type'] as String)
+            : null,
+        maxLoss: json['max_loss'] != null
+            ? (json['max_loss'] as num).toDouble()
+            : null,
+        timeOfEntry: json['time_of_entry'] as String?,
+        timeOfExit: json['time_of_exit'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -175,5 +245,17 @@ class Trade {
         'iv_rank': ivRank,
         'delta': delta,
         'notes': notes,
+        'price_range_high': priceRangeHigh,
+        'price_range_low': priceRangeLow,
+        'implied_vol_entry': impliedVolEntry,
+        'implied_vol_exit': impliedVolExit,
+        'intraday_support': intradaySupport,
+        'intraday_resistance': intradayResistance,
+        'daily_breakout_level': dailyBreakoutLevel,
+        'daily_breakdown_level': dailyBreakdownLevel,
+        'entry_point_type': entryPointType?.name,
+        'max_loss': maxLoss,
+        'time_of_entry': timeOfEntry,
+        'time_of_exit': timeOfExit,
       };
 }

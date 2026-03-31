@@ -21,7 +21,6 @@ final blsEmploymentProvider = FutureProvider<BlsResponse>((ref) async {
     [
       BlsSeriesIds.totalNonfarmPayrolls,
       BlsSeriesIds.unemploymentRateU3,
-      BlsSeriesIds.unemploymentRateU6,
       BlsSeriesIds.laborForceParticipationRate,
       BlsSeriesIds.avgHourlyEarningsPrivate,
       BlsSeriesIds.avgWeeklyHoursPrivate,
@@ -103,6 +102,11 @@ final beaNetExportsProvider = FutureProvider<BeaResponse>((ref) async {
 
 final eiaGasolinePricesProvider = FutureProvider<EiaResponse>((ref) async {
   return EiaService().retailGasolinePricesWeekly();
+});
+
+/// Full gasoline price history 1990–present (up to 5 000 weekly points).
+final eiaGasolinePriceHistoryProvider = FutureProvider<EiaResponse>((ref) async {
+  return EiaService().gasolinePriceFullHistory();
 });
 
 final eiaCrudeStocksProvider = FutureProvider<EiaResponse>((ref) async {
