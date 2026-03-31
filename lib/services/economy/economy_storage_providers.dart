@@ -41,6 +41,11 @@ final natGasImportPricesProvider =
   return ref.read(economyStorageServiceProvider).getNatGasImportHistory();
 });
 
+final unemploymentRateHistoryProvider =
+    FutureProvider<List<UnemploymentRatePoint>>((ref) {
+  return ref.read(economyStorageServiceProvider).getUnemploymentHistory();
+});
+
 final gasolinePriceHistoryStorageProvider =
     FutureProvider<List<GasolinePricePoint>>((ref) {
   return ref.read(economyStorageServiceProvider).getGasolinePriceHistory();

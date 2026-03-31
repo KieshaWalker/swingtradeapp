@@ -30,6 +30,14 @@ class QuoteSnapshot {
       );
 }
 
+// One monthly US unemployment rate point from us_unemployment_rate_history.
+class UnemploymentRatePoint {
+  final DateTime date;
+  final double rate; // percent, e.g. 4.2
+
+  const UnemploymentRatePoint({required this.date, required this.rate});
+}
+
 // One weekly US retail gasoline price point from us_gasoline_price_history.
 class GasolinePricePoint {
   final DateTime date;

@@ -289,6 +289,43 @@ class EconomyStorageService {
     }
   }
 
+  // ── BLS unemployment rate history ─────────────────────────────────────────
+
+  /// Upserts a single month from a BLS response into us_unemployment_rate_history.
+  Future<void> saveUnemploymentHistory(BlsResponse response) async {
+    try {
+      final series = response.series.firstWhere(
+        (s) => s.seriesId == 'LNS14000000',
+        orElse: () => BlsSeries(seriesId: '', data: []),
+      );
+      if (series.seriesId.isEmpty) return;
+      final rows = series.data.map((d) {
+        final date = _blsPeriodToDate(d.year, d.period);
+        if (date == null || d.value <= 0) return null;
+        return {'rate_date': _fmt(date), 'unemployment_rate': d.value};
+      }).whereType<Map<String, dynamic>>().toList();
+      if (rows.isEmpty) return;
+      await _db
+          .from('us_unemployment_rate_history')
+          .upsert(rows, onConflict: 'rate_date');
+    } catch (_) {}
+  }
+
+  Future<List<UnemploymentRatePoint>> getUnemploymentHistory() async {
+    try {
+      final rows = await _db
+          .from('us_unemployment_rate_history')
+          .select('rate_date, unemployment_rate')
+          .order('rate_date');
+      return rows.map<UnemploymentRatePoint>((r) => UnemploymentRatePoint(
+            date: DateTime.parse(r['rate_date'] as String),
+            rate: (r['unemployment_rate'] as num).toDouble(),
+          )).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── EIA gasoline price history ─────────────────────────────────────────────
 
   Future<void> saveGasolinePriceHistory(EiaResponse response) async {

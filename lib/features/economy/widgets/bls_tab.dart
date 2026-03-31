@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/bls/bls_models.dart';
 import '../providers/api_data_providers.dart';
 import 'api_tile_widgets.dart';
+import 'unemployment_rate_chart.dart';
 
 class BlsTab extends ConsumerWidget {
   const BlsTab({super.key});
@@ -63,6 +64,12 @@ class BlsTab extends ConsumerWidget {
               suffix: ' hrs',
             ),
           ]),
+          const SizedBox(height: 16),
+
+          // ── Unemployment Rate History ─────────────────────────────────────
+          const ApiSectionHeader('Unemployment Rate History'),
+          const SizedBox(height: 8),
+          const UnemploymentRateChart(),
           const SizedBox(height: 20),
 
           // ── Consumer Prices ──────────────────────────────────────────────
