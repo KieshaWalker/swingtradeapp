@@ -17,7 +17,6 @@ import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../services/economy/economy_snapshot_models.dart';
 import '../../../services/economy/economy_storage_providers.dart';
-import '../../../services/economy/economy_storage_service.dart';
 import '../providers/api_data_providers.dart';
 
 const _lineColor = Color(0xFFF78166);
