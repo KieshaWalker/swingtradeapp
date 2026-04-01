@@ -49,3 +49,7 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 dart_defines.json
+
+
+# notes/ 
+notes/
