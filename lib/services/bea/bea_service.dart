@@ -1,24 +1,10 @@
-import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:http/http.dart' as http;
-import '../../core/kalshi_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'bea_models.dart';
 
 class BeaService {
   static final BeaService _instance = BeaService._();
   BeaService._();
   factory BeaService() => _instance;
-
-  final _client = http.Client();
-
-  // ── Base URL ──────────────────────────────────────────────────────────────
-
-  // On web, route through the /api/bea Vercel proxy (same origin = no CORS).
-  // On native, call BEA directly.
-  static String get _baseUrl {
-    if (kIsWeb) return '${Uri.base.origin}/api/bea';
-    return BeaConfig.baseUrl;
-  }
 
   // ── Core request ──────────────────────────────────────────────────────────
 
@@ -28,61 +14,54 @@ class BeaService {
     return List.generate(years, (i) => now - (years - 1) + i).join(',');
   }
 
+  Future<BeaResponse> _invoke(Map<String, String> params) async {
+    final response = await Supabase.instance.client.functions.invoke(
+      'get-bea-data',
+      body: {'params': params},
+    );
+    if (response.status != 200) {
+      throw Exception('BEA Edge Function error ${response.status}');
+    }
+    return BeaResponse.fromJson(response.data as Map<String, dynamic>);
+  }
+
   Future<BeaResponse> _getNipa({
     required String tableName,
     required String lineNumber,
     String frequency = 'Q',
     required String year,
-  }) async {
-    final uri = Uri.parse(_baseUrl).replace(queryParameters: {
-      'UserID': BeaConfig.apiKey,
-      'method': 'GetData',
-      'DataSetName': 'NIPA',
-      'TableName': tableName,
-      'LineNumber': lineNumber,
-      'Frequency': frequency,
-      'Year': year,
-      'ResultFormat': 'JSON',
-    });
-    final response = await _client.get(uri);
-    _checkStatus(response);
-    return BeaResponse.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
+  }) =>
+      _invoke({
+        'method': 'GetData',
+        'DataSetName': 'NIPA',
+        'TableName': tableName,
+        'LineNumber': lineNumber,
+        'Frequency': frequency,
+        'Year': year,
+      });
 
   Future<BeaResponse> _getRegional({
     required String tableName,
     String geoFips = 'STATE',
     required String year,
-  }) async {
-    final uri = Uri.parse(_baseUrl).replace(queryParameters: {
-      'UserID': BeaConfig.apiKey,
-      'method': 'GetData',
-      'DataSetName': 'Regional',
-      'TableName': tableName,
-      'GeoFips': geoFips,
-      'Year': year,
-      'ResultFormat': 'JSON',
-    });
-    final response = await _client.get(uri);
-    _checkStatus(response);
-    return BeaResponse.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
+  }) =>
+      _invoke({
+        'method': 'GetData',
+        'DataSetName': 'Regional',
+        'TableName': tableName,
+        'GeoFips': geoFips,
+        'Year': year,
+      });
 
   Future<BeaResponse> _getDataset({
     required String datasetName,
     required Map<String, String> extraParams,
-  }) async {
-    final uri = Uri.parse(_baseUrl).replace(queryParameters: {
-      'UserID': BeaConfig.apiKey,
-      'method': 'GetData',
-      'DataSetName': datasetName,
-      'ResultFormat': 'JSON',
-      ...extraParams,
-    });
-    final response = await _client.get(uri);
-    _checkStatus(response);
-    return BeaResponse.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
-  }
+  }) =>
+      _invoke({
+        'method': 'GetData',
+        'DataSetName': datasetName,
+        ...extraParams,
+      });
 
   // ── GDP & Components (NIPA T10101 — % change) ────────────────────────────
 
@@ -215,11 +194,4 @@ class BeaService {
         'Year': _yearRange(years),
       });
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  void _checkStatus(http.Response r) {
-    if (r.statusCode != 200) {
-      throw Exception('BEA API error ${r.statusCode}: ${r.body}');
-    }
-  }
 }

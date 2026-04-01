@@ -1,14 +1,10 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../../core/kalshi_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'eia_models.dart';
 
 class EiaService {
   static final EiaService _instance = EiaService._();
   EiaService._();
   factory EiaService() => _instance;
-
-  final _client = http.Client();
 
   // ── Core request ──────────────────────────────────────────────────────────
 
@@ -21,27 +17,22 @@ class EiaService {
     int length = 52,
     Map<String, String>? facets,
   }) async {
-    final params = <String, String>{
-      'api_key': EiaConfig.apiKey,
-      'frequency': frequency,
-      'length': length.toString(),
-      'sort[0][column]': 'period',
-      'sort[0][direction]': 'desc',
-      'offset': '0',
-    };
-    for (final d in data) {
-      params['data[]'] = d;
+    final response = await Supabase.instance.client.functions.invoke(
+      'get-eia-data',
+      body: {
+        'route': route,
+        'frequency': frequency,
+        'length': length,
+        'data': data,
+        if (start != null) 'start': start,
+        if (end != null) 'end': end,
+        if (facets != null) 'facets': facets,
+      },
+    );
+    if (response.status != 200) {
+      throw Exception('EIA Edge Function error ${response.status}');
     }
-    if (start != null) params['start'] = start;
-    if (end != null) params['end'] = end;
-    if (facets != null) {
-      facets.forEach((k, v) => params['facets[$k][]'] = v);
-    }
-
-    final uri = Uri.parse('${EiaConfig.baseUrl}/$route/data/').replace(queryParameters: params);
-    final response = await _client.get(uri);
-    _checkStatus(response);
-    return EiaResponse.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    return EiaResponse.fromJson(response.data as Map<String, dynamic>);
   }
 
   // ── Petroleum ─────────────────────────────────────────────────────────────
@@ -239,11 +230,4 @@ class EiaService {
         facets: {'productId': '57', 'activityId': '1'},
       );
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  void _checkStatus(http.Response r) {
-    if (r.statusCode != 200) {
-      throw Exception('EIA API error ${r.statusCode}: ${r.body}');
-    }
-  }
 }

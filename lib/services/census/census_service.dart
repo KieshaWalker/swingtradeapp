@@ -1,14 +1,10 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../../core/kalshi_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'census_models.dart';
 
 class CensusService {
   static final CensusService _instance = CensusService._();
   CensusService._();
   factory CensusService() => _instance;
-
-  final _client = http.Client();
 
   // ── Core request ──────────────────────────────────────────────────────────
 
@@ -17,15 +13,18 @@ class CensusService {
     Map<String, String> params, {
     bool requiresKey = true,
   }) async {
-    final allParams = {
-      if (requiresKey) 'key': CensusConfig.apiKey,
-      ...params,
-    };
-    final uri = Uri.parse('${CensusConfig.baseUrl}/$endpoint')
-        .replace(queryParameters: allParams);
-    final response = await _client.get(uri);
-    _checkStatus(response);
-    final body = jsonDecode(response.body);
+    final response = await Supabase.instance.client.functions.invoke(
+      'get-census-data',
+      body: {
+        'endpoint': endpoint,
+        'params': params,
+        'requiresKey': requiresKey,
+      },
+    );
+    if (response.status != 200) {
+      throw Exception('Census Edge Function error ${response.status}');
+    }
+    final body = response.data;
     if (body is List) return CensusResponse.fromJson(body);
     throw Exception('Unexpected Census response format');
   }
@@ -218,11 +217,4 @@ class CensusService {
         },
       );
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  void _checkStatus(http.Response r) {
-    if (r.statusCode != 200) {
-      throw Exception('Census API error ${r.statusCode}: ${r.body}');
-    }
-  }
 }

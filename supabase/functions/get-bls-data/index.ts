@@ -4,18 +4,27 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { series_id, limit = '500' } = await req.json()
-    const apiKey = Deno.env.get('FRED_API_KEY')
-    
-    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series_id}&api_key=${apiKey}&file_type=json&limit=${limit}&sort_order=desc`
-    
-    const response = await fetch(url)
+    const { seriesid, startyear, endyear } = await req.json()
+    const apiKey = Deno.env.get('BLS_API_KEY')
+
+    const body = JSON.stringify({
+      seriesid,
+      startyear,
+      endyear,
+      registrationkey: apiKey,
+    })
+
+    const response = await fetch('https://api.bls.gov/publicAPI/v2/timeseries/data/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    })
+
     const data = await response.json()
 
     return new Response(JSON.stringify(data), {

@@ -1,14 +1,10 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../../core/kalshi_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'bls_models.dart';
 
 class BlsService {
   static final BlsService _instance = BlsService._();
   BlsService._();
   factory BlsService() => _instance;
-
-  final _client = http.Client();
 
   // ── Core request — batch POST (up to 50 series) ───────────────────────────
 
@@ -18,20 +14,18 @@ class BlsService {
     int? endYear,
   }) async {
     final end = endYear ?? DateTime.now().year;
-    final uri = Uri.parse('${BlsConfig.baseUrl}/timeseries/data/');
-    final body = jsonEncode({
-      'seriesid': seriesIds,
-      'startyear': startYear.toString(),
-      'endyear': end.toString(),
-      'registrationkey': BlsConfig.apiKey,
-    });
-    final response = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: body,
+    final response = await Supabase.instance.client.functions.invoke(
+      'get-bls-data',
+      body: {
+        'seriesid': seriesIds,
+        'startyear': startYear.toString(),
+        'endyear': end.toString(),
+      },
     );
-    _checkStatus(response);
-    return BlsResponse.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    if (response.status != 200) {
+      throw Exception('BLS Edge Function error ${response.status}');
+    }
+    return BlsResponse.fromJson(response.data as Map<String, dynamic>);
   }
 
   // ── Employment Situation (CES) ────────────────────────────────────────────
@@ -171,11 +165,4 @@ class BlsService {
     return results;
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  void _checkStatus(http.Response r) {
-    if (r.statusCode != 200) {
-      throw Exception('BLS API error ${r.statusCode}: ${r.body}');
-    }
-  }
 }

@@ -16,17 +16,13 @@
 //   { "observations": [ {"date":"2024-01-02","value":"14.5"}, ... ] }
 //   Missing values are represented as "." — these are skipped.
 // =============================================================================
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../../core/kalshi_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'fred_models.dart';
 
 class FredService {
   static final FredService _instance = FredService._();
   FredService._();
   factory FredService() => _instance;
-
-  final _client = http.Client();
 
   /// Fetch up to [limit] observations for [seriesId], newest first.
   /// [observationStart] optionally limits how far back to go (YYYY-MM-DD).
@@ -57,7 +53,6 @@ Future<FredSeries> getSeries(String seriesId, {int limit = 500}) async {
     return FredSeries(seriesId: seriesId, observations: []);
   }
 }
-  }
 
   FredObservation? _parse(Map<String, dynamic> e) {
     final dateStr = e['date'] as String?;

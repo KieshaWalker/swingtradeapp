@@ -4,17 +4,20 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { series_id, limit = '500' } = await req.json()
-    const apiKey = Deno.env.get('FRED_API_KEY')
-    
-    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series_id}&api_key=${apiKey}&file_type=json&limit=${limit}&sort_order=desc`
-    
+    const { endpoint, params, requiresKey = true } = await req.json()
+    const apiKey = Deno.env.get('CENSUS_API_KEY')
+
+    const urlParams = new URLSearchParams(params)
+    if (requiresKey && apiKey) {
+      urlParams.set('key', apiKey)
+    }
+
+    const url = `https://api.census.gov/data/${endpoint}?${urlParams.toString()}`
     const response = await fetch(url)
     const data = await response.json()
 

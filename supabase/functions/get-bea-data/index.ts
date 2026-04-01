@@ -4,17 +4,21 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { series_id, limit = '500' } = await req.json()
-    const apiKey = Deno.env.get('FRED_API_KEY')
-    
-    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series_id}&api_key=${apiKey}&file_type=json&limit=${limit}&sort_order=desc`
-    
+    const { params } = await req.json()
+    const apiKey = Deno.env.get('BEA_API_KEY')
+
+    const urlParams = new URLSearchParams({
+      ...params,
+      UserID: apiKey!,
+      ResultFormat: 'JSON',
+    })
+
+    const url = `https://apps.bea.gov/api/data?${urlParams.toString()}`
     const response = await fetch(url)
     const data = await response.json()
 

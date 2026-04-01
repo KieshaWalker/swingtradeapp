@@ -91,3 +91,45 @@ POST /acts/{actorId}/runs?token=apify_api_3VmtRCdbU4ErpF13FMQWy0aO1eeOiG0bXGp0
 POST /acts/{actorId}/run-sync-get-dataset-items?token=...
 GET  /actor-runs/{runId}?token=...
 GET  /datasets/{datasetId}/items?token=...
+
+
+supabase functions deploy get-bls-data
+supabase functions deploy get-eia-data
+supabase functions deploy get-census-data
+supabase functions deploy get-bea-data
+supabase functions deploy get-apify-data
+
+supabase login          # if not already
+supabase link           # if not already linked to your project
+supabase secrets list
+To check which project you're linked to:
+
+
+supabase status
+
+supabase functions list                 # list deployed functions
+supabase functions deploy <name>        # deploy one function
+supabase functions deploy               # deploy all functions
+supabase functions delete <name>
+supabase functions serve                # run functions locally
+Secrets
+
+
+supabase secrets list                   # list secret names (not values)
+supabase secrets set KEY=value          # set one or more secrets
+supabase secrets unset KEY              # delete a secret
+Database
+
+
+supabase db pull                        # pull remote schema to local
+supabase db push                        # push local migrations to remote
+supabase db diff                        # diff local vs remote schema
+supabase db reset                       # reset local DB and re-run migrations
+supabase migration list                 # list migrations
+supabase migration new <name>           # create a new migration file
+Local Dev
+
+
+supabase start                          # start local Supabase stack (Docker)
+supabase stop                           # stop local stack
+supabase db studio                      # open local Studio UI

@@ -1,6 +1,4 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../../core/kalshi_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'apify_models.dart';
 
 class ApifyService {
@@ -8,7 +6,16 @@ class ApifyService {
   ApifyService._();
   factory ApifyService() => _instance;
 
-  final _client = http.Client();
+  Future<dynamic> _invoke(Map<String, dynamic> body) async {
+    final response = await Supabase.instance.client.functions.invoke(
+      'get-apify-data',
+      body: body,
+    );
+    if (response.status != 200) {
+      throw Exception('Apify Edge Function error ${response.status}');
+    }
+    return response.data;
+  }
 
   // ── Run an actor ──────────────────────────────────────────────────────────
 
@@ -19,20 +26,15 @@ class ApifyService {
     int? memoryMbytes,
     int? timeoutSecs,
   }) async {
-    final params = <String, String>{'token': ApifyConfig.apiKey};
-    if (build != null) params['build'] = build;
-    if (memoryMbytes != null) params['memoryMbytes'] = memoryMbytes.toString();
-    if (timeoutSecs != null) params['timeout'] = timeoutSecs.toString();
-
-    final uri = Uri.parse('${ApifyConfig.baseUrl}/acts/$actorId/runs')
-        .replace(queryParameters: params);
-    final response = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(input),
-    );
-    _checkStatus(response);
-    return ApifyRun.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    final data = await _invoke({
+      'action': 'runActor',
+      'actorId': actorId,
+      'input': input,
+      if (build != null) 'build': build,
+      if (memoryMbytes != null) 'memoryMbytes': memoryMbytes,
+      if (timeoutSecs != null) 'timeoutSecs': timeoutSecs,
+    });
+    return ApifyRun.fromJson(data as Map<String, dynamic>);
   }
 
   // ── Run actor synchronously (waits for result) ────────────────────────────
@@ -43,32 +45,22 @@ class ApifyService {
     int timeoutSecs = 300,
     int memoryMbytes = 512,
   }) async {
-    final uri = Uri.parse('${ApifyConfig.baseUrl}/acts/$actorId/run-sync-get-dataset-items')
-        .replace(queryParameters: {
-      'token': ApifyConfig.apiKey,
-      'timeout': timeoutSecs.toString(),
-      'memoryMbytes': memoryMbytes.toString(),
-      'format': 'json',
+    final data = await _invoke({
+      'action': 'runActorSync',
+      'actorId': actorId,
+      'input': input,
+      'timeoutSecs': timeoutSecs,
+      'memoryMbytes': memoryMbytes,
     });
-    final response = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(input),
-    );
-    _checkStatus(response);
-    final body = jsonDecode(response.body);
-    if (body is List) return body.cast<Map<String, dynamic>>();
+    if (data is List) return data.cast<Map<String, dynamic>>();
     return [];
   }
 
   // ── Poll run status ───────────────────────────────────────────────────────
 
   Future<ApifyRun> getRunStatus(String runId) async {
-    final uri = Uri.parse('${ApifyConfig.baseUrl}/actor-runs/$runId')
-        .replace(queryParameters: {'token': ApifyConfig.apiKey});
-    final response = await _client.get(uri);
-    _checkStatus(response);
-    return ApifyRun.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    final data = await _invoke({'action': 'getRunStatus', 'runId': runId});
+    return ApifyRun.fromJson(data as Map<String, dynamic>);
   }
 
   // ── Retrieve dataset items ────────────────────────────────────────────────
@@ -79,17 +71,13 @@ class ApifyService {
     int offset = 0,
     String format = 'json',
   }) async {
-    final uri = Uri.parse('${ApifyConfig.baseUrl}/datasets/$datasetId/items')
-        .replace(queryParameters: {
-      'token': ApifyConfig.apiKey,
-      'format': format,
-      'limit': limit.toString(),
-      'offset': offset.toString(),
+    final data = await _invoke({
+      'action': 'getDatasetItems',
+      'datasetId': datasetId,
+      'limit': limit,
+      'offset': offset,
     });
-    final response = await _client.get(uri);
-    _checkStatus(response);
-    final body = jsonDecode(response.body);
-    if (body is List) return body.cast<Map<String, dynamic>>();
+    if (data is List) return data.cast<Map<String, dynamic>>();
     return [];
   }
 
@@ -98,29 +86,19 @@ class ApifyService {
     String actorId, {
     int limit = 1000,
   }) async {
-    final uri = Uri.parse(
-            '${ApifyConfig.baseUrl}/acts/$actorId/runs/last/dataset/items')
-        .replace(queryParameters: {
-      'token': ApifyConfig.apiKey,
-      'format': 'json',
-      'limit': limit.toString(),
-      'status': 'SUCCEEDED',
+    final data = await _invoke({
+      'action': 'getLastRunDataset',
+      'actorId': actorId,
+      'limit': limit,
     });
-    final response = await _client.get(uri);
-    _checkStatus(response);
-    final body = jsonDecode(response.body);
-    if (body is List) return body.cast<Map<String, dynamic>>();
+    if (data is List) return data.cast<Map<String, dynamic>>();
     return [];
   }
 
   /// Get dataset info (item count, name, etc.)
   Future<ApifyDatasetInfo> getDatasetInfo(String datasetId) async {
-    final uri = Uri.parse('${ApifyConfig.baseUrl}/datasets/$datasetId')
-        .replace(queryParameters: {'token': ApifyConfig.apiKey});
-    final response = await _client.get(uri);
-    _checkStatus(response);
-    return ApifyDatasetInfo.fromJson(
-        jsonDecode(response.body) as Map<String, dynamic>);
+    final data = await _invoke({'action': 'getDatasetInfo', 'datasetId': datasetId});
+    return ApifyDatasetInfo.fromJson(data as Map<String, dynamic>);
   }
 
   // ── Convenience wrappers for known actors ────────────────────────────────
@@ -152,11 +130,4 @@ class ApifyService {
         },
       );
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
-  void _checkStatus(http.Response r) {
-    if (r.statusCode != 200 && r.statusCode != 201) {
-      throw Exception('Apify API error ${r.statusCode}: ${r.body}');
-    }
-  }
 }
