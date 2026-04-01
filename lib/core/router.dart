@@ -50,6 +50,7 @@ import '../features/trades/screens/trade_blocks_screen.dart';
 import '../features/trades/screens/trade_detail_screen.dart';
 import '../features/trades/screens/trade_journal_screen.dart';
 import '../features/trades/screens/trades_screen.dart';
+import '../features/summary/screens/summary_screen.dart';
 
 // Thin shell — just provides the route transition wrapper.
 // Navigation is handled by AppMenuButton in each screen's AppBar.
@@ -148,6 +149,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/economy',
         pageBuilder: (context, state) => const NoTransitionPage(
           child: _AppShell(child: EconomyPulseScreen()),
+        ),
+      ),
+      GoRoute(
+        path: '/summary',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: SummaryScreen()),
         ),
       ),
 

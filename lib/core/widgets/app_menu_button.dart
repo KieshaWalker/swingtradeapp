@@ -18,6 +18,7 @@ class AppMenuButton extends StatelessWidget {
       onSelected: (route) => GoRouter.of(context).go(route),
       itemBuilder: (_) => [
         _navItem('/', Icons.dashboard_rounded, 'Dashboard', location),
+        _navItem('/summary', Icons.insights_rounded, 'Summary', location),
         _navItem('/trades', Icons.show_chart_rounded, 'Trades', location),
         _navItem('/calculator', Icons.calculate_rounded, 'Calculator', location),
         _navItem('/journal', Icons.book_rounded, 'Journal', location),
