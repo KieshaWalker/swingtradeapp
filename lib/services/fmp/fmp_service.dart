@@ -193,62 +193,73 @@ class FmpService {
     }
   }
 
-  /// Fetches all data needed for the Economy Pulse screen in parallel.
+  /// Fetches all data needed for the Economy Pulse screen.
+  /// Quotes are batched into 1 request; indicators are split into 2 staggered
+  /// batches to stay well under the FMP rate limit.
   Future<EconomyPulseData> getEconomyPulse() async {
-    // Asset quotes fired individually in parallel (batch endpoint requires higher FMP tier)
-    final spyFuture    = getQuote('SPY');
-    final qqqFuture    = getQuote('QQQ');
-    final vixyFuture   = getQuote('VIXY');
-    final uupFuture    = getQuote('UUP');
-    final goldFuture   = getQuote('GC=F');
-    final silverFuture = getQuote('SI=F');
-    final wtiFuture    = getQuote('CL=F');
-    final ngFuture     = getQuote('NG=F');
-    final hygFuture    = getQuote('HYG');   // High Yield Bond ETF
-    final lqdFuture    = getQuote('LQD');   // IG Bond ETF
-    final copxFuture   = getQuote('COPX');  // Copper Miners ETF
+    // 1 request for all 11 asset quotes
+    final quotesFuture = getQuotes(
+      ['SPY', 'QQQ', 'VIXY', 'UUP', 'GC=F', 'SI=F', 'CL=F', 'NG=F', 'HYG', 'LQD', 'COPX'],
+    );
 
-    // Economic indicators fired in parallel
-    final treasuryFuture = getLatestTreasuryRates();
-    final fedFuture = getEconomicIndicator('federalFunds');
-    final unempFuture = getEconomicIndicator('unemploymentRate');
-    final nfpFuture = getEconomicIndicator('totalNonfarmPayrolls');
-    final claimsFuture = getEconomicIndicator('initialJoblessClaims');
-    final cpiFuture = getEconomicIndicator('CPI');
-    final gdpFuture = getEconomicIndicator('realGDP');
-    final retailFuture = getEconomicIndicator('retailSales');
-    final sentimentFuture = getEconomicIndicator('consumerSentiment');
-    final mortgageFuture =
-        getEconomicIndicator('30YearFixedRateMortgageAverage');
-    final housingFuture = getEconomicIndicator(
-        'newPrivatelyOwnedHousingUnitsStartedTotalUnits');
-    final recessionFuture =
-        getEconomicIndicator('smoothedUSRecessionProbabilities');
+    // Treasury + first 5 indicators in parallel with quotes
+    final treasuryFuture   = getLatestTreasuryRates();
+    final fedFuture        = getEconomicIndicator('federalFunds');
+    final unempFuture      = getEconomicIndicator('unemploymentRate');
+    final nfpFuture        = getEconomicIndicator('totalNonfarmPayrolls');
+    final claimsFuture     = getEconomicIndicator('initialJoblessClaims');
+    final cpiFuture        = getEconomicIndicator('CPI');
+
+    // Await first batch before firing second batch
+    final quotes    = await quotesFuture;
+    final treasury  = await treasuryFuture;
+    final fed       = await fedFuture;
+    final unemp     = await unempFuture;
+    final nfp       = await nfpFuture;
+    final claims    = await claimsFuture;
+    final cpi       = await cpiFuture;
+
+    await Future.delayed(const Duration(milliseconds: 400));
+
+    // Second batch of 6 indicators
+    final results2 = await Future.wait([
+      getEconomicIndicator('realGDP'),
+      getEconomicIndicator('retailSales'),
+      getEconomicIndicator('consumerSentiment'),
+      getEconomicIndicator('30YearFixedRateMortgageAverage'),
+      getEconomicIndicator('newPrivatelyOwnedHousingUnitsStartedTotalUnits'),
+      getEconomicIndicator('smoothedUSRecessionProbabilities'),
+    ]);
+
+    StockQuote? q(String sym) {
+      try { return quotes.firstWhere((s) => s.symbol == sym); }
+      catch (_) { return null; }
+    }
 
     return EconomyPulseData(
-      sp500: await spyFuture,
-      nasdaq: await qqqFuture,
-      vix: await vixyFuture,
-      dxy: await uupFuture,
-      gold: await goldFuture,
-      silver: await silverFuture,
-      wtiCrude: await wtiFuture,
-      natGas: await ngFuture,
-      hyg: await hygFuture,
-      lqd: await lqdFuture,
-      copx: await copxFuture,
-      treasury: await treasuryFuture,
-      fedFunds: await fedFuture,
-      unemployment: await unempFuture,
-      nfp: await nfpFuture,
-      initialClaims: await claimsFuture,
-      cpi: await cpiFuture,
-      gdp: await gdpFuture,
-      retailSales: await retailFuture,
-      consumerSentiment: await sentimentFuture,
-      mortgageRate: await mortgageFuture,
-      housingStarts: await housingFuture,
-      recessionProb: await recessionFuture,
+      sp500: q('SPY'),
+      nasdaq: q('QQQ'),
+      vix: q('VIXY'),
+      dxy: q('UUP'),
+      gold: q('GC=F'),
+      silver: q('SI=F'),
+      wtiCrude: q('CL=F'),
+      natGas: q('NG=F'),
+      hyg: q('HYG'),
+      lqd: q('LQD'),
+      copx: q('COPX'),
+      treasury: treasury,
+      fedFunds: fed,
+      unemployment: unemp,
+      nfp: nfp,
+      initialClaims: claims,
+      cpi: cpi,
+      gdp: results2[0],
+      retailSales: results2[1],
+      consumerSentiment: results2[2],
+      mortgageRate: results2[3],
+      housingStarts: results2[4],
+      recessionProb: results2[5],
       fetchedAt: DateTime.now(),
     );
   }
