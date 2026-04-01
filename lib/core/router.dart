@@ -14,15 +14,15 @@
 //   /login             → LoginScreen           (features/auth)
 //   /signup            → SignupScreen          (features/auth)
 //   /auth/callback     → _AuthCallbackScreen
-//   /                  → DashboardScreen       (features/dashboard)    [tab 0]
-//   /trades            → TradesScreen          (features/trades)       [tab 1]
+//   /                  → SummaryScreen         (features/summary)      [home]
+//   /trades            → TradesScreen          (features/trades)
 //   /trades/add        → AddTradeScreen        (features/trades)
 //   /trades/:id        → TradeDetailScreen     (features/trades) — extra: Trade
-//   /calculator        → CalculatorScreen      (features/calculator)   [tab 2]
-//   /journal           → JournalScreen         (features/journal)      [tab 3]
+//   /calculator        → CalculatorScreen      (features/calculator)
+//   /journal           → JournalScreen         (features/journal)
 //   /journal/add       → AddJournalScreen      (features/journal)
-//   /economy           → EconomyPulseScreen    (features/economy)       [tab 4]
-//   /ticker            → TickerDashboardScreen (features/ticker_profile)[tab 5]
+//   /economy           → EconomyPulseScreen    (features/economy)
+//   /ticker            → TickerDashboardScreen (features/ticker_profile)
 //   /ticker/:symbol    → TickerProfileScreen   (features/ticker_profile) — no shell
 //
 // Auth guard (redirect):
@@ -38,7 +38,6 @@ import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/signup_screen.dart';
 import '../features/calculator/screens/calculator_screen.dart';
 import '../features/economy/screens/economy_pulse_screen.dart';
-import '../features/dashboard/screens/dashboard_screen.dart';
 import '../features/journal/screens/add_journal_screen.dart';
 import '../features/journal/screens/journal_screen.dart';
 import '../features/ticker_profile/screens/ticker_dashboard_screen.dart';
@@ -88,7 +87,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/',
         pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: DashboardScreen()),
+          child: _AppShell(child: SummaryScreen()),
         ),
       ),
       GoRoute(
@@ -151,13 +150,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           child: _AppShell(child: EconomyPulseScreen()),
         ),
       ),
-      GoRoute(
-        path: '/summary',
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: SummaryScreen()),
-        ),
-      ),
-
       // Tickers — dashboard + full-screen profile (no shell)
       GoRoute(
         path: '/ticker',
