@@ -133,3 +133,14 @@ Local Dev
 supabase start                          # start local Supabase stack (Docker)
 supabase stop                           # stop local stack
 supabase db studio                      # open local Studio UI
+
+
+You have two options:
+
+Option 1 — Run manually when functions change (simplest)
+
+
+supabase functions deploy --no-verify-jwt
+You only need to re-run this when you change a function, not on every deploy.
+
+Option 2 — GitHub Actions (automatic)

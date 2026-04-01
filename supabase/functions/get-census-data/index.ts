@@ -12,14 +12,30 @@ Deno.serve(async (req) => {
     const { endpoint, params, requiresKey = true } = await req.json()
     const apiKey = Deno.env.get('CENSUS_API_KEY')
 
-    const urlParams = new URLSearchParams(params)
+    // Build query string without encoding — Census uses + as date-range syntax
+    // and : / * as query operators that must remain literal
+    const parts: string[] = []
+    for (const [k, v] of Object.entries(params as Record<string, string>)) {
+      parts.push(`${k}=${v}`)
+    }
     if (requiresKey && apiKey) {
-      urlParams.set('key', apiKey)
+      parts.push(`key=${apiKey}`)
     }
 
-    const url = `https://api.census.gov/data/${endpoint}?${urlParams.toString()}`
+    const url = `https://api.census.gov/data/${endpoint}?${parts.join('&')}`
     const response = await fetch(url)
-    const data = await response.json()
+
+    const text = await response.text()
+    let data: unknown
+    try {
+      data = JSON.parse(text)
+    } catch {
+      // Census returns plain-text errors for bad requests
+      return new Response(JSON.stringify({ error: text }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      })
+    }
 
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
