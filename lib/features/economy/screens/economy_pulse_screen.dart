@@ -22,6 +22,7 @@ import '../../../services/fmp/fmp_models.dart';
 import '../../../services/fmp/fmp_providers.dart';
 import '../../../services/economy/economy_storage_service.dart';
 import '../../../features/economy/providers/api_data_providers.dart';
+import '../../../services/fred/fred_providers.dart';
 import '../../../services/bls/bls_models.dart';
 import '../../../services/bea/bea_models.dart';
 import '../../../services/eia/eia_models.dart';
@@ -31,6 +32,7 @@ import '../widgets/bls_tab.dart';
 import '../widgets/bea_tab.dart';
 import '../widgets/eia_tab.dart';
 import '../widgets/census_tab.dart';
+import '../widgets/fred_tab.dart';
 
 class EconomyPulseScreen extends ConsumerWidget {
   const EconomyPulseScreen({super.key});
@@ -101,7 +103,7 @@ class EconomyPulseScreen extends ConsumerWidget {
         (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusWholesale)));
 
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Economy Pulse'),
@@ -134,6 +136,13 @@ class EconomyPulseScreen extends ConsumerWidget {
                 ref.invalidate(censusConstructionSpendingProvider);
                 ref.invalidate(censusManufacturingOrdersProvider);
                 ref.invalidate(censusWholesaleSalesProvider);
+                ref.invalidate(fredVixProvider);
+                ref.invalidate(fredGoldProvider);
+                ref.invalidate(fredSilverProvider);
+                ref.invalidate(fredHyOasProvider);
+                ref.invalidate(fredIgOasProvider);
+                ref.invalidate(fredSpreadProvider);
+                ref.invalidate(fredFedFundsProvider);
               },
             ),
             const AppMenuButton(),
@@ -148,6 +157,7 @@ class EconomyPulseScreen extends ConsumerWidget {
               Tab(text: 'BEA'),
               Tab(text: 'EIA'),
               Tab(text: 'Census'),
+              Tab(text: 'FRED'),
             ],
           ),
         ),
@@ -178,6 +188,7 @@ class EconomyPulseScreen extends ConsumerWidget {
             const BeaTab(),
             const EiaTab(),
             const CensusTab(),
+            const FredTab(),
           ],
         ),
       ),

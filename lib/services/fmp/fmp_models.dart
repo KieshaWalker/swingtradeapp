@@ -175,6 +175,11 @@ class EconomyPulseData {
   final StockQuote? wtiCrude;
   final StockQuote? natGas;
 
+  // Macro score additions
+  final StockQuote? hyg;    // High Yield Bond ETF — credit risk proxy
+  final StockQuote? lqd;    // IG Bond ETF — investment grade credit
+  final StockQuote? copx;   // Copper Miners ETF — growth/expansion proxy
+
   // Treasury yield curve
   final TreasuryRates? treasury;
 
@@ -202,6 +207,9 @@ class EconomyPulseData {
     this.silver,
     this.wtiCrude,
     this.natGas,
+    this.hyg,
+    this.lqd,
+    this.copx,
     this.treasury,
     this.fedFunds,
     this.unemployment,

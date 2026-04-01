@@ -204,6 +204,9 @@ class FmpService {
     final silverFuture = getQuote('SI=F');
     final wtiFuture    = getQuote('CL=F');
     final ngFuture     = getQuote('NG=F');
+    final hygFuture    = getQuote('HYG');   // High Yield Bond ETF
+    final lqdFuture    = getQuote('LQD');   // IG Bond ETF
+    final copxFuture   = getQuote('COPX');  // Copper Miners ETF
 
     // Economic indicators fired in parallel
     final treasuryFuture = getLatestTreasuryRates();
@@ -231,6 +234,9 @@ class FmpService {
       silver: await silverFuture,
       wtiCrude: await wtiFuture,
       natGas: await ngFuture,
+      hyg: await hygFuture,
+      lqd: await lqdFuture,
+      copx: await copxFuture,
       treasury: await treasuryFuture,
       fedFunds: await fedFuture,
       unemployment: await unempFuture,

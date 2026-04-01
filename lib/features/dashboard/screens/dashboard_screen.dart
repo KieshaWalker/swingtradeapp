@@ -37,6 +37,8 @@ import '../../trades/models/trade.dart';
 import '../../trades/providers/trade_block_provider.dart';
 import '../../trades/providers/trades_provider.dart';
 import '../../trades/screens/trade_blocks_screen.dart';
+import '../../macro/macro_score_card.dart';
+import '../../macro/fred_sync_widget.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -58,14 +60,16 @@ class DashboardScreen extends ConsumerWidget {
           const AppMenuButton(),
         ],
       ),
-      body: asyncTrades.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (trades) => Column(
-          children: [
-            _EdgeWarningCard(),
-            Expanded(child: _Dashboard(trades: trades, email: user?.email ?? '')),
-          ],
+      body: FredSyncWidget(
+        child: asyncTrades.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('Error: $e')),
+          data: (trades) => Column(
+            children: [
+              _EdgeWarningCard(),
+              Expanded(child: _Dashboard(trades: trades, email: user?.email ?? '')),
+            ],
+          ),
         ),
       ),
     );
@@ -167,6 +171,9 @@ class _Dashboard extends StatelessWidget {
             style: TextStyle(color: AppTheme.neutralColor),
           ),
           const SizedBox(height: 24),
+
+          // Macro regime card
+          const MacroScoreCard(),
 
           // Stat cards
           Row(

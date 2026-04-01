@@ -163,6 +163,7 @@ class EconomyStorageService {
     final quotes = [
       data.sp500, data.nasdaq, data.vix, data.dxy,
       data.gold, data.silver, data.wtiCrude, data.natGas,
+      data.hyg, data.lqd, data.copx,
     ].whereType<StockQuote>().toList();
 
     if (quotes.isEmpty) return;
