@@ -30,42 +30,33 @@ class FredService {
 
   /// Fetch up to [limit] observations for [seriesId], newest first.
   /// [observationStart] optionally limits how far back to go (YYYY-MM-DD).
-  Future<FredSeries> getSeries(
-    String seriesId, {
-    int limit = 500,
-    String? observationStart,
-  }) async {
-    final params = <String, String>{
-      'api_key': FredConfig.apiKey,
-      'file_type': 'json',
-      'limit': '$limit',
-      'sort_order': 'desc',
-      'series_id': seriesId
-    }; 
-    if (observationStart != null) {
-      params['observation_start'] = observationStart;
-    }
-    final uri = Uri.parse('${FredConfig.baseUrl}/series/observations')
-        .replace(queryParameters: params);
-    try {
-      final res = await _client.get(uri);
-if (res.statusCode != 200) {
-      // FIX: Instead of returning empty, throw an error with the body
-      // This allows Riverpod to move into the 'error' state
-      throw Exception('FRED API Error ${res.statusCode}: ${res.body}');
-    }
-      final body = jsonDecode(res.body) as Map<String, dynamic>;
-      final raw = body['observations'] as List<dynamic>? ?? [];
+Future<FredSeries> getSeries(String seriesId, {int limit = 500}) async {
+  try {
+    // Call your Supabase Edge Function instead of FRED directly
+    final response = await Supabase.instance.client.functions.invoke(
+      'get-fred-data',
+      body: {
+        'series_id': seriesId,
+        'limit': limit.toString(),
+      },
+    );
 
-      final observations = raw
-          .map((e) => _parse(e as Map<String, dynamic>))
-          .whereType<FredObservation>()
-          .toList();
-      return FredSeries(seriesId: seriesId, observations: observations);
-    } catch (e) {
-      print('Error fetching FRED series $seriesId: $e');
-      return FredSeries(seriesId: seriesId, observations: []);
-    }
+    if (response.status != 200) throw Exception('Function error');
+
+    final body = response.data as Map<String, dynamic>;
+    final raw = body['observations'] as List<dynamic>? ?? [];
+
+    final observations = raw
+        .map((e) => _parse(e as Map<String, dynamic>))
+        .whereType<FredObservation>()
+        .toList();
+
+    return FredSeries(seriesId: seriesId, observations: observations);
+  } catch (e) {
+    print('Edge Function Error: $e');
+    return FredSeries(seriesId: seriesId, observations: []);
+  }
+}
   }
 
   FredObservation? _parse(Map<String, dynamic> e) {
