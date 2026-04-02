@@ -509,7 +509,7 @@ class _TickerAutocompleteState extends ConsumerState<_TickerAutocomplete> {
 
   @override
   Widget build(BuildContext context) {
-    final resultsAsync = ref.watch(tickerSearchProvider(_query));
+    //final resultsAsync = ref.watch(tickerSearchProvider(_query));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

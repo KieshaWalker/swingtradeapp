@@ -41,6 +41,7 @@ import '../features/economy/screens/economy_pulse_screen.dart';
 import '../features/journal/screens/add_journal_screen.dart';
 import '../features/journal/screens/journal_screen.dart';
 import '../features/ticker_profile/screens/ticker_dashboard_screen.dart';
+import '../features/options/screens/options_chain_screen.dart';
 import '../features/ticker_profile/screens/ticker_profile_screen.dart';
 import '../features/trades/models/trade.dart';
 import '../features/trades/screens/add_trade_screen.dart';
@@ -162,6 +163,14 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, state) => TickerProfileScreen(
               symbol: state.pathParameters['symbol']!,
             ),
+            routes: [
+              GoRoute(
+                path: 'chains',
+                builder: (_, state) => OptionsChainScreen(
+                  symbol: state.pathParameters['symbol']!,
+                ),
+              ),
+            ],
           ),
         ],
       ),

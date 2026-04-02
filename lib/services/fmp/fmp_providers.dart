@@ -48,11 +48,11 @@ final quotesProvider =
 });
 
 // Ticker search results
-final tickerSearchProvider =
-    FutureProvider.family<List<TickerSearchResult>, String>((ref, query) async {
-  if (query.isEmpty) return [];
-  return ref.watch(fmpServiceProvider).searchTicker(query);
-});
+//final tickerSearchProvider =
+//    FutureProvider.family<List<TickerSearchResult>, String>((ref, query) async {
+//  if (query.isEmpty) return [];
+//  return ref.watch(fmpServiceProvider).searchTicker(query);
+//});
 
 // Company profile
 final stockProfileProvider =

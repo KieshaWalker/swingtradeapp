@@ -40,6 +40,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
 import '../../../services/fmp/fmp_models.dart';
 import '../../../services/schwab/schwab_providers.dart';
@@ -145,6 +146,13 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
                 const SizedBox.shrink(),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.candlestick_chart_rounded),
+            tooltip: 'Options Chain',
+            onPressed: () => context.push('/ticker/$_sym/chains'),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           tabs: const [
