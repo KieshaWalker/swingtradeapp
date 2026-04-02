@@ -40,6 +40,7 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
   final _maxLossCtrl       = TextEditingController();
   final _timeOfEntryCtrl   = TextEditingController();
 
+
   OptionType _optionType   = OptionType.call;
   TradeStrategy _strategy  = TradeStrategy.longCall;
   EntryPointType? _entryPointType;

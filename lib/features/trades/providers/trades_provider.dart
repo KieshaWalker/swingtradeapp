@@ -65,9 +65,54 @@ class TradesNotifier extends AsyncNotifier<void> {
     if (user == null) return;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final data = {...trade.toJson(), 'user_id': user.id}
-        ..removeWhere((_, v) => v == null);
-      await _client.from('trades').insert(data);
+      // Core columns — guaranteed to exist (migration 001)
+      final base = <String, dynamic>{
+        'user_id':      user.id,
+        'ticker':       trade.ticker,
+        'option_type':  trade.optionType.name,
+        'strategy':     trade.strategy.dbValue,
+        'strike':       trade.strike,
+        'expiration':   trade.toJson()['expiration'],
+        'dte_at_entry': trade.dteAtEntry,
+        'contracts':    trade.contracts,
+        'entry_price':  trade.entryPrice,
+        'status':       trade.status.name,
+        if (trade.ivRank  != null) 'iv_rank': trade.ivRank,
+        if (trade.delta   != null) 'delta':   trade.delta,
+        if (trade.notes   != null) 'notes':   trade.notes,
+      };
+
+      final response = await _client
+          .from('trades')
+          .insert(base)
+          .select('id')
+          .single();
+
+      // Extended columns (migration 006) — best-effort update
+      final ext = <String, dynamic>{
+        if (trade.priceRangeHigh      != null) 'price_range_high':      trade.priceRangeHigh,
+        if (trade.priceRangeLow       != null) 'price_range_low':       trade.priceRangeLow,
+        if (trade.impliedVolEntry     != null) 'implied_vol_entry':     trade.impliedVolEntry,
+        if (trade.intradaySupport     != null) 'intraday_support':      trade.intradaySupport,
+        if (trade.intradayResistance  != null) 'intraday_resistance':   trade.intradayResistance,
+        if (trade.dailyBreakoutLevel  != null) 'daily_breakout_level':  trade.dailyBreakoutLevel,
+        if (trade.dailyBreakdownLevel != null) 'daily_breakdown_level': trade.dailyBreakdownLevel,
+        if (trade.entryPointType      != null) 'entry_point_type':      trade.entryPointType!.name,
+        if (trade.maxLoss             != null) 'max_loss':              trade.maxLoss,
+        if (trade.timeOfEntry         != null) 'time_of_entry':         trade.timeOfEntry,
+      };
+
+      if (ext.isNotEmpty) {
+        try {
+          await _client
+              .from('trades')
+              .update(ext)
+              .eq('id', response['id'] as String);
+        } catch (_) {
+          // Extended columns not yet migrated — data saved, extras skipped
+        }
+      }
+
       ref.invalidate(tradesProvider);
     });
   }

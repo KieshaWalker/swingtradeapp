@@ -18,6 +18,7 @@ ALTER TABLE trades
   ADD COLUMN IF NOT EXISTS implied_vol_exit     numeric,
   ADD COLUMN IF NOT EXISTS time_of_entry        text,
   ADD COLUMN IF NOT EXISTS time_of_exit         text;
+  ADD COLUMN IF NOT EXISTS entry_point_type     text;   -- 'atm' | 'itm' | 'otm'
 
 -- ── trade_journal ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS trade_journal (
