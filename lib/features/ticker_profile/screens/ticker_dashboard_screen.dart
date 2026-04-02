@@ -23,7 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
-import '../../../services/fmp/fmp_providers.dart';
+import '../../../services/schwab/schwab_providers.dart';
 import '../../trades/providers/trades_provider.dart';
 import '../providers/ticker_profile_notifier.dart';
 import '../providers/ticker_profile_providers.dart';

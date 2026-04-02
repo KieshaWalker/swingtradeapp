@@ -33,7 +33,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme.dart';
-import '../../../services/fmp/fmp_providers.dart';
+import '../../../services/schwab/schwab_providers.dart';
 import '../../../services/sec/sec_models.dart';
 import '../../../services/sec/sec_providers.dart';
 import '../models/trade.dart';

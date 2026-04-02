@@ -406,3 +406,15 @@ entrypoint = "./functions/get-bea-data/index.ts"
 [functions.get-apify-data]
 verify_jwt = false
 entrypoint = "./functions/get-apify-data/index.ts"
+
+[functions.get-schwab-quotes]
+verify_jwt = false
+entrypoint = "./functions/get-schwab-quotes/index.ts"
+
+[functions.get-schwab-chains]
+verify_jwt = false
+entrypoint = "./functions/get-schwab-chains/index.ts"
+
+[functions.schwab-bootstrap]
+verify_jwt = false
+entrypoint = "./functions/schwab-bootstrap/index.ts"

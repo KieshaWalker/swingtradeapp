@@ -8,7 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
-import '../../../services/fmp/fmp_providers.dart';
+import '../../../services/schwab/schwab_providers.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../trades/models/trade.dart';
 import '../../trades/providers/trade_block_provider.dart';
