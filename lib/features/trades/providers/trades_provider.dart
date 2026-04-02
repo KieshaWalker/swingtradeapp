@@ -65,10 +65,9 @@ class TradesNotifier extends AsyncNotifier<void> {
     if (user == null) return;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await _client.from('trades').insert({
-        ...trade.toJson(),
-        'user_id': user.id,
-      });
+      final data = {...trade.toJson(), 'user_id': user.id}
+        ..removeWhere((_, v) => v == null);
+      await _client.from('trades').insert(data);
       ref.invalidate(tradesProvider);
     });
   }
