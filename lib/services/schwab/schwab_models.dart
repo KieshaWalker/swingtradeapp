@@ -108,6 +108,7 @@ class SchwabOptionContract {
   final bool    inTheMoney;
   final double  intrinsicValue;
   final double  timeValue;
+  final double  theoreticalOptionValue;
   final String  expirationDate;
 
   const SchwabOptionContract({
@@ -128,29 +129,31 @@ class SchwabOptionContract {
     required this.inTheMoney,
     required this.intrinsicValue,
     required this.timeValue,
+    required this.theoreticalOptionValue,
     required this.expirationDate,
   });
 
   factory SchwabOptionContract.fromJson(Map<String, dynamic> j) =>
       SchwabOptionContract(
-        symbol:           j['symbol']           as String? ?? '',
-        strikePrice:      (j['strikePrice']      as num? ?? 0).toDouble(),
-        bid:              (j['bid']              as num? ?? 0).toDouble(),
-        ask:              (j['ask']              as num? ?? 0).toDouble(),
-        last:             (j['last']             as num? ?? 0).toDouble(),
-        delta:            (j['delta']            as num? ?? 0).toDouble(),
-        gamma:            (j['gamma']            as num? ?? 0).toDouble(),
-        theta:            (j['theta']            as num? ?? 0).toDouble(),
-        vega:             (j['vega']             as num? ?? 0).toDouble(),
-        rho:              (j['rho']              as num? ?? 0).toDouble(),
-        impliedVolatility:(j['volatility']       as num? ?? 0).toDouble(),
-        totalVolume:      (j['totalVolume']      as num? ?? 0).toInt(),
-        openInterest:     (j['openInterest']     as num? ?? 0).toInt(),
-        daysToExpiration: (j['daysToExpiration'] as num? ?? 0).toInt(),
-        inTheMoney:       j['inTheMoney']        as bool? ?? false,
-        intrinsicValue:   (j['intrinsicValue']   as num? ?? 0).toDouble(),
-        timeValue:        (j['timeValue']        as num? ?? 0).toDouble(),
-        expirationDate:   j['expirationDate']    as String? ?? '',
+        symbol:                  j['symbol']                  as String? ?? '',
+        strikePrice:             (j['strikePrice']             as num? ?? 0).toDouble(),
+        bid:                     (j['bid']                     as num? ?? 0).toDouble(),
+        ask:                     (j['ask']                     as num? ?? 0).toDouble(),
+        last:                    (j['last']                    as num? ?? 0).toDouble(),
+        delta:                   (j['delta']                   as num? ?? 0).toDouble(),
+        gamma:                   (j['gamma']                   as num? ?? 0).toDouble(),
+        theta:                   (j['theta']                   as num? ?? 0).toDouble(),
+        vega:                    (j['vega']                    as num? ?? 0).toDouble(),
+        rho:                     (j['rho']                     as num? ?? 0).toDouble(),
+        impliedVolatility:       (j['volatility']              as num? ?? 0).toDouble(),
+        totalVolume:             (j['totalVolume']             as num? ?? 0).toInt(),
+        openInterest:            (j['openInterest']            as num? ?? 0).toInt(),
+        daysToExpiration:        (j['daysToExpiration']        as num? ?? 0).toInt(),
+        inTheMoney:              j['inTheMoney']               as bool? ?? false,
+        intrinsicValue:          (j['intrinsicValue']          as num? ?? 0).toDouble(),
+        timeValue:               (j['timeValue']               as num? ?? 0).toDouble(),
+        theoreticalOptionValue:  (j['theoreticalOptionValue']  as num? ?? 0).toDouble(),
+        expirationDate:          j['expirationDate']           as String? ?? '',
       );
 
   double get midpoint => (bid + ask) / 2;
