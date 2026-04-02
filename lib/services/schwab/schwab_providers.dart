@@ -21,6 +21,14 @@ final quotesProvider =
   return ref.watch(schwabServiceProvider).getQuotes(symbols);
 });
 
+// ── Ticker search provider (replaces FMP tickerSearchProvider) ────────────────
+
+final tickerSearchProvider =
+    FutureProvider.family<List<SchwabInstrument>, String>((ref, query) {
+  if (query.isEmpty) return Future.value([]);
+  return ref.watch(schwabServiceProvider).searchTicker(query);
+});
+
 // ── Options chain provider ────────────────────────────────────────────────────
 
 final schwabOptionsChainProvider =

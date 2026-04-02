@@ -70,6 +70,27 @@ class SchwabService {
     }
   }
 
+  // ── Ticker search ────────────────────────────────────────────────────────────
+
+  Future<List<SchwabInstrument>> searchTicker(String query) async {
+    if (query.isEmpty) return [];
+    try {
+      final res = await _fn.invoke(
+        'get-schwab-instruments',
+        body: {'query': query},
+      );
+      if (res.status != 200) return [];
+      final data = res.data;
+      if (data is! List) return [];
+      return data
+          .map((e) => SchwabInstrument.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('SchwabService.searchTicker error: $e');
+      return [];
+    }
+  }
+
   // ── Economy pulse batch (replaces FMP getEconomyPulse quotes) ────────────────
 
   Future<List<StockQuote>> getEconomyQuotes() => getQuotes(

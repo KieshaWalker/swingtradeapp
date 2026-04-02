@@ -3,6 +3,27 @@
 // =============================================================================
 import '../fmp/fmp_models.dart';
 
+// ── Instrument search result ──────────────────────────────────────────────────
+
+class SchwabInstrument {
+  final String symbol;
+  final String name;
+  final String exchange;
+
+  const SchwabInstrument({
+    required this.symbol,
+    required this.name,
+    required this.exchange,
+  });
+
+  factory SchwabInstrument.fromJson(Map<String, dynamic> json) =>
+      SchwabInstrument(
+        symbol:   json['symbol']   as String? ?? '',
+        name:     json['name']     as String? ?? '',
+        exchange: json['exchange'] as String? ?? '',
+      );
+}
+
 // ── Quote ─────────────────────────────────────────────────────────────────────
 
 class SchwabQuote {

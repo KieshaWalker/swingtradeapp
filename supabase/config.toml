@@ -418,3 +418,7 @@ entrypoint = "./functions/get-schwab-chains/index.ts"
 [functions.schwab-bootstrap]
 verify_jwt = false
 entrypoint = "./functions/schwab-bootstrap/index.ts"
+
+[functions.get-schwab-instruments]
+verify_jwt = false
+entrypoint = "./functions/get-schwab-instruments/index.ts"

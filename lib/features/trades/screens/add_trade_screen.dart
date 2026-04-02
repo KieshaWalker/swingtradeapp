@@ -8,7 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/theme.dart';
-import '../../../services/fmp/fmp_providers.dart';
+import '../../../services/schwab/schwab_providers.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../models/trade.dart';
 import '../providers/trades_provider.dart';
@@ -509,7 +509,7 @@ class _TickerAutocompleteState extends ConsumerState<_TickerAutocomplete> {
 
   @override
   Widget build(BuildContext context) {
-    //final resultsAsync = ref.watch(tickerSearchProvider(_query));
+    final resultsAsync = ref.watch(tickerSearchProvider(_query));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
