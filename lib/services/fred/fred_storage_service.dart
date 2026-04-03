@@ -62,7 +62,7 @@ class FredStorageService {
           .from('economy_quote_snapshots')
           .select('date, price')
           .eq('symbol', symbol)
-          .order('date', ascending: false)
+          .order('date', ascending: true)
           .limit(limit);
 
   Future<List<Map<String, dynamic>>> getIndicatorHistory(
@@ -73,7 +73,7 @@ class FredStorageService {
           .from('economy_indicator_snapshots')
           .select('date, value')
           .eq('identifier', identifier)
-          .order('date', ascending: false)
+          .order('date', ascending: true)
           .limit(limit);
 
   String _fmt(DateTime d) =>

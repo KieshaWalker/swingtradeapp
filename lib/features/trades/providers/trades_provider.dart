@@ -37,7 +37,7 @@ final tradesProvider = FutureProvider<List<Trade>>((ref) async {
       .from('trades')
       .select()
       .eq('user_id', user.id)
-      .order('opened_at', ascending: false);
+      .order('opened_at', ascending: true);
 
   return (response as List).map((e) => Trade.fromJson(e)).toList();
 });

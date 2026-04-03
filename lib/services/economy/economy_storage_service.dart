@@ -266,7 +266,7 @@ class EconomyStorageService {
           .from('economy_indicator_snapshots')
           .select('identifier, date, value')
           .eq('identifier', identifier)
-          .order('date');
+          .order('date', ascending: true);
       return rows.map<EconomicIndicatorPoint>((r) => EconomicIndicatorPoint(
             identifier: r['identifier'] as String,
             date: DateTime.parse(r['date'] as String),
@@ -283,7 +283,7 @@ class EconomyStorageService {
           .from('economy_quote_snapshots')
           .select('symbol, date, price, change_percent')
           .eq('symbol', symbol)
-          .order('date');
+          .order('date', ascending: true);
       return rows.map<QuoteSnapshot>(QuoteSnapshot.fromRow).toList();
     } catch (_) {
       return [];
@@ -317,7 +317,7 @@ class EconomyStorageService {
       final rows = await _db
           .from('us_unemployment_rate_history')
           .select('rate_date, unemployment_rate')
-          .order('rate_date');
+          .order('rate_date', ascending: true);
       return rows.map<UnemploymentRatePoint>((r) => UnemploymentRatePoint(
             date: DateTime.parse(r['rate_date'] as String),
             rate: (r['unemployment_rate'] as num).toDouble(),
@@ -349,7 +349,7 @@ class EconomyStorageService {
       final rows = await _db
           .from('us_gasoline_price_history')
           .select('date, price')
-          .order('date');
+          .order('date', ascending: true);
       return rows.map<GasolinePricePoint>((r) => GasolinePricePoint(
             date: DateTime.parse(r['date'] as String),
             price: (r['price'] as num).toDouble(),
@@ -364,7 +364,7 @@ class EconomyStorageService {
       final rows = await _db
           .from('us_natural_gas_import_prices')
           .select()
-          .order('year');
+          .order('year', ascending: true);
       const months = ['jan','feb','mar','apr','may','jun',
                       'jul','aug','sep','oct','nov','dec'];
       final points = <NatGasImportPoint>[];
@@ -385,7 +385,7 @@ class EconomyStorageService {
   Future<List<TreasurySnapshot>> getTreasuryHistory() async {
     try {
       final rows =
-          await _db.from('economy_treasury_snapshots').select().order('date');
+          await _db.from('economy_treasury_snapshots').select().order('date', ascending: true);
       return rows.map<TreasurySnapshot>(TreasurySnapshot.fromRow).toList();
     } catch (_) {
       return [];

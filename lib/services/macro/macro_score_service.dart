@@ -92,7 +92,7 @@ class MacroScoreService {
           .from('economy_quote_snapshots')
           .select('date, price')
           .eq('symbol', symbol)
-          .order('date', ascending: false)
+          .order('date', ascending: true)
           .limit(_maxHistory);
 
   Future<List<Map<String, dynamic>>> _indicatorHistory(
@@ -101,7 +101,7 @@ class MacroScoreService {
           .from('economy_indicator_snapshots')
           .select('date, value')
           .eq('identifier', identifier)
-          .order('date', ascending: false)
+          .order('date', ascending: true)
           .limit(_maxHistory);
 
   // ─── 1. VIX Level — 20 pts ───────────────────────────────────────────────
@@ -174,7 +174,7 @@ class MacroScoreService {
       final tRows = await _db
           .from('economy_treasury_snapshots')
           .select('date, year2, year10')
-          .order('date', ascending: false)
+          .order('date', ascending: true)
           .limit(_maxHistory);
       spreads = tRows
           .where((r) => r['year2'] != null && r['year10'] != null)

@@ -27,7 +27,7 @@ final journalProvider = FutureProvider<List<JournalEntry>>((ref) async {
       .from('journal_entries')
       .select()
       .eq('user_id', user.id)
-      .order('created_at', ascending: false);
+      .order('created_at', ascending: true);
 
   return (response as List).map((e) => JournalEntry.fromJson(e)).toList();
 });

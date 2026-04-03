@@ -44,7 +44,7 @@ final watchedTickersProvider = FutureProvider<List<String>>((ref) async {
       .from('watched_tickers')
       .select('ticker')
       .eq('user_id', user.id)
-      .order('added_at', ascending: false);
+      .order('added_at', ascending: true);
   return (rows as List).map((r) => r['ticker'] as String).toList();
 });
 
@@ -62,7 +62,7 @@ final tickerNotesProvider =
       .select()
       .eq('user_id', user.id)
       .eq('ticker', symbol.toUpperCase())
-      .order('created_at', ascending: false);
+      .order('created_at', ascending: true);
   return (rows as List)
       .map((e) => TickerProfileNote.fromJson(e as Map<String, dynamic>))
       .toList();
@@ -79,7 +79,7 @@ final tickerSRLevelsProvider =
       .select()
       .eq('user_id', user.id)
       .eq('ticker', symbol.toUpperCase())
-      .order('noted_at', ascending: false);
+      .order('noted_at', ascending: true);
   return (rows as List)
       .map((e) =>
           SupportResistanceLevel.fromJson(e as Map<String, dynamic>))
@@ -96,7 +96,7 @@ final tickerInsiderBuysProvider =
       .select()
       .eq('user_id', user.id)
       .eq('ticker', symbol.toUpperCase())
-      .order('filed_at', ascending: false);
+      .order('filed_at', ascending: true);
   return (rows as List)
       .map((e) => TickerInsiderBuy.fromJson(e as Map<String, dynamic>))
       .toList();
@@ -113,7 +113,7 @@ final tickerEarningsReactionsProvider =
       .select()
       .eq('user_id', user.id)
       .eq('ticker', symbol.toUpperCase())
-      .order('earnings_date', ascending: false);
+      .order('earnings_date', ascending: true);
   return (rows as List)
       .map((e) =>
           TickerEarningsReaction.fromJson(e as Map<String, dynamic>))
