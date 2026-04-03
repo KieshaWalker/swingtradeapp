@@ -609,15 +609,11 @@ class _DataNote extends StatelessWidget {
 class _QuoteChart extends ConsumerWidget {
   final String symbol;
   final String title;
-  final DateTime date;
-  final double price;
   final Color color;
 
   const _QuoteChart({
     required this.symbol,
     required this.title,
-    required this.date,
-    required this.price,
     required this.color,
   });
 
@@ -625,7 +621,7 @@ class _QuoteChart extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(economyQuoteHistoryProvider(symbol));
     return async.when(
-      loading: () => _chartSkeleton(title, symbol,),
+      loading: () => _chartSkeleton(title, symbol),
       error: (_, _) => _chartSkeleton(title, symbol),
       data: (history) {
         if (history.isEmpty) return _chartEmpty(title, symbol);
