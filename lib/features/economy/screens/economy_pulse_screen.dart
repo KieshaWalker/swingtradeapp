@@ -43,64 +43,143 @@ class EconomyPulseScreen extends ConsumerWidget {
 
     final storage = ref.read(economyStorageServiceProvider);
 
-    // ── FMP — persist on each fresh fetch ────────────────────────────────────
+    // ── Snapshot (Schwab quotes + FMP indicators) — persist on each fetch
     ref.listen<AsyncValue<EconomyPulseData>>(economyPulseProvider, (_, next) {
       next.whenData((data) => storage.saveEconomyPulse(data));
     });
 
     // ── BLS — persist all series responses ───────────────────────────────────
-    ref.listen<AsyncValue<BlsResponse>>(blsEmploymentProvider,
-        (_, next) => next.whenData(storage.saveBlsResponse));
-    ref.listen<AsyncValue<BlsResponse>>(blsCpiProvider,
-        (_, next) => next.whenData(storage.saveBlsResponse));
-    ref.listen<AsyncValue<BlsResponse>>(blsPpiProvider,
-        (_, next) => next.whenData(storage.saveBlsResponse));
-    ref.listen<AsyncValue<BlsResponse>>(blsJoltsProvider,
-        (_, next) => next.whenData(storage.saveBlsResponse));
+    ref.listen<AsyncValue<BlsResponse>>(
+      blsEmploymentProvider,
+      (_, next) => next.whenData(storage.saveBlsResponse),
+    );
+    ref.listen<AsyncValue<BlsResponse>>(
+      blsCpiProvider,
+      (_, next) => next.whenData(storage.saveBlsResponse),
+    );
+    ref.listen<AsyncValue<BlsResponse>>(
+      blsPpiProvider,
+      (_, next) => next.whenData(storage.saveBlsResponse),
+    );
+    ref.listen<AsyncValue<BlsResponse>>(
+      blsJoltsProvider,
+      (_, next) => next.whenData(storage.saveBlsResponse),
+    );
 
     // ── BEA — persist each named series ──────────────────────────────────────
-    ref.listen<AsyncValue<BeaResponse>>(beaGdpProvider,
-        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaGdpPct)));
-    ref.listen<AsyncValue<BeaResponse>>(beaRealGdpProvider,
-        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaRealGdp)));
-    ref.listen<AsyncValue<BeaResponse>>(beaCorePceProvider,
-        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaCorePce)));
-    ref.listen<AsyncValue<BeaResponse>>(beaPersonalIncomeProvider,
-        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaPersonalIncome)));
-    ref.listen<AsyncValue<BeaResponse>>(beaCorporateProfitsProvider,
-        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaCorporateProfits)));
-    ref.listen<AsyncValue<BeaResponse>>(beaNetExportsProvider,
-        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaNetExports)));
-    ref.listen<AsyncValue<BeaResponse>>(beaPceProvider,
-        (_, next) => next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaPce)));
+    ref.listen<AsyncValue<BeaResponse>>(
+      beaGdpProvider,
+      (_, next) =>
+          next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaGdpPct)),
+    );
+    ref.listen<AsyncValue<BeaResponse>>(
+      beaRealGdpProvider,
+      (_, next) =>
+          next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaRealGdp)),
+    );
+    ref.listen<AsyncValue<BeaResponse>>(
+      beaCorePceProvider,
+      (_, next) =>
+          next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaCorePce)),
+    );
+    ref.listen<AsyncValue<BeaResponse>>(
+      beaPersonalIncomeProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveBeaResponse(d, EconIds.beaPersonalIncome),
+      ),
+    );
+    ref.listen<AsyncValue<BeaResponse>>(
+      beaCorporateProfitsProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveBeaResponse(d, EconIds.beaCorporateProfits),
+      ),
+    );
+    ref.listen<AsyncValue<BeaResponse>>(
+      beaNetExportsProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveBeaResponse(d, EconIds.beaNetExports),
+      ),
+    );
+    ref.listen<AsyncValue<BeaResponse>>(
+      beaPceProvider,
+      (_, next) =>
+          next.whenData((d) => storage.saveBeaResponse(d, EconIds.beaPce)),
+    );
 
     // ── EIA — persist each series ─────────────────────────────────────────────
-    ref.listen<AsyncValue<EiaResponse>>(eiaGasolinePricesProvider,
-        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaGasolinePrice)));
-    ref.listen<AsyncValue<EiaResponse>>(eiaCrudeStocksProvider,
-        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaCrudeStocks)));
-    ref.listen<AsyncValue<EiaResponse>>(eiaCrudeProdProvider,
-        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaCrudeProd)));
-    ref.listen<AsyncValue<EiaResponse>>(eiaNatGasStorageProvider,
-        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaNatGasStorage)));
-    ref.listen<AsyncValue<EiaResponse>>(eiaRefineryUtilProvider,
-        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaRefineryUtil)));
-    ref.listen<AsyncValue<EiaResponse>>(eiaSprProvider,
-        (_, next) => next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaSpr)));
+    ref.listen<AsyncValue<EiaResponse>>(
+      eiaGasolinePricesProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveEiaResponse(d, EconIds.eiaGasolinePrice),
+      ),
+    );
+    ref.listen<AsyncValue<EiaResponse>>(
+      eiaCrudeStocksProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveEiaResponse(d, EconIds.eiaCrudeStocks),
+      ),
+    );
+    ref.listen<AsyncValue<EiaResponse>>(
+      eiaCrudeProdProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveEiaResponse(d, EconIds.eiaCrudeProd),
+      ),
+    );
+    ref.listen<AsyncValue<EiaResponse>>(
+      eiaNatGasStorageProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveEiaResponse(d, EconIds.eiaNatGasStorage),
+      ),
+    );
+    ref.listen<AsyncValue<EiaResponse>>(
+      eiaRefineryUtilProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveEiaResponse(d, EconIds.eiaRefineryUtil),
+      ),
+    );
+    ref.listen<AsyncValue<EiaResponse>>(
+      eiaSprProvider,
+      (_, next) =>
+          next.whenData((d) => storage.saveEiaResponse(d, EconIds.eiaSpr)),
+    );
 
     // ── Census — persist each series ──────────────────────────────────────────
-    ref.listen<AsyncValue<CensusResponse>>(censusRetailSalesProvider,
-        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusRetailTotal)));
-    ref.listen<AsyncValue<CensusResponse>>(censusMotorVehiclesProvider,
-        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusRetailVehicles)));
-    ref.listen<AsyncValue<CensusResponse>>(censusNonStoreProvider,
-        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusRetailNonStore)));
-    ref.listen<AsyncValue<CensusResponse>>(censusConstructionSpendingProvider,
-        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusConstruction)));
-    ref.listen<AsyncValue<CensusResponse>>(censusManufacturingOrdersProvider,
-        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusMfgOrders)));
-    ref.listen<AsyncValue<CensusResponse>>(censusWholesaleSalesProvider,
-        (_, next) => next.whenData((d) => storage.saveCensusResponse(d, EconIds.censusWholesale)));
+    ref.listen<AsyncValue<CensusResponse>>(
+      censusRetailSalesProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveCensusResponse(d, EconIds.censusRetailTotal),
+      ),
+    );
+    ref.listen<AsyncValue<CensusResponse>>(
+      censusMotorVehiclesProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveCensusResponse(d, EconIds.censusRetailVehicles),
+      ),
+    );
+    ref.listen<AsyncValue<CensusResponse>>(
+      censusNonStoreProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveCensusResponse(d, EconIds.censusRetailNonStore),
+      ),
+    );
+    ref.listen<AsyncValue<CensusResponse>>(
+      censusConstructionSpendingProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveCensusResponse(d, EconIds.censusConstruction),
+      ),
+    );
+    ref.listen<AsyncValue<CensusResponse>>(
+      censusManufacturingOrdersProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveCensusResponse(d, EconIds.censusMfgOrders),
+      ),
+    );
+    ref.listen<AsyncValue<CensusResponse>>(
+      censusWholesaleSalesProvider,
+      (_, next) => next.whenData(
+        (d) => storage.saveCensusResponse(d, EconIds.censusWholesale),
+      ),
+    );
 
     return DefaultTabController(
       length: 7,
@@ -169,8 +248,11 @@ class EconomyPulseScreen extends ConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.wifi_off_outlined,
-                        size: 48, color: AppTheme.neutralColor),
+                    const Icon(
+                      Icons.wifi_off_outlined,
+                      size: 48,
+                      color: AppTheme.neutralColor,
+                    ),
                     const SizedBox(height: 12),
                     const Text('Could not load economic data'),
                     const SizedBox(height: 8),
@@ -219,142 +301,182 @@ class _PulseBody extends StatelessWidget {
 
         // ── Market Snapshot ────────────────────────────────────────────────
         _SectionHeader('Market Snapshot'),
-        _TileGrid(children: [
-          _QuoteTile(label: 'S&P 500', sublabel: 'SPY', quote: data.sp500),
-          _QuoteTile(label: 'Nasdaq 100', sublabel: 'QQQ', quote: data.nasdaq),
-          _QuoteTile(label: 'VIX', sublabel: 'Fear Index', quote: data.vix,
-              invertColor: true),
-          _QuoteTile(label: 'Dollar Index', sublabel: 'DXY', quote: data.dxy),
-        ]),
+        _TileGrid(
+          children: [
+            _QuoteTile(label: 'S&P 500', sublabel: 'SPY', quote: data.sp500),
+            _QuoteTile(
+              label: 'Nasdaq 100',
+              sublabel: 'QQQ',
+              quote: data.nasdaq,
+            ),
+            _QuoteTile(
+              label: 'VIX',
+              sublabel: 'Fear Index',
+              quote: data.vix,
+              invertColor: true,
+            ),
+            _QuoteTile(
+              label: 'Dollar Index',
+              sublabel: r'DXY',
+              quote: data.dxy,
+            ),
+          ],
+        ),
         const SizedBox(height: 20),
 
         // ── Interest Rates ────────────────────────────────────────────────
         _SectionHeader('Interest Rates'),
-        _TileGrid(children: [
-          _EconTile(
-            label: 'Fed Funds',
-            sublabel: 'Target Rate',
-            point: data.fedFunds,
-            format: _fmtPct,
-          ),
-          _EconTile(
-            label: 'Mortgage 30Y',
-            sublabel: 'Fixed Rate Avg',
-            point: data.mortgageRate,
-            format: _fmtPct,
-          ),
-          _YieldTile(
-            label: '2Y Treasury',
-            value: data.treasury?.year2,
-            date: data.treasury?.date,
-          ),
-          _YieldTile(
-            label: '10Y Treasury',
-            value: data.treasury?.year10,
-            date: data.treasury?.date,
-          ),
-          _YieldTile(
-            label: '5Y Treasury',
-            value: data.treasury?.year5,
-            date: data.treasury?.date,
-          ),
-          _YieldTile(
-            label: '30Y Treasury',
-            value: data.treasury?.year30,
-            date: data.treasury?.date,
-          ),
-        ]),
+        _TileGrid(
+          children: [
+            _EconTile(
+              label: 'Fed Funds',
+              sublabel: 'Target Rate',
+              point: data.fedFunds,
+              format: _fmtPct,
+            ),
+            _EconTile(
+              label: 'Mortgage 30Y',
+              sublabel: 'Fixed Rate Avg',
+              point: data.mortgageRate,
+              format: _fmtPct,
+            ),
+            _YieldTile(
+              label: '2Y Treasury',
+              value: data.treasury?.year2,
+              date: data.treasury?.date,
+            ),
+            _YieldTile(
+              label: '10Y Treasury',
+              value: data.treasury?.year10,
+              date: data.treasury?.date,
+            ),
+            _YieldTile(
+              label: '5Y Treasury',
+              value: data.treasury?.year5,
+              date: data.treasury?.date,
+            ),
+            _YieldTile(
+              label: '30Y Treasury',
+              value: data.treasury?.year30,
+              date: data.treasury?.date,
+            ),
+          ],
+        ),
         const SizedBox(height: 20),
 
         // ── Commodities ───────────────────────────────────────────────────
         _SectionHeader('Commodities'),
-        _TileGrid(children: [
-          _QuoteTile(label: 'Gold', sublabel: '/GC', quote: data.gold,
-              pricePrefix: '\$'),
-          _QuoteTile(label: 'Silver', sublabel: '/SI', quote: data.silver,
-              pricePrefix: '\$'),
-          _QuoteTile(label: 'WTI Crude', sublabel: '/CL', quote: data.wtiCrude,
-              pricePrefix: '\$'),
-          _QuoteTile(label: 'Natural Gas', sublabel: '/NG', quote: data.natGas,
-              pricePrefix: '\$'),
-        ]),
+        _TileGrid(
+          children: [
+            _QuoteTile(
+              label: 'Gold',
+              sublabel: '/GC',
+              quote: data.gold,
+              pricePrefix: '\$',
+            ),
+            _QuoteTile(
+              label: 'Silver',
+              sublabel: '/SI',
+              quote: data.silver,
+              pricePrefix: '\$',
+            ),
+            _QuoteTile(
+              label: 'WTI Crude',
+              sublabel: '/CL',
+              quote: data.wtiCrude,
+              pricePrefix: '\$',
+            ),
+            _QuoteTile(
+              label: 'Natural Gas',
+              sublabel: '/NG',
+              quote: data.natGas,
+              pricePrefix: '\$',
+            ),
+          ],
+        ),
         const SizedBox(height: 20),
 
         // ── Labor Market ──────────────────────────────────────────────────
         _SectionHeader('Labor Market'),
-        _TileGrid(children: [
-          _EconTile(
-            label: 'Unemployment',
-            sublabel: 'Rate',
-            point: data.unemployment,
-            format: _fmtPct,
-            warnHigh: true,
-          ),
-          _EconTile(
-            label: 'Non-Farm Payrolls',
-            sublabel: 'Jobs Added',
-            point: data.nfp,
-            format: _fmtJobsK,
-            showSign: true,
-          ),
-          _EconTile(
-            label: 'Initial Claims',
-            sublabel: 'Weekly Jobless',
-            point: data.initialClaims,
-            format: _fmtJobsK,
-            warnHigh: true,
-          ),
-          _EconTile(
-            label: 'Consumer Sentiment',
-            sublabel: 'Univ. of Michigan',
-            point: data.consumerSentiment,
-            format: _fmtNum,
-          ),
-        ]),
+        _TileGrid(
+          children: [
+            _EconTile(
+              label: 'Unemployment',
+              sublabel: 'Rate',
+              point: data.unemployment,
+              format: _fmtPct,
+              warnHigh: true,
+            ),
+            _EconTile(
+              label: 'Non-Farm Payrolls',
+              sublabel: 'Jobs Added',
+              point: data.nfp,
+              format: _fmtJobsK,
+              showSign: true,
+            ),
+            _EconTile(
+              label: 'Initial Claims',
+              sublabel: 'Weekly Jobless',
+              point: data.initialClaims,
+              format: _fmtJobsK,
+              warnHigh: true,
+            ),
+            _EconTile(
+              label: 'Consumer Sentiment',
+              sublabel: 'Univ. of Michigan',
+              point: data.consumerSentiment,
+              format: _fmtNum,
+            ),
+          ],
+        ),
         const SizedBox(height: 20),
 
         // ── Economy ───────────────────────────────────────────────────────
         _SectionHeader('Economy'),
-        _TileGrid(children: [
-          _EconTile(
-            label: 'CPI',
-            sublabel: 'Inflation Rate',
-            point: data.cpi,
-            format: _fmtPct,
-            warnHigh: true,
-          ),
-          _EconTile(
-            label: 'Real GDP',
-            sublabel: 'Billions USD',
-            point: data.gdp,
-            format: _fmtGdp,
-          ),
-          _EconTile(
-            label: 'Retail Sales',
-            sublabel: 'Monthly (M)',
-            point: data.retailSales,
-            format: _fmtRetail,
-          ),
-          _EconTile(
-            label: 'Recession Prob.',
-            sublabel: 'Smoothed Model',
-            point: data.recessionProb,
-            format: _fmtPct,
-            warnHigh: true,
-          ),
-        ]),
+        _TileGrid(
+          children: [
+            _EconTile(
+              label: 'CPI',
+              sublabel: 'Inflation Rate',
+              point: data.cpi,
+              format: _fmtPct,
+              warnHigh: true,
+            ),
+            _EconTile(
+              label: 'Real GDP',
+              sublabel: 'Billions USD',
+              point: data.gdp,
+              format: _fmtGdp,
+            ),
+            _EconTile(
+              label: 'Retail Sales',
+              sublabel: 'Monthly (M)',
+              point: data.retailSales,
+              format: _fmtRetail,
+            ),
+            _EconTile(
+              label: 'Recession Prob.',
+              sublabel: 'Smoothed Model',
+              point: data.recessionProb,
+              format: _fmtPct,
+              warnHigh: true,
+            ),
+          ],
+        ),
         const SizedBox(height: 20),
 
         // ── Housing ───────────────────────────────────────────────────────
         _SectionHeader('Housing'),
-        _TileGrid(children: [
-          _EconTile(
-            label: 'Housing Starts',
-            sublabel: 'New Units (K)',
-            point: data.housingStarts,
-            format: _fmtHousing,
-          ),
-        ]),
+        _TileGrid(
+          children: [
+            _EconTile(
+              label: 'Housing Starts',
+              sublabel: 'New Units (K)',
+              point: data.housingStarts,
+              format: _fmtHousing,
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -422,13 +544,15 @@ class _TileGrid extends StatelessWidget {
     final rows = <Widget>[];
     for (var i = 0; i < children.length; i += 2) {
       final hasSecond = i + 1 < children.length;
-      rows.add(Row(
-        children: [
-          Expanded(child: children[i]),
-          const SizedBox(width: 8),
-          Expanded(child: hasSecond ? children[i + 1] : const SizedBox()),
-        ],
-      ));
+      rows.add(
+        Row(
+          children: [
+            Expanded(child: children[i]),
+            const SizedBox(width: 8),
+            Expanded(child: hasSecond ? children[i + 1] : const SizedBox()),
+          ],
+        ),
+      );
       if (i + 2 < children.length) rows.add(const SizedBox(height: 8));
     }
     return Column(children: rows);
@@ -474,11 +598,11 @@ class _QuoteTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (quote == null) return _Tile(child: _PlaceholderContent(label, sublabel));
+    if (quote == null)
+      return _Tile(child: _PlaceholderContent(label, sublabel));
 
     final positive = invertColor ? !quote!.isPositive : quote!.isPositive;
-    final changeColor =
-        positive ? AppTheme.profitColor : AppTheme.lossColor;
+    final changeColor = positive ? AppTheme.profitColor : AppTheme.lossColor;
     final sign = quote!.changePercent >= 0 ? '+' : '';
 
     return _Tile(
@@ -536,7 +660,8 @@ class _EconTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (point == null) return _Tile(child: _PlaceholderContent(label, sublabel));
+    if (point == null)
+      return _Tile(child: _PlaceholderContent(label, sublabel));
 
     Color valueColor = Colors.white;
     if (warnHigh) {
@@ -565,10 +690,7 @@ class _EconTile extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             _fmtDate(point!.date),
-            style: const TextStyle(
-              color: AppTheme.neutralColor,
-              fontSize: 11,
-            ),
+            style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11),
           ),
         ],
       ),
@@ -611,10 +733,7 @@ class _YieldTile extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             date != null ? _fmtDate(date!) : '—',
-            style: const TextStyle(
-              color: AppTheme.neutralColor,
-              fontSize: 11,
-            ),
+            style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11),
           ),
         ],
       ),
@@ -645,10 +764,7 @@ class _TileLabel extends StatelessWidget {
         ),
         Text(
           sub,
-          style: const TextStyle(
-            color: AppTheme.neutralColor,
-            fontSize: 10,
-          ),
+          style: const TextStyle(color: AppTheme.neutralColor, fontSize: 10),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -669,15 +785,19 @@ class _PlaceholderContent extends StatelessWidget {
       children: [
         _TileLabel(label, sub),
         const SizedBox(height: 6),
-        const Text('—',
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.neutralColor)),
+        const Text(
+          '—',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.neutralColor,
+          ),
+        ),
         const SizedBox(height: 2),
-        const Text('No data',
-            style:
-                TextStyle(color: AppTheme.neutralColor, fontSize: 11)),
+        const Text(
+          'No data',
+          style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+        ),
       ],
     );
   }

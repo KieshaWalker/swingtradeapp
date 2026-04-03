@@ -46,18 +46,20 @@ class StockQuote {
   bool get isPositive => change >= 0;
 
   factory StockQuote.fromJson(Map<String, dynamic> json) => StockQuote(
-        symbol: json['symbol'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        price: (json['price'] as num?)?.toDouble() ?? 0,
-        change: (json['change'] as num?)?.toDouble() ?? 0,
-        changePercent: (json['changePercentage'] as num?)?.toDouble()
-            ?? (json['changesPercentage'] as num?)?.toDouble() ?? 0,
-        open: (json['open'] as num?)?.toDouble() ?? 0,
-        dayHigh: (json['dayHigh'] as num?)?.toDouble() ?? 0,
-        dayLow: (json['dayLow'] as num?)?.toDouble() ?? 0,
-        previousClose: (json['previousClose'] as num?)?.toDouble() ?? 0,
-        volume: (json['volume'] as num?)?.toInt() ?? 0,
-      );
+    symbol: json['symbol'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    price: (json['price'] as num?)?.toDouble() ?? 0,
+    change: (json['change'] as num?)?.toDouble() ?? 0,
+    changePercent:
+        (json['changePercentage'] as num?)?.toDouble() ??
+        (json['changesPercentage'] as num?)?.toDouble() ??
+        0,
+    open: (json['open'] as num?)?.toDouble() ?? 0,
+    dayHigh: (json['dayHigh'] as num?)?.toDouble() ?? 0,
+    dayLow: (json['dayLow'] as num?)?.toDouble() ?? 0,
+    previousClose: (json['previousClose'] as num?)?.toDouble() ?? 0,
+    volume: (json['volume'] as num?)?.toInt() ?? 0,
+  );
 }
 
 class TickerSearchResult {
@@ -71,13 +73,14 @@ class TickerSearchResult {
     required this.exchange,
   });
 
-  factory TickerSearchResult.fromJson(Map<String, dynamic> json) =>
-      TickerSearchResult(
-        symbol: json['symbol'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        // Stable API /search-symbol returns 'exchange' (short name e.g. "NASDAQ")
-        exchange: json['exchange'] as String? ?? '',
-      );
+  factory TickerSearchResult.fromJson(
+    Map<String, dynamic> json,
+  ) => TickerSearchResult(
+    symbol: json['symbol'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    // Stable API /search-symbol returns 'exchange' (short name e.g. "NASDAQ")
+    exchange: json['exchange'] as String? ?? '',
+  );
 }
 
 class StockProfile {
@@ -98,13 +101,13 @@ class StockProfile {
   });
 
   factory StockProfile.fromJson(Map<String, dynamic> json) => StockProfile(
-        symbol: json['symbol'] as String? ?? '',
-        companyName: json['companyName'] as String? ?? '',
-        sector: json['sector'] as String? ?? '',
-        industry: json['industry'] as String? ?? '',
-        beta: (json['beta'] as num?)?.toDouble() ?? 0,
-        mktCap: (json['mktCap'] as num?)?.toDouble() ?? 0,
-      );
+    symbol: json['symbol'] as String? ?? '',
+    companyName: json['companyName'] as String? ?? '',
+    sector: json['sector'] as String? ?? '',
+    industry: json['industry'] as String? ?? '',
+    beta: (json['beta'] as num?)?.toDouble() ?? 0,
+    mktCap: (json['mktCap'] as num?)?.toDouble() ?? 0,
+  );
 }
 
 // ─── Economy Pulse additions ──────────────────────────────────────────────
@@ -122,12 +125,13 @@ class EconomicIndicatorPoint {
   });
 
   factory EconomicIndicatorPoint.fromJson(
-      Map<String, dynamic> json, String identifier) =>
-      EconomicIndicatorPoint(
-        identifier: identifier,
-        date: DateTime.parse(json['date'] as String),
-        value: (json['value'] as num?)?.toDouble() ?? 0,
-      );
+    Map<String, dynamic> json,
+    String identifier,
+  ) => EconomicIndicatorPoint(
+    identifier: identifier,
+    date: DateTime.parse(json['date'] as String),
+    value: (json['value'] as num?)?.toDouble() ?? 0,
+  );
 }
 
 // Latest treasury yield curve from FMP /treasury-rates
@@ -151,14 +155,14 @@ class TreasuryRates {
   });
 
   factory TreasuryRates.fromJson(Map<String, dynamic> json) => TreasuryRates(
-        date: DateTime.parse(json['date'] as String),
-        year1: (json['year1'] as num?)?.toDouble(),
-        year2: (json['year2'] as num?)?.toDouble(),
-        year5: (json['year5'] as num?)?.toDouble(),
-        year10: (json['year10'] as num?)?.toDouble(),
-        year20: (json['year20'] as num?)?.toDouble(),
-        year30: (json['year30'] as num?)?.toDouble(),
-      );
+    date: DateTime.parse(json['date'] as String),
+    year1: (json['year1'] as num?)?.toDouble(),
+    year2: (json['year2'] as num?)?.toDouble(),
+    year5: (json['year5'] as num?)?.toDouble(),
+    year10: (json['year10'] as num?)?.toDouble(),
+    year20: (json['year20'] as num?)?.toDouble(),
+    year30: (json['year30'] as num?)?.toDouble(),
+  );
 }
 
 // Aggregated data model for the Economy Pulse screen
@@ -176,9 +180,9 @@ class EconomyPulseData {
   final StockQuote? natGas;
 
   // Macro score additions
-  final StockQuote? hyg;    // High Yield Bond ETF — credit risk proxy
-  final StockQuote? lqd;    // IG Bond ETF — investment grade credit
-  final StockQuote? copx;   // Copper Miners ETF — growth/expansion proxy
+  final StockQuote? hyg; // High Yield Bond ETF — credit risk proxy
+  final StockQuote? lqd; // IG Bond ETF — investment grade credit
+  final StockQuote? copx; // Copper Miners ETF — growth/expansion proxy
 
   // Treasury yield curve
   final TreasuryRates? treasury;
@@ -278,10 +282,10 @@ class FmpEarningsDate {
   });
 
   String get timeLabel => switch (time) {
-        'bmo' => 'Before Open',
-        'amc' => 'After Close',
-        _ => '',
-      };
+    'bmo' => 'Before Open',
+    'amc' => 'After Close',
+    _ => '',
+  };
 
   factory FmpEarningsDate.fromJson(Map<String, dynamic> json) =>
       FmpEarningsDate(

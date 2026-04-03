@@ -9,11 +9,27 @@ class SchwabInstrument {
   final String symbol;
   final String name;
   final String exchange;
+   final double price;
+  final double change;
+  final double changePercent;
+  final double open;
+  final double dayHigh;
+  final double dayLow;
+  final double previousClose;
+  final int volume;
 
   const SchwabInstrument({
     required this.symbol,
     required this.name,
     required this.exchange,
+    required this.price,
+    required this.change,
+    required this.changePercent,
+    required this.open,
+    required this.dayHigh,
+    required this.dayLow,
+    required this.previousClose,
+    required this.volume,
   });
 
   factory SchwabInstrument.fromJson(Map<String, dynamic> json) =>
@@ -21,6 +37,15 @@ class SchwabInstrument {
         symbol:   json['symbol']   as String? ?? '',
         name:     json['name']     as String? ?? '',
         exchange: json['exchange'] as String? ?? '',
+        price:    (json['price'] as num?)?.toDouble() ?? 0,
+        change:   (json['change'] as num?)?.toDouble() ?? 0,
+        changePercent: (json['changePercent'] as num?)?.toDouble()
+            ?? (json['changePercentage'] as num?)?.toDouble() ?? 0,
+        open:     (json['open'] as num?)?.toDouble() ?? 0,
+        dayHigh:  (json['dayHigh'] as num?)?.toDouble() ?? 0,
+        dayLow:   (json['dayLow'] as num?)?.toDouble() ?? 0,
+        previousClose: (json['previousClose'] as num?)?.toDouble() ?? 0,
+        volume:   (json['volume'] as num?)?.toInt() ?? 0,
       );
 }
 

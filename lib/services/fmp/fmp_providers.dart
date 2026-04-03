@@ -34,18 +34,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'fmp_models.dart';
 import 'fmp_service.dart';
 import '../schwab/schwab_service.dart';
+import '../schwab/schwab_providers.dart';
 
 final fmpServiceProvider = Provider<FmpService>((_) => FmpService());
 
-// Quote for a single symbol
+// Quote for a single symbol (switched to Schwab, no FMP quote inserts)
 final quoteProvider = FutureProvider.family<StockQuote?, String>((ref, symbol) {
-  return ref.watch(fmpServiceProvider).getQuote(symbol);
+  return ref.watch(schwabServiceProvider).getQuote(symbol);
 });
 
 // Quotes for a list of symbols (used on dashboard for open positions)
-final quotesProvider =
-    FutureProvider.family<List<StockQuote>, List<String>>((ref, symbols) {
-  return ref.watch(fmpServiceProvider).getQuotes(symbols);
+final quotesProvider = FutureProvider.family<List<StockQuote>, List<String>>((
+  ref,
+  symbols,
+) {
+  return ref.watch(schwabServiceProvider).getQuotes(symbols);
 });
 
 // Ticker search results
@@ -56,60 +59,97 @@ final quotesProvider =
 //});
 
 // Company profile
-final stockProfileProvider =
-    FutureProvider.family<StockProfile?, String>((ref, symbol) {
+final stockProfileProvider = FutureProvider.family<StockProfile?, String>((
+  ref,
+  symbol,
+) {
   return ref.watch(fmpServiceProvider).getProfile(symbol);
 });
 
 // Daily OHLCV candles — TickerProfileScreen price history chart
 final tickerHistoricalPricesProvider =
     FutureProvider.family<List<FmpHistoricalPrice>, String>((ref, symbol) {
-  return ref.watch(fmpServiceProvider).getHistoricalPrices(symbol);
-});
+      return ref.watch(fmpServiceProvider).getHistoricalPrices(symbol);
+    });
 
 // All economy pulse data — EconomyPulseScreen
 // Quotes: Schwab real-time (SPY, QQQ, /GC, /CL, /SI, /NG, $DXY, etc.)
 // Indicators: FMP macro data (treasury, CPI, GDP, fed funds, etc.)
 final economyPulseProvider = FutureProvider<EconomyPulseData>((ref) async {
   final schwab = SchwabService();
-  final fmp    = ref.watch(fmpServiceProvider);
+  final fmp = ref.watch(fmpServiceProvider);
 
   // Fire both in parallel
-  final quotesFuture     = schwab.getEconomyQuotes();
+  final quotesFuture = schwab.getEconomyQuotes();
   final indicatorsFuture = fmp.getEconomyIndicators();
 
-  final quotes     = await quotesFuture;
+  final quotes = await quotesFuture;
   final indicators = await indicatorsFuture;
 
-  StockQuote? q(String sym) {
-    try { return quotes.firstWhere((s) => s.symbol == sym); }
-    catch (_) { return null; }
+  String normalizeSymbol(String symbol) {
+    var normalized = symbol
+        .toUpperCase()
+        .replaceAll(RegExp(r'[\$\/]+'), '')
+        .replaceAll('=F', '');
+
+    // Strip a single futures month code letter + year suffix (e.g. M26, K26)
+    normalized = normalized.replaceAll(RegExp(r'[A-Z][0-9]{2}$'), '');
+    return normalized;
   }
 
+  StockQuote? q(String sym) {
+    final target = normalizeSymbol(sym);
+    final matches = quotes.where((quote) {
+      final normalizedQuote = normalizeSymbol(quote.symbol);
+      return quote.symbol.toUpperCase() == sym.toUpperCase() ||
+          normalizedQuote == target ||
+          normalizedQuote.startsWith(target);
+    }).toList();
+
+    // Debugbing for DXY and commodities
+    if (sym == r'$DXY' ||
+        sym == '/GC' ||
+        sym == '/SI' ||
+        sym == '/CL' ||
+        sym == '/NG') {
+      print('economyPulseProvider: target=$sym normalized=$target');
+      print(
+        'economyPulseProvider: quotes symbols=${quotes.map((q) => q.symbol).toList()}',
+      );
+      print(
+        'economyPulseProvider: matched=${matches.map((q) => q.symbol).toList()}',
+      );
+    }
+
+    return matches.isNotEmpty ? matches.first : null;
+  }
+
+  final effectiveDxyQuote = q(r'$DXY') ?? q('DXY') ?? q('UUP');
+
   return EconomyPulseData(
-    sp500:    q('SPY'),
-    nasdaq:   q('QQQ'),
-    vix:      q('VIXY'),
-    dxy:      q(r'$DXY'),
-    gold:     q('/GC'),
-    silver:   q('/SI'),
+    sp500: q('SPY'),
+    nasdaq: q('QQQ'),
+    vix: q('VIXY'),
+    dxy: effectiveDxyQuote,
+    gold: q('/GC'),
+    silver: q('/SI'),
     wtiCrude: q('/CL'),
-    natGas:   q('/NG'),
-    hyg:      q('HYG'),
-    lqd:      q('LQD'),
-    copx:     q('COPX'),
-    treasury:          indicators.treasury,
-    fedFunds:          indicators.fedFunds,
-    unemployment:      indicators.unemployment,
-    nfp:               indicators.nfp,
-    initialClaims:     indicators.initialClaims,
-    cpi:               indicators.cpi,
-    gdp:               indicators.gdp,
-    retailSales:       indicators.retailSales,
+    natGas: q('/NG'),
+    hyg: q('HYG'),
+    lqd: q('LQD'),
+    copx: q('COPX'),
+    treasury: indicators.treasury,
+    fedFunds: indicators.fedFunds,
+    unemployment: indicators.unemployment,
+    nfp: indicators.nfp,
+    initialClaims: indicators.initialClaims,
+    cpi: indicators.cpi,
+    gdp: indicators.gdp,
+    retailSales: indicators.retailSales,
     consumerSentiment: indicators.consumerSentiment,
-    mortgageRate:      indicators.mortgageRate,
-    housingStarts:     indicators.housingStarts,
-    recessionProb:     indicators.recessionProb,
+    mortgageRate: indicators.mortgageRate,
+    housingStarts: indicators.housingStarts,
+    recessionProb: indicators.recessionProb,
     fetchedAt: DateTime.now(),
   );
 });
@@ -117,5 +157,5 @@ final economyPulseProvider = FutureProvider<EconomyPulseData>((ref) async {
 // Next scheduled earnings date — TickerProfileScreen Overview tab
 final tickerNextEarningsProvider =
     FutureProvider.family<FmpEarningsDate?, String>((ref, symbol) {
-  return ref.watch(fmpServiceProvider).getNextEarnings(symbol);
-});
+      return ref.watch(fmpServiceProvider).getNextEarnings(symbol);
+    });

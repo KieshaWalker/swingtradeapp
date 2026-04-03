@@ -54,9 +54,9 @@ class SchwabService {
       final res = await _fn.invoke(
         'get-schwab-chains',
         body: {
-          'symbol':       symbol,
+          'symbol': symbol,
           'contractType': contractType,
-          'strikeCount':  strikeCount,
+          'strikeCount': strikeCount,
           'expirationDate': expirationDate,
         },
       );
@@ -100,6 +100,6 @@ class SchwabService {
   //  /NG  = natural gas futures          (FMP: NG=F)
   //  $DXY = US Dollar Index (real index, not the UUP ETF proxy)
   Future<List<StockQuote>> getEconomyQuotes() => getQuotes(
-        ['SPY', 'QQQ', 'VIXY', r'$DXY', '/GC', '/SI', '/CL', '/NG', 'HYG', 'LQD', 'COPX'],
+        ['SPY', 'QQQ', 'VIXY', r'$DXY', 'DXY', 'UUP', '/GC', '/SI', '/CL', '/NG', 'HYG', 'LQD', 'COPX'],
       );
 }
