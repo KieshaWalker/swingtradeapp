@@ -106,21 +106,6 @@ final economyPulseProvider = FutureProvider<EconomyPulseData>((ref) async {
           normalizedQuote.startsWith(target);
     }).toList();
 
-    // Debugbing for DXY and commodities
-    if (sym == r'$DXY' ||
-        sym == '/GC' ||
-        sym == '/SI' ||
-        sym == '/CL' ||
-        sym == '/NG') {
-      print('economyPulseProvider: target=$sym normalized=$target');
-      print(
-        'economyPulseProvider: quotes symbols=${quotes.map((q) => q.symbol).toList()}',
-      );
-      print(
-        'economyPulseProvider: matched=${matches.map((q) => q.symbol).toList()}',
-      );
-    }
-
     return matches.isNotEmpty ? matches.first : null;
   }
 
