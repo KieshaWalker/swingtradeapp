@@ -193,6 +193,63 @@ class FmpService {
     }
   }
 
+  /// Fetches ONLY economic indicators (treasury + FRED-style macro data).
+  /// Market quotes are now sourced from Schwab via [economyPulseProvider].
+  Future<({
+    TreasuryRates? treasury,
+    EconomicIndicatorPoint? fedFunds,
+    EconomicIndicatorPoint? unemployment,
+    EconomicIndicatorPoint? nfp,
+    EconomicIndicatorPoint? initialClaims,
+    EconomicIndicatorPoint? cpi,
+    EconomicIndicatorPoint? gdp,
+    EconomicIndicatorPoint? retailSales,
+    EconomicIndicatorPoint? consumerSentiment,
+    EconomicIndicatorPoint? mortgageRate,
+    EconomicIndicatorPoint? housingStarts,
+    EconomicIndicatorPoint? recessionProb,
+  })> getEconomyIndicators() async {
+    final treasuryFuture = getLatestTreasuryRates();
+    final fedFuture      = getEconomicIndicator('federalFunds');
+    final unempFuture    = getEconomicIndicator('unemploymentRate');
+    final nfpFuture      = getEconomicIndicator('totalNonfarmPayrolls');
+    final claimsFuture   = getEconomicIndicator('initialJoblessClaims');
+    final cpiFuture      = getEconomicIndicator('CPI');
+
+    final treasury = await treasuryFuture;
+    final fed      = await fedFuture;
+    final unemp    = await unempFuture;
+    final nfp      = await nfpFuture;
+    final claims   = await claimsFuture;
+    final cpi      = await cpiFuture;
+
+    await Future.delayed(const Duration(milliseconds: 400));
+
+    final r2 = await Future.wait([
+      getEconomicIndicator('realGDP'),
+      getEconomicIndicator('retailSales'),
+      getEconomicIndicator('consumerSentiment'),
+      getEconomicIndicator('30YearFixedRateMortgageAverage'),
+      getEconomicIndicator('newPrivatelyOwnedHousingUnitsStartedTotalUnits'),
+      getEconomicIndicator('smoothedUSRecessionProbabilities'),
+    ]);
+
+    return (
+      treasury:          treasury,
+      fedFunds:          fed,
+      unemployment:      unemp,
+      nfp:               nfp,
+      initialClaims:     claims,
+      cpi:               cpi,
+      gdp:               r2[0],
+      retailSales:       r2[1],
+      consumerSentiment: r2[2],
+      mortgageRate:      r2[3],
+      housingStarts:     r2[4],
+      recessionProb:     r2[5],
+    );
+  }
+
   /// Fetches all data needed for the Economy Pulse screen.
   /// Quotes are batched into 1 request; indicators are split into 2 staggered
   /// batches to stay well under the FMP rate limit.

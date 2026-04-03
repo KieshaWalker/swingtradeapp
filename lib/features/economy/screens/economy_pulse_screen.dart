@@ -224,7 +224,7 @@ class _PulseBody extends StatelessWidget {
           _QuoteTile(label: 'Nasdaq 100', sublabel: 'QQQ', quote: data.nasdaq),
           _QuoteTile(label: 'VIX', sublabel: 'Fear Index', quote: data.vix,
               invertColor: true),
-          _QuoteTile(label: 'Dollar Index', sublabel: 'UUP', quote: data.dxy),
+          _QuoteTile(label: 'Dollar Index', sublabel: 'DXY', quote: data.dxy),
         ]),
         const SizedBox(height: 20),
 
@@ -269,13 +269,13 @@ class _PulseBody extends StatelessWidget {
         // ── Commodities ───────────────────────────────────────────────────
         _SectionHeader('Commodities'),
         _TileGrid(children: [
-          _QuoteTile(label: 'Gold', sublabel: 'GC=F', quote: data.gold,
+          _QuoteTile(label: 'Gold', sublabel: '/GC', quote: data.gold,
               pricePrefix: '\$'),
-          _QuoteTile(label: 'Silver', sublabel: 'SI=F', quote: data.silver,
+          _QuoteTile(label: 'Silver', sublabel: '/SI', quote: data.silver,
               pricePrefix: '\$'),
-          _QuoteTile(label: 'WTI Crude', sublabel: 'CL=F', quote: data.wtiCrude,
+          _QuoteTile(label: 'WTI Crude', sublabel: '/CL', quote: data.wtiCrude,
               pricePrefix: '\$'),
-          _QuoteTile(label: 'Natural Gas', sublabel: 'NG=F', quote: data.natGas,
+          _QuoteTile(label: 'Natural Gas', sublabel: '/NG', quote: data.natGas,
               pricePrefix: '\$'),
         ]),
         const SizedBox(height: 20),

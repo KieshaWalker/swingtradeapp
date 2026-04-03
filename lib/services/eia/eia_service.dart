@@ -24,9 +24,9 @@ class EiaService {
         'frequency': frequency,
         'length': length,
         'data': data,
-        if (start != null) 'start': start,
-        if (end != null) 'end': end,
-        if (facets != null) 'facets': facets,
+        'start': ?start,
+        'end': ?end,
+        'facets': ?facets,
       },
     );
     if (response.status != 200) {

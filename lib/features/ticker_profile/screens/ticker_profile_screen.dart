@@ -707,11 +707,20 @@ class _InsiderActivityChart extends StatelessWidget {
                       if (idx < 0 || idx >= allMonths.length) {
                         return const SizedBox.shrink();
                       }
-                      final m = allMonths[idx] % 100;
+                      // Skip alternate labels when many months
+                      if (allMonths.length > 6 && idx % 2 != 0) {
+                        return const SizedBox.shrink();
+                      }
+                      final key   = allMonths[idx];
+                      final year  = key ~/ 100;
+                      final month = key % 100;
+                      final label = (month == 1 || idx == 0)
+                          ? "${monthLabels[month]} '${year % 100}"
+                          : monthLabels[month];
                       return Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          monthLabels[m],
+                          label,
                           style: const TextStyle(
                               color: AppTheme.neutralColor,
                               fontSize: 9),
@@ -1681,15 +1690,27 @@ class _MonthlyPnlChart extends StatelessWidget {
                 if (idx < 0 || idx >= entries.length) {
                   return const SizedBox.shrink();
                 }
+                // Skip labels when many months to avoid crowding
+                if (entries.length > 6 && idx % 2 != 0) {
+                  return const SizedBox.shrink();
+                }
                 final key = entries[idx].key;
+                final year  = key ~/ 100;
                 final month = key % 100;
-                const months = [
-                  '', 'J', 'F', 'M', 'A', 'M', 'J',
-                  'J', 'A', 'S', 'O', 'N', 'D'
+                const abbr = [
+                  '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
                 ];
-                return Text(months[month],
-                    style: const TextStyle(
-                        color: AppTheme.neutralColor, fontSize: 10));
+                // Show year on January or first bar
+                final label = (month == 1 || idx == 0)
+                    ? "${abbr[month]} '${year % 100}"
+                    : abbr[month];
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(label,
+                      style: const TextStyle(
+                          color: AppTheme.neutralColor, fontSize: 9)),
+                );
               },
             ),
           ),

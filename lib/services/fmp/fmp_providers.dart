@@ -33,6 +33,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'fmp_models.dart';
 import 'fmp_service.dart';
+import '../schwab/schwab_service.dart';
 
 final fmpServiceProvider = Provider<FmpService>((_) => FmpService());
 
@@ -67,8 +68,50 @@ final tickerHistoricalPricesProvider =
 });
 
 // All economy pulse data — EconomyPulseScreen
-final economyPulseProvider = FutureProvider<EconomyPulseData>((ref) {
-  return ref.watch(fmpServiceProvider).getEconomyPulse();
+// Quotes: Schwab real-time (SPY, QQQ, /GC, /CL, /SI, /NG, $DXY, etc.)
+// Indicators: FMP macro data (treasury, CPI, GDP, fed funds, etc.)
+final economyPulseProvider = FutureProvider<EconomyPulseData>((ref) async {
+  final schwab = SchwabService();
+  final fmp    = ref.watch(fmpServiceProvider);
+
+  // Fire both in parallel
+  final quotesFuture     = schwab.getEconomyQuotes();
+  final indicatorsFuture = fmp.getEconomyIndicators();
+
+  final quotes     = await quotesFuture;
+  final indicators = await indicatorsFuture;
+
+  StockQuote? q(String sym) {
+    try { return quotes.firstWhere((s) => s.symbol == sym); }
+    catch (_) { return null; }
+  }
+
+  return EconomyPulseData(
+    sp500:    q('SPY'),
+    nasdaq:   q('QQQ'),
+    vix:      q('VIXY'),
+    dxy:      q(r'$DXY'),
+    gold:     q('/GC'),
+    silver:   q('/SI'),
+    wtiCrude: q('/CL'),
+    natGas:   q('/NG'),
+    hyg:      q('HYG'),
+    lqd:      q('LQD'),
+    copx:     q('COPX'),
+    treasury:          indicators.treasury,
+    fedFunds:          indicators.fedFunds,
+    unemployment:      indicators.unemployment,
+    nfp:               indicators.nfp,
+    initialClaims:     indicators.initialClaims,
+    cpi:               indicators.cpi,
+    gdp:               indicators.gdp,
+    retailSales:       indicators.retailSales,
+    consumerSentiment: indicators.consumerSentiment,
+    mortgageRate:      indicators.mortgageRate,
+    housingStarts:     indicators.housingStarts,
+    recessionProb:     indicators.recessionProb,
+    fetchedAt: DateTime.now(),
+  );
 });
 
 // Next scheduled earnings date — TickerProfileScreen Overview tab

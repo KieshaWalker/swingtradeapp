@@ -30,9 +30,9 @@ class ApifyService {
       'action': 'runActor',
       'actorId': actorId,
       'input': input,
-      if (build != null) 'build': build,
-      if (memoryMbytes != null) 'memoryMbytes': memoryMbytes,
-      if (timeoutSecs != null) 'timeoutSecs': timeoutSecs,
+      'build': ?build,
+      'memoryMbytes': ?memoryMbytes,
+      'timeoutSecs': ?timeoutSecs,
     });
     return ApifyRun.fromJson(data as Map<String, dynamic>);
   }

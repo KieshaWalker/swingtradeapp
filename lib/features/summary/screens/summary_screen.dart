@@ -568,7 +568,7 @@ class _StreakBadge extends StatelessWidget {
   }
 }
 
-// ── Cumulative P&L chart ──────────────────────────────────────────────────────
+// ── Cumulative P&L chart (monthly, oldest left → newest right) ───────────────
 
 class _PnlChart extends StatelessWidget {
   final List<Trade> trades;
@@ -576,19 +576,43 @@ class _PnlChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sorted = [...trades]
-      ..sort((a, b) =>
-          (a.closedAt ?? a.openedAt).compareTo(b.closedAt ?? b.openedAt));
+    // Group closed trades by year-month key (yyyyMM), sum P&L per month
+    final byMonth = <int, double>{};
+    for (final t in trades) {
+      final d = t.closedAt ?? t.openedAt;
+      final key = d.year * 100 + d.month;
+      byMonth[key] = (byMonth[key] ?? 0) + (t.realizedPnl ?? 0);
+    }
 
+    if (byMonth.isEmpty) {
+      return const SizedBox(
+        height: 180,
+        child: Center(
+          child: Text('No closed trades yet',
+              style: TextStyle(color: AppTheme.neutralColor, fontSize: 12)),
+        ),
+      );
+    }
+
+    // Sort months ascending (Jan 2025 → Apr 2026 left → right)
+    final months = byMonth.keys.toList()..sort();
+
+    // Build cumulative running total per month
     double cumulative = 0;
-    final spots = <FlSpot>[];
-    for (var i = 0; i < sorted.length; i++) {
-      cumulative += sorted[i].realizedPnl ?? 0;
+    final spots  = <FlSpot>[];
+    final labels = <DateTime>[];
+    for (var i = 0; i < months.length; i++) {
+      cumulative += byMonth[months[i]]!;
       spots.add(FlSpot(i.toDouble(), cumulative));
+      labels.add(DateTime(months[i] ~/ 100, months[i] % 100));
     }
 
     final lineColor =
         cumulative >= 0 ? AppTheme.profitColor : AppTheme.lossColor;
+    final n = labels.length;
+
+    // Show up to 4 evenly-spaced month labels on x-axis
+    final labelIdxs = _pnlLabelIndices(n, 4).toSet();
 
     return Container(
       height: 180,
@@ -596,7 +620,7 @@ class _PnlChart extends StatelessWidget {
         color: AppTheme.cardColor,
         borderRadius: BorderRadius.circular(12),
       ),
-      padding: const EdgeInsets.fromLTRB(6, 14, 14, 8),
+      padding: const EdgeInsets.fromLTRB(6, 14, 14, 24),
       child: LineChart(
         LineChartData(
           gridData: FlGridData(
@@ -613,37 +637,75 @@ class _PnlChart extends StatelessWidget {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 58,
-                getTitlesWidget: (v, _) => Text(
-                  v.abs() >= 1000
-                      ? '\$${(v / 1000).toStringAsFixed(0)}k'
-                      : '\$${v.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                      color: AppTheme.neutralColor, fontSize: 9),
-                ),
+                getTitlesWidget: (v, meta) {
+                  if (v != meta.min && v != meta.max) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Text(
+                      v.abs() >= 1000
+                          ? '\$${(v / 1000).toStringAsFixed(0)}k'
+                          : '\$${v.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                          color: AppTheme.neutralColor, fontSize: 9),
+                      textAlign: TextAlign.right,
+                    ),
+                  );
+                },
               ),
             ),
-            bottomTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 22,
+                interval: 1,
+                getTitlesWidget: (v, _) {
+                  final idx = v.round();
+                  if (!labelIdxs.contains(idx) || idx >= labels.length) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      DateFormat("MMM ''yy").format(labels[idx]),
+                      style: const TextStyle(
+                          color: AppTheme.neutralColor, fontSize: 9),
+                    ),
+                  );
+                },
+              ),
+            ),
+            topTitles:   const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
           lineBarsData: [
             LineChartBarData(
-              spots: spots,
-              isCurved: true,
-              color: lineColor,
+              spots:    spots,
+              isCurved: n > 2,
+              color:    lineColor,
               barWidth: 2.5,
-              dotData: const FlDotData(show: false),
+              dotData:  FlDotData(show: n <= 3),
               belowBarData: BarAreaData(
-                show: true,
+                show:  true,
                 color: lineColor.withValues(alpha: 0.08),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  /// Pick up to [count] evenly-spaced indices from [total] items,
+  /// always including the last index so the newest month is labelled.
+  static List<int> _pnlLabelIndices(int total, int count) {
+    if (total <= 0) return [];
+    if (total <= count) return List.generate(total, (i) => i);
+    if (count == 1) return [total - 1];
+    return List.generate(
+      count,
+      (i) => ((i * (total - 1)) / (count - 1)).round(),
     );
   }
 }
@@ -675,7 +737,7 @@ class _OpenTradeRow extends ConsumerWidget {
           loading: () => Text('${trade.strategy.label} · loading…',
               style: const TextStyle(
                   color: AppTheme.neutralColor, fontSize: 11)),
-          error: (_, __) => Text(trade.strategy.label,
+          error: (_, _) => Text(trade.strategy.label,
               style: const TextStyle(
                   color: AppTheme.neutralColor, fontSize: 11)),
           data: (quote) {

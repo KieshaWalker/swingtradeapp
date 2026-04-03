@@ -93,7 +93,13 @@ class SchwabService {
 
   // ── Economy pulse batch (replaces FMP getEconomyPulse quotes) ────────────────
 
+  // Schwab-native symbols:
+  //  /GC  = gold front-month futures     (FMP: GC=F)
+  //  /SI  = silver futures               (FMP: SI=F)
+  //  /CL  = WTI crude front-month        (FMP: CL=F)
+  //  /NG  = natural gas futures          (FMP: NG=F)
+  //  $DXY = US Dollar Index (real index, not the UUP ETF proxy)
   Future<List<StockQuote>> getEconomyQuotes() => getQuotes(
-        ['SPY', 'QQQ', 'VIXY', 'UUP', 'GC=F', 'SI=F', 'CL=F', 'NG=F', 'HYG', 'LQD', 'COPX'],
+        ['SPY', 'QQQ', 'VIXY', r'$DXY', '/GC', '/SI', '/CL', '/NG', 'HYG', 'LQD', 'COPX'],
       );
 }

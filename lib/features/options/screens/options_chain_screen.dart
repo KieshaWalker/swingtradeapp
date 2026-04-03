@@ -5,6 +5,7 @@
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
 import '../../../services/schwab/schwab_models.dart';
 import '../../../services/schwab/schwab_providers.dart';
@@ -78,6 +79,13 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
             Tab(text: 'PUTS'),
           ],
         ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push('/ticker/${widget.symbol}/chains/wizard'),
+        backgroundColor: AppTheme.profitColor,
+        foregroundColor: Colors.black,
+        icon:  const Icon(Icons.auto_awesome),
+        label: const Text('Analyze', style: TextStyle(fontWeight: FontWeight.w700)),
       ),
       body: chainAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),

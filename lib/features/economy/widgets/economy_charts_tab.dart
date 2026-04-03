@@ -47,7 +47,7 @@ class EconomyChartsTab extends StatelessWidget {
         SizedBox(height: 8),
         _QuoteChart(symbol: 'VIXY', title: 'VIX',          color: _red),
         SizedBox(height: 8),
-        _QuoteChart(symbol: 'UUP',  title: 'Dollar Index', color: _yellow),
+        _QuoteChart(symbol: r'$DXY', title: 'Dollar Index', color: _yellow),
         SizedBox(height: 24),
 
         // Interest Rates
@@ -75,13 +75,13 @@ class EconomyChartsTab extends StatelessWidget {
         // Commodities
         _SectionHeader('Commodities'),
         SizedBox(height: 8),
-        _QuoteChart(symbol: 'GC=F', title: 'Gold',        color: _yellow),
+        _QuoteChart(symbol: '/GC', title: 'Gold',        color: _yellow),
         SizedBox(height: 8),
-        _QuoteChart(symbol: 'SI=F', title: 'Silver',      color: Color(0xFFADB5BD)),
+        _QuoteChart(symbol: '/SI', title: 'Silver',      color: Color(0xFFADB5BD)),
         SizedBox(height: 8),
-        _QuoteChart(symbol: 'CL=F', title: 'WTI Crude',   color: _orange),
+        _QuoteChart(symbol: '/CL', title: 'WTI Crude',   color: _orange),
         SizedBox(height: 8),
-        _QuoteChart(symbol: 'NG=F', title: 'Natural Gas', color: _green),
+        _QuoteChart(symbol: '/NG', title: 'Natural Gas', color: _green),
         SizedBox(height: 24),
 
         // Labor Market
