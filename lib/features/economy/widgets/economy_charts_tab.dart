@@ -2,7 +2,16 @@
 // features/economy/widgets/economy_charts_tab.dart — historical chart views
 // =============================================================================
 // Displays day-by-day / monthly line charts for every Economy Pulse metric,
-// reading from the three Supabase snapshot tables.
+// reading from Supabase snapshot tables populated by various government APIs:
+//
+// Data Sources:
+// - Market quotes (SPY, QQQ, VIXY, $DXY, commodities): Schwab API → economy_quote_snapshots
+// - Treasury yields: Treasury API → economy_treasury_snapshots
+// - Economic indicators (FMP): Financial Modeling Prep API → economy_indicator_snapshots
+// - BLS data: Bureau of Labor Statistics API → economy_indicator_snapshots
+// - BEA data: Bureau of Economic Analysis API → economy_indicator_snapshots
+// - EIA data: Energy Information Administration API → economy_indicator_snapshots
+// - Census data: US Census Bureau API → economy_indicator_snapshots
 //
 // Tap any chart card to expand it full-screen with interactive touch tooltips.
 // =============================================================================
@@ -13,48 +22,72 @@ import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../services/economy/economy_snapshot_models.dart';
 import '../../../services/economy/economy_storage_providers.dart';
+import '../../../services/fmp/fmp_models.dart';
+import '../../../services/fmp/fmp_providers.dart';
 import '../../../services/economy/economy_storage_service.dart';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
-const _blue   = Color(0xFF58A6FF);
-const _green  = Color(0xFF56D364);
+const _blue = Color(0xFF58A6FF);
+const _green = Color(0xFF56D364);
 const _yellow = Color(0xFFE3B341);
 const _purple = Color(0xFFBC8CFF);
-const _red    = Color(0xFFFF7B72);
-const _teal   = Color(0xFF39D353);
+const _red = Color(0xFFFF7B72);
+const _teal = Color(0xFF39D353);
 const _orange = Color(0xFFF78166);
 
 // ─── Root tab widget ──────────────────────────────────────────────────────────
 
-class EconomyChartsTab extends StatelessWidget {
+class EconomyChartsTab extends ConsumerWidget {
   const EconomyChartsTab({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Fetch latest economy data from APIs and save to database
+    // This ensures charts have fresh data even if economy pulse screen hasn't been visited
+    ref.watch(economyPulseProvider);
+
+    // Save economy pulse data to database when fetched
+    final storage = ref.read(economyStorageServiceProvider);
+    ref.listen<AsyncValue<EconomyPulseData>>(economyPulseProvider, (_, next) {
+      next.whenData((data) {
+        storage.saveEconomyPulse(data);
+        // Invalidate quote history providers to refresh charts with new data
+        ref.invalidate(economyQuoteHistoryProvider(r'$DXY'));
+        ref.invalidate(economyQuoteHistoryProvider('/GC'));
+        ref.invalidate(economyQuoteHistoryProvider('/SI'));
+        ref.invalidate(economyQuoteHistoryProvider('/CL'));
+        ref.invalidate(economyQuoteHistoryProvider('/NG'));
+        ref.invalidate(economyQuoteHistoryProvider('SPY'));
+        ref.invalidate(economyQuoteHistoryProvider('QQQ'));
+        ref.invalidate(economyQuoteHistoryProvider('VIXY'));
+      });
+    });
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
       children: [
         _DataNote(),
         SizedBox(height: 20),
 
-        // Market Snapshot
+        // Market Snapshot - Live quotes from Schwab API (stored in economy_quote_snapshots)
         _SectionHeader('Market Snapshot'),
         SizedBox(height: 8),
-        _QuoteChart(symbol: 'SPY',  title: 'S&P 500',      color: _blue),
+        _QuoteChart(symbol: 'SPY', title: 'S&P 500', color: _blue),
         SizedBox(height: 8),
-        _QuoteChart(symbol: 'QQQ',  title: 'Nasdaq 100',   color: _purple),
+        _QuoteChart(symbol: 'QQQ', title: 'Nasdaq 100', color: _purple),
         SizedBox(height: 8),
-        _QuoteChart(symbol: 'VIXY', title: 'VIX',          color: _red),
+        _QuoteChart(symbol: 'VIXY', title: 'VIX', color: _red),
         SizedBox(height: 8),
         _QuoteChart(symbol: r'$DXY', title: 'Dollar Index', color: _yellow),
         SizedBox(height: 24),
 
-        // Interest Rates
+        // Interest Rates - Treasury yields from Treasury API (stored in economy_treasury_snapshots)
         _SectionHeader('Interest Rates'),
         SizedBox(height: 8),
         _TreasuryChart(),
         SizedBox(height: 8),
+        // Economic indicators from FMP API (stored in economy_indicator_snapshots)
         _IndicatorChart(
           identifier: 'federalFunds',
           title: 'Fed Funds Rate',
@@ -72,19 +105,19 @@ class EconomyChartsTab extends StatelessWidget {
         ),
         SizedBox(height: 24),
 
-        // Commodities
+        // Commodities - Futures quotes from Schwab API (stored in economy_quote_snapshots)
         _SectionHeader('Commodities'),
         SizedBox(height: 8),
-        _QuoteChart(symbol: '/GC', title: 'Gold',        color: _yellow),
+        _QuoteChart(symbol: '/GC', title: 'Gold', color: _yellow),
         SizedBox(height: 8),
-        _QuoteChart(symbol: '/SI', title: 'Silver',      color: Color(0xFFADB5BD)),
+        _QuoteChart(symbol: '/SI', title: 'Silver', color: Color(0xFFADB5BD)),
         SizedBox(height: 8),
-        _QuoteChart(symbol: '/CL', title: 'WTI Crude',   color: _orange),
+        _QuoteChart(symbol: '/CL', title: 'WTI Crude', color: _orange),
         SizedBox(height: 8),
         _QuoteChart(symbol: '/NG', title: 'Natural Gas', color: _green),
         SizedBox(height: 24),
 
-        // Labor Market
+        // Labor Market - Economic indicators from FMP API (stored in economy_indicator_snapshots)
         _SectionHeader('Labor Market'),
         SizedBox(height: 8),
         _IndicatorChart(
@@ -120,7 +153,7 @@ class EconomyChartsTab extends StatelessWidget {
         ),
         SizedBox(height: 24),
 
-        // Economy
+        // Economy - Economic indicators from FMP API (stored in economy_indicator_snapshots)
         _SectionHeader('Economy'),
         SizedBox(height: 8),
         _IndicatorChart(
@@ -156,7 +189,7 @@ class EconomyChartsTab extends StatelessWidget {
         ),
         SizedBox(height: 24),
 
-        // Housing
+        // Housing - Economic indicators from FMP API (stored in economy_indicator_snapshots)
         _SectionHeader('Housing'),
         SizedBox(height: 8),
         _IndicatorChart(
@@ -168,7 +201,7 @@ class EconomyChartsTab extends StatelessWidget {
         ),
         const SizedBox(height: 24),
 
-        // ── BLS Employment ────────────────────────────────────────────────────
+        // BLS Employment - Data from Bureau of Labor Statistics API (stored in economy_indicator_snapshots)
         const _SectionHeader('BLS — Employment'),
         const SizedBox(height: 8),
         _IndicatorChart(
@@ -220,7 +253,7 @@ class EconomyChartsTab extends StatelessWidget {
         ),
         const SizedBox(height: 24),
 
-        // ── BLS CPI ───────────────────────────────────────────────────────────
+        // BLS CPI - Data from Bureau of Labor Statistics API (stored in economy_indicator_snapshots)
         const _SectionHeader('BLS — Consumer Price Index'),
         const SizedBox(height: 8),
         _IndicatorChart(
@@ -264,7 +297,7 @@ class EconomyChartsTab extends StatelessWidget {
         ),
         const SizedBox(height: 24),
 
-        // ── BLS PPI ───────────────────────────────────────────────────────────
+        // BLS PPI - Data from Bureau of Labor Statistics API (stored in economy_indicator_snapshots)
         const _SectionHeader('BLS — Producer Price Index'),
         const SizedBox(height: 8),
         _IndicatorChart(
@@ -300,7 +333,7 @@ class EconomyChartsTab extends StatelessWidget {
         ),
         const SizedBox(height: 24),
 
-        // ── BLS JOLTS ─────────────────────────────────────────────────────────
+        // BLS JOLTS - Data from Bureau of Labor Statistics API (stored in economy_indicator_snapshots)
         const _SectionHeader('BLS — JOLTS'),
         const SizedBox(height: 8),
         _IndicatorChart(
@@ -352,7 +385,7 @@ class EconomyChartsTab extends StatelessWidget {
         ),
         const SizedBox(height: 24),
 
-        // ── BEA ───────────────────────────────────────────────────────────────
+        // BEA - Data from Bureau of Economic Analysis API (stored in economy_indicator_snapshots)
         const _SectionHeader('BEA — National Accounts'),
         const SizedBox(height: 8),
         _IndicatorChart(
@@ -412,7 +445,7 @@ class EconomyChartsTab extends StatelessWidget {
         ),
         const SizedBox(height: 24),
 
-        // ── EIA ───────────────────────────────────────────────────────────────
+        // EIA - Data from Energy Information Administration API (stored in economy_indicator_snapshots)
         const _SectionHeader('EIA — Energy'),
         const SizedBox(height: 8),
         _IndicatorChart(
@@ -464,7 +497,7 @@ class EconomyChartsTab extends StatelessWidget {
         ),
         const SizedBox(height: 24),
 
-        // ── Census ────────────────────────────────────────────────────────────
+        // Census - Data from US Census Bureau API (stored in economy_indicator_snapshots)
         const _SectionHeader('Census — Trade & Construction'),
         const SizedBox(height: 8),
         _IndicatorChart(
@@ -576,11 +609,15 @@ class _DataNote extends StatelessWidget {
 class _QuoteChart extends ConsumerWidget {
   final String symbol;
   final String title;
+  final DateTime date;
+  final double price;
   final Color color;
 
   const _QuoteChart({
     required this.symbol,
     required this.title,
+    required this.date,
+    required this.price,
     required this.color,
   });
 
@@ -588,12 +625,12 @@ class _QuoteChart extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(economyQuoteHistoryProvider(symbol));
     return async.when(
-      loading: () => _chartSkeleton(title, symbol),
+      loading: () => _chartSkeleton(title, symbol,),
       error: (_, _) => _chartSkeleton(title, symbol),
       data: (history) {
         if (history.isEmpty) return _chartEmpty(title, symbol);
-        final dates  = history.map((h) => h.date).toList();
-        final spots  = history
+        final dates = history.map((h) => h.date).toList();
+        final spots = history
             .asMap()
             .entries
             .map((e) => FlSpot(e.key.toDouble(), e.value.price))
@@ -671,19 +708,18 @@ class _TreasuryChart extends ConsumerWidget {
           return _chartEmpty('Treasury Yields', '2Y · 5Y · 10Y · 30Y');
         }
         final dates = history.map((h) => h.date).toList();
-        List<FlSpot> toSpots(double? Function(TreasurySnapshot) pick) =>
-            history
-                .asMap()
-                .entries
-                .map((e) => FlSpot(e.key.toDouble(), pick(e.value) ?? 0))
-                .toList();
+        List<FlSpot> toSpots(double? Function(TreasurySnapshot) pick) => history
+            .asMap()
+            .entries
+            .map((e) => FlSpot(e.key.toDouble(), pick(e.value) ?? 0))
+            .toList();
         return _LineChartCard(
           title: 'Treasury Yields',
           sublabel: '2Y · 5Y · 10Y · 30Y',
           dates: dates,
           series: [
-            _Series('2Y',  toSpots((h) => h.year2),  _blue),
-            _Series('5Y',  toSpots((h) => h.year5),  _green),
+            _Series('2Y', toSpots((h) => h.year2), _blue),
+            _Series('5Y', toSpots((h) => h.year5), _green),
             _Series('10Y', toSpots((h) => h.year10), _yellow),
             _Series('30Y', toSpots((h) => h.year30), _purple),
           ],
@@ -711,10 +747,7 @@ List<int> _evenIndices(int total, int count) {
   if (total <= 0) return [];
   if (total <= count) return List.generate(total, (i) => i);
   if (count == 1) return [0];
-  return List.generate(
-    count,
-    (i) => ((i * (total - 1)) / (count - 1)).round(),
-  );
+  return List.generate(count, (i) => ((i * (total - 1)) / (count - 1)).round());
 }
 
 // ─── Compact chart card (shown in the list) ───────────────────────────────────
@@ -817,20 +850,22 @@ class _LineChartCard extends StatelessWidget {
                 Wrap(
                   spacing: 12,
                   children: series
-                      .map((s) => Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(width: 12, height: 2, color: s.color),
-                              const SizedBox(width: 4),
-                              Text(
-                                s.label,
-                                style: const TextStyle(
-                                  color: AppTheme.neutralColor,
-                                  fontSize: 10,
-                                ),
+                      .map(
+                        (s) => Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(width: 12, height: 2, color: s.color),
+                            const SizedBox(width: 4),
+                            Text(
+                              s.label,
+                              style: const TextStyle(
+                                color: AppTheme.neutralColor,
+                                fontSize: 10,
                               ),
-                            ],
-                          ))
+                            ),
+                          ],
+                        ),
+                      )
                       .toList(),
                 ),
               ],
@@ -853,9 +888,11 @@ class _LineChartCard extends StatelessWidget {
                     lineTouchData: const LineTouchData(enabled: false),
                     titlesData: FlTitlesData(
                       topTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false)),
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
                       rightTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false)),
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
                       leftTitles: AxisTitles(
                         sideTitles: SideTitles(
                           showTitles: true,
@@ -917,19 +954,21 @@ class _LineChartCard extends StatelessWidget {
   List<LineChartBarData> _buildBars({required bool compact}) {
     final n = dates.length;
     return series
-        .map((s) => LineChartBarData(
-              spots: s.spots,
-              isCurved: n > 3,
-              color: s.color,
-              barWidth: compact ? 2 : 2.5,
-              dotData: FlDotData(show: n <= 2),
-              belowBarData: series.length == 1
-                  ? BarAreaData(
-                      show: true,
-                      color: s.color.withValues(alpha: 0.08),
-                    )
-                  : BarAreaData(show: false),
-            ))
+        .map(
+          (s) => LineChartBarData(
+            spots: s.spots,
+            isCurved: n > 3,
+            color: s.color,
+            barWidth: compact ? 2 : 2.5,
+            dotData: FlDotData(show: n <= 2),
+            belowBarData: series.length == 1
+                ? BarAreaData(
+                    show: true,
+                    color: s.color.withValues(alpha: 0.08),
+                  )
+                : BarAreaData(show: false),
+          ),
+        )
         .toList();
   }
 }
@@ -960,19 +999,21 @@ class _FullScreenChartPage extends StatelessWidget {
     final labelSet = _evenIndices(n, 6).toSet();
 
     final bars = series
-        .map((s) => LineChartBarData(
-              spots: s.spots,
-              isCurved: n > 3,
-              color: s.color,
-              barWidth: 2.5,
-              dotData: FlDotData(show: n <= 10),
-              belowBarData: series.length == 1
-                  ? BarAreaData(
-                      show: true,
-                      color: s.color.withValues(alpha: 0.10),
-                    )
-                  : BarAreaData(show: false),
-            ))
+        .map(
+          (s) => LineChartBarData(
+            spots: s.spots,
+            isCurved: n > 3,
+            color: s.color,
+            barWidth: 2.5,
+            dotData: FlDotData(show: n <= 10),
+            belowBarData: series.length == 1
+                ? BarAreaData(
+                    show: true,
+                    color: s.color.withValues(alpha: 0.10),
+                  )
+                : BarAreaData(show: false),
+          ),
+        )
         .toList();
 
     return Scaffold(
@@ -1017,20 +1058,22 @@ class _FullScreenChartPage extends StatelessWidget {
                 Wrap(
                   spacing: 16,
                   children: series
-                      .map((s) => Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(width: 16, height: 2, color: s.color),
-                              const SizedBox(width: 6),
-                              Text(
-                                s.label,
-                                style: const TextStyle(
-                                  color: AppTheme.neutralColor,
-                                  fontSize: 12,
-                                ),
+                      .map(
+                        (s) => Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(width: 16, height: 2, color: s.color),
+                            const SizedBox(width: 6),
+                            Text(
+                              s.label,
+                              style: const TextStyle(
+                                color: AppTheme.neutralColor,
+                                fontSize: 12,
                               ),
-                            ],
-                          ))
+                            ),
+                          ],
+                        ),
+                      )
                       .toList(),
                 ),
                 const SizedBox(height: 16),
@@ -1057,14 +1100,15 @@ class _FullScreenChartPage extends StatelessWidget {
                       enabled: true,
                       touchTooltipData: LineTouchTooltipData(
                         getTooltipColor: (_) => const Color(0xFF30363D),
-                        getTooltipItems: (touchedSpots) =>
-                            touchedSpots.map((s) {
+                        getTooltipItems: (touchedSpots) => touchedSpots.map((
+                          s,
+                        ) {
                           final idx = s.x.round();
                           final dateStr = (idx >= 0 && idx < dates.length)
                               ? DateFormat('MMM d, yyyy').format(dates[idx])
                               : '';
-                          final seriesLabel = series.length > 1 &&
-                                  s.barIndex < series.length
+                          final seriesLabel =
+                              series.length > 1 && s.barIndex < series.length
                               ? '${series[s.barIndex].label}: '
                               : '';
                           return LineTooltipItem(
@@ -1080,9 +1124,11 @@ class _FullScreenChartPage extends StatelessWidget {
                     ),
                     titlesData: FlTitlesData(
                       topTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false)),
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
                       rightTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false)),
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
                       leftTitles: AxisTitles(
                         sideTitles: SideTitles(
                           showTitles: true,
@@ -1144,28 +1190,28 @@ class _FullScreenChartPage extends StatelessWidget {
 // ─── Skeleton / empty states ──────────────────────────────────────────────────
 
 Widget _chartSkeleton(String title, String sub) => _ChartFrame(
-      title: title,
-      sublabel: sub,
-      child: const Center(
-        child: SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-    );
+  title: title,
+  sublabel: sub,
+  child: const Center(
+    child: SizedBox(
+      width: 20,
+      height: 20,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    ),
+  ),
+);
 
 Widget _chartEmpty(String title, String sub) => _ChartFrame(
-      title: title,
-      sublabel: sub,
-      child: const Center(
-        child: Text(
-          'No data yet — visit the Snapshot tab to start building history.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
-        ),
-      ),
-    );
+  title: title,
+  sublabel: sub,
+  child: const Center(
+    child: Text(
+      'No data yet — visit the Snapshot tab to start building history.',
+      textAlign: TextAlign.center,
+      style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+    ),
+  ),
+);
 
 class _ChartFrame extends StatelessWidget {
   final String title;
@@ -1193,13 +1239,14 @@ class _ChartFrame extends StatelessWidget {
           children: [
             Text(
               title,
-              style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
             Text(
               sublabel,
               style: const TextStyle(
-                  color: AppTheme.neutralColor, fontSize: 10),
+                color: AppTheme.neutralColor,
+                fontSize: 10,
+              ),
             ),
             const SizedBox(height: 12),
             SizedBox(height: 100, child: child),

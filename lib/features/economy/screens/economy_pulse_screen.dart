@@ -598,8 +598,9 @@ class _QuoteTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (quote == null)
+    if (quote == null) {
       return _Tile(child: _PlaceholderContent(label, sublabel));
+    }
 
     final positive = invertColor ? !quote!.isPositive : quote!.isPositive;
     final changeColor = positive ? AppTheme.profitColor : AppTheme.lossColor;
@@ -660,8 +661,9 @@ class _EconTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (point == null)
+    if (point == null) {
       return _Tile(child: _PlaceholderContent(label, sublabel));
+    }
 
     Color valueColor = Colors.white;
     if (warnHigh) {

@@ -160,16 +160,32 @@ class EconomyStorageService {
 
   Future<void> _saveQuotes(EconomyPulseData data) async {
     final today = _fmt(data.fetchedAt);
-    final quotes = [
-      data.sp500, data.nasdaq, data.vix, data.dxy,
-      data.gold, data.silver, data.wtiCrude, data.natGas,
-      data.hyg, data.lqd, data.copx,
-    ].whereType<StockQuote>().toList();
+    
+    // Map of field -> expected symbol for database storage
+    final quoteMappings = {
+      data.sp500: 'SPY',
+      data.nasdaq: 'QQQ', 
+      data.vix: 'VIXY',
+      data.dxy: r'$DXY',
+      data.gold: '/GC',
+      data.silver: '/SI',
+      data.wtiCrude: '/CL',
+      data.natGas: '/NG',
+      data.hyg: 'HYG',
+      data.lqd: 'LQD',
+      data.copx: 'COPX',
+    };
+
+    final quotes = quoteMappings.entries
+        .where((e) => e.key != null)
+        .map((e) => e.key!)
+        .toList();
 
     if (quotes.isEmpty) return;
+    
     await _db.from('economy_quote_snapshots').upsert(
       quotes.map((q) => {
-        'symbol': q.symbol,
+        'symbol': quoteMappings[q]!,  // Use expected symbol, not q.symbol
         'date': today,
         'price': q.price,
         'change_percent': q.changePercent,
