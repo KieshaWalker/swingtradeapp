@@ -134,6 +134,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           child: _AppShell(child: CalculatorScreen()),
         ),
       ),
+      
       GoRoute(
         path: '/journal',
         pageBuilder: (context, state) => const NoTransitionPage(
