@@ -1,8 +1,8 @@
 class KalshiConfig {
-  static const String accessKey = String.fromEnvironment('KALSHI_ACCESS_KEY');
+  static const String accessKey = String.fromEnvironment('KALSHI-ACCESS-KEY');
   static const String email = String.fromEnvironment('KALSHI_EMAIL');
   static const String password = String.fromEnvironment('KALSHI_PASSWORD');
-  static const String baseUrl = 'https://api.kalshi.com/v2';
+  static const String baseUrl = 'https://api.elections.kalshi.com/trade-api/v2';
 }
 
 class FredConfig {

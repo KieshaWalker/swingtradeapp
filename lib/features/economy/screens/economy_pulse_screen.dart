@@ -33,6 +33,8 @@ import '../widgets/bea_tab.dart';
 import '../widgets/eia_tab.dart';
 import '../widgets/census_tab.dart';
 import '../widgets/fred_tab.dart';
+import '../widgets/kalshi_tab.dart';
+import '../../../services/kalshi/kalshi_providers.dart';
 
 class EconomyPulseScreen extends ConsumerWidget {
   const EconomyPulseScreen({super.key});
@@ -182,7 +184,7 @@ class EconomyPulseScreen extends ConsumerWidget {
     );
 
     return DefaultTabController(
-      length: 7,
+      length: 8,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Economy Pulse'),
@@ -222,6 +224,7 @@ class EconomyPulseScreen extends ConsumerWidget {
                 ref.invalidate(fredIgOasProvider);
                 ref.invalidate(fredSpreadProvider);
                 ref.invalidate(fredFedFundsProvider);
+                ref.invalidate(kalshiMacroEventsProvider);
               },
             ),
             const AppMenuButton(),
@@ -237,6 +240,7 @@ class EconomyPulseScreen extends ConsumerWidget {
               Tab(text: 'EIA'),
               Tab(text: 'Census'),
               Tab(text: 'FRED'),
+              Tab(text: 'Kalshi'),
             ],
           ),
         ),
@@ -271,6 +275,7 @@ class EconomyPulseScreen extends ConsumerWidget {
             const EiaTab(),
             const CensusTab(),
             const FredTab(),
+            const KalshiTab(),
           ],
         ),
       ),

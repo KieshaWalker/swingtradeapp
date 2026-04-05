@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
+import '../../../services/kalshi/kalshi_providers.dart';
 import '../../../services/schwab/schwab_models.dart';
 import '../../../services/schwab/schwab_providers.dart';
 import '../services/option_scoring_engine.dart';
@@ -137,6 +138,11 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
                 onCountChanged: (v) => setState(() => _strikeCount = v),
                 onRefresh:      () => ref.invalidate(schwabOptionsChainProvider(_params)),
               ),
+
+              // ── Kalshi event overlay ─────────────────────────────────────
+              // Shows any Kalshi events that close before the selected
+              // expiration date — flagged as High Volatility Events.
+              _KalshiEventBanner(expirationDateStr: exp.expirationDate),
 
               // ── Chain table ──────────────────────────────────────────────
               Expanded(
@@ -507,6 +513,94 @@ class _ContractRow extends StatelessWidget {
 
   static String _fmtInt(int n) =>
       n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : '$n';
+}
+
+// ── Kalshi event overlay ──────────────────────────────────────────────────────
+// Shows a horizontal scroll of Kalshi events whose close_time falls before
+// the selected option expiration. Each chip displays the event title and the
+// leading market's yes probability. Hidden when there are no relevant events.
+
+class _KalshiEventBanner extends ConsumerWidget {
+  final String expirationDateStr; // "YYYY-MM-DD" from SchwabExpiration
+
+  const _KalshiEventBanner({required this.expirationDateStr});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final expDate = DateTime.tryParse(expirationDateStr);
+    if (expDate == null) return const SizedBox.shrink();
+
+    final async = ref.watch(kalshiEventsForExpirationProvider(expDate));
+
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error:   (_, _) => const SizedBox.shrink(),
+      data: (events) {
+        if (events.isEmpty) return const SizedBox.shrink();
+        return Container(
+          color:  const Color(0xFFF59E0B).withValues(alpha: 0.07),
+          padding: const EdgeInsets.fromLTRB(12, 7, 12, 7),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Icon(Icons.bolt_rounded,
+                    color: Color(0xFFF59E0B), size: 13),
+                const SizedBox(width: 4),
+                Text(
+                  'HIGH VOLATILITY EVENTS BEFORE EXPIRY',
+                  style: TextStyle(
+                    color:      const Color(0xFFF59E0B).withValues(alpha: 0.9),
+                    fontSize:   10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 36,
+                child: ListView.separated(
+                  scrollDirection:  Axis.horizontal,
+                  itemCount:        events.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 6),
+                  itemBuilder: (_, i) {
+                    final event   = events[i];
+                    final leading = event.leadingMarket;
+                    final prob    = leading?.yesProbability;
+                    final label   = prob != null
+                        ? '${(prob * 100).toStringAsFixed(0)}% — ${event.title}'
+                        : event.title;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.45),
+                        ),
+                      ),
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                          color:      Color(0xFFF59E0B),
+                          fontSize:   12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines:  1,
+                        overflow:  TextOverflow.ellipsis,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 // ── Score pill ────────────────────────────────────────────────────────────────

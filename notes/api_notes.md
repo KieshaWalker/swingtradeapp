@@ -144,3 +144,21 @@ supabase functions deploy --no-verify-jwt
 You only need to re-run this when you change a function, not on every deploy.
 
 Option 2 — GitHub Actions (automatic)
+
+
+
+kalshi
+major categories now:
+
+Prices — CPI, PCE, PPI, inflation/deflation
+Commodities — WTI, Brent, natural gas, gasoline, gold, silver, copper, wheat, corn
+Labor — NFP, JOLTS, claims, wages, participation rate, layoffs
+Growth — GDP, industrial production, capacity utilization, recession
+Fed — FOMC, rate hike/cut, QE/QT, balance sheet, Powell
+Housing — starts, permits, existing/new home sales, Case-Shiller, mortgage
+Consumer — retail sales, consumer confidence (Michigan + Conference Board), personal income/spending
+Manufacturing — ISM, PMI, factory orders, durable goods
+Trade/Fiscal — trade balance, tariffs, debt ceiling, yield curve inversion
+Markets — S&P, Nasdaq, Dow, VIX, volatility
+Dollar/Forex — DXY, euro, yen, yuan, exchange rates
+Credit — high yield spreads, IG, bank lending, delinquencie
