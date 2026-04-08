@@ -155,11 +155,13 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
                       contracts:       exp.calls,
                       underlyingPrice: chain.underlyingPrice,
                       isCall:          true,
+                      symbol:          widget.symbol,
                     ),
                     _ChainTable(
                       contracts:       exp.puts,
                       underlyingPrice: chain.underlyingPrice,
                       isCall:          false,
+                      symbol:          widget.symbol,
                     ),
                   ],
                 ),
@@ -303,11 +305,13 @@ class _ChainTable extends StatelessWidget {
   final List<SchwabOptionContract> contracts;
   final double underlyingPrice;
   final bool   isCall;
+  final String symbol;
 
   const _ChainTable({
     required this.contracts,
     required this.underlyingPrice,
     required this.isCall,
+    required this.symbol,
   });
 
   @override
@@ -345,6 +349,7 @@ class _ChainTable extends StatelessWidget {
             itemBuilder: (ctx, i) => _ContractRow(
               contract:        contracts[i],
               underlyingPrice: underlyingPrice,
+              symbol:          symbol,
               isCall:          isCall,
             ),
           ),
@@ -379,11 +384,13 @@ class _ContractRow extends StatelessWidget {
   final SchwabOptionContract contract;
   final double underlyingPrice;
   final bool   isCall;
+  final String symbol;
 
   const _ContractRow({
     required this.contract,
     required this.underlyingPrice,
     required this.isCall,
+    required this.symbol,
   });
 
   @override
@@ -408,6 +415,7 @@ class _ContractRow extends StatelessWidget {
         builder: (_) => OptionScoreSheet(
           contract:        contract,
           underlyingPrice: underlyingPrice,
+          symbol:          symbol,
         ),
       ),
       child: Container(

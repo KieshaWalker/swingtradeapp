@@ -471,6 +471,7 @@ class _ResultsView extends StatelessWidget {
         result: results[i],
         rank:   i + 1,
         underlyingPrice: chain.underlyingPrice,
+        symbol: chain.symbol,
       ),
     );
   }
@@ -482,11 +483,13 @@ class _DecisionCard extends StatelessWidget {
   final OptionDecisionResult result;
   final int                  rank;
   final double               underlyingPrice;
+  final String               symbol;
 
   const _DecisionCard({
     required this.result,
     required this.rank,
     required this.underlyingPrice,
+    required this.symbol,
   });
 
   @override
@@ -523,6 +526,7 @@ class _DecisionCard extends StatelessWidget {
           builder: (_) => OptionScoreSheet(
             contract:        c,
             underlyingPrice: underlyingPrice,
+            symbol:          symbol,
           ),
         ),
         child: Column(

@@ -1,6 +1,6 @@
 # Secrets
 .env
-.notes
+*.notes
 api_call_list_by_source.md.pdf
 .api_call_list_by_source.md.pdf
 # Miscellaneous
@@ -53,5 +53,5 @@ dart_defines.json
 
 # notes/ 
 *notes/
-notes
+notes.md
 notes/api_notes.md

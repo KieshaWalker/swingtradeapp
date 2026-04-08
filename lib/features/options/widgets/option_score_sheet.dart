@@ -12,10 +12,12 @@ import '../services/option_scoring_engine.dart';
 class OptionScoreSheet extends StatelessWidget {
   final SchwabOptionContract contract;
   final double underlyingPrice;
+  final String symbol;
   const OptionScoreSheet({
     super.key,
     required this.contract,
     required this.underlyingPrice,
+    required this.symbol,
   });
 
   @override
@@ -167,6 +169,7 @@ class OptionScoreSheet extends StatelessWidget {
                   Navigator.pop(context);
                   context.push('/trades/add', extra: {
                     'prefill': {
+                      'ticker':      symbol,
                       'optionType':  isCall ? 'call' : 'put',
                       'strike':      contract.strikePrice,
                       'expiration':  contract.expirationDate,

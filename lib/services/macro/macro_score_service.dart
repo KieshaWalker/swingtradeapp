@@ -10,8 +10,8 @@
 //   HY OAS    → fred_bamlh0a0hym2 (FRED bps, inverted)
 //   IG OAS    → fred_bamlc0a0cm (FRED bps, inverted)
 //   SPY Trend → SPY (FMP — no FRED alternative)
-//   Dollar    → UUP (FMP — no FRED alternative)
-//   Gold/Cu   → GOLDAMGBD228NLBM (FRED gold) + COPX (FMP copper)
+//   Dollar    → $DXY (same as economy charts tab)
+//   Gold/Cu   → /GC (gold futures, same as economy charts tab) + COPX (FMP copper)
 //
 // Z-score normalization (per component):
 //   Z = (current − μ) / σ  over rolling history (up to 252 obs)
@@ -323,10 +323,10 @@ class MacroScoreService {
     );
   }
 
-  // ─── 5. Dollar (UUP) — 10 pts ────────────────────────────────────────────
+  // ─── 5. Dollar (DXY) — 10 pts ────────────────────────────────────────────
 
   Future<MacroSubScore> _dollarComponent() async {
-    final rows = await _quoteHistory('UUP');
+    final rows = await _quoteHistory(r'$DXY');
     if (rows.length < 5) return _noData('Dollar (DXY)', 10);
 
     final prices = rows.map((r) => (r['price'] as num).toDouble()).toList();
@@ -355,10 +355,10 @@ class MacroScoreService {
 
     return MacroSubScore(
       name: 'Dollar (DXY)',
-      description: 'UUP 30-day trend — weak dollar = risk-on',
+      description: 'DXY 30-day trend — weak dollar = risk-on',
       score: score,
       maxScore: 10,
-      signal: 'UUP \$${latest.toStringAsFixed(2)} — $trend'
+      signal: 'DXY ${latest.toStringAsFixed(2)} — $trend'
           '${z != null ? ' · ${changes.length}d' : ''}',
       detail: currentChange < 0
           ? 'Falling dollar supports global risk assets'
@@ -474,13 +474,12 @@ class MacroScoreService {
   }
 
   // ─── 8. Gold/Copper — 10 pts ─────────────────────────────────────────────
-  // Copper outperforming gold = growth signal. Uses FRED gold if available.
+  // Copper outperforming gold = growth signal. Uses /GC (gold futures).
 
   Future<MacroSubScore> _goldCopperComponent() async {
-    // Prefer FRED gold (GOLDAMGBD228NLBM); fall back to FMP GC=F
-    var goldRows = await _quoteHistory(FredSeriesIds.gold);
-    final goldSource = goldRows.isNotEmpty ? 'FRED Gold' : 'GC=F';
-    if (goldRows.isEmpty) goldRows = await _quoteHistory('GC=F');
+    // Gold futures /GC — same source as economy charts tab
+    final goldRows = await _quoteHistory('/GC');
+    const goldSource = '/GC';
 
     // Copper: COPX from FMP (no daily copper price on FRED)
     final copxRows = await _quoteHistory('COPX');

@@ -808,7 +808,7 @@ class _PerformanceGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = stats;
     return GridView.count(
-      crossAxisCount: 2,
+      crossAxisCount: 4,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisSpacing: 10,

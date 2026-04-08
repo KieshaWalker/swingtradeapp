@@ -45,6 +45,7 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
   TradeStrategy _strategy  = TradeStrategy.longCall;
   EntryPointType? _entryPointType;
   DateTime _expiration     = DateTime.now().add(const Duration(days: 30));
+  bool _prefillApplied     = false;
 
   @override
   void dispose() {
@@ -65,6 +66,41 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
     _maxLossCtrl.dispose();
     _timeOfEntryCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_prefillApplied) return;
+    _prefillApplied = true;
+    final extra = GoRouterState.of(context).extra;
+    if (extra is! Map<String, dynamic>) return;
+    final p = extra['prefill'] as Map<String, dynamic>?;
+    if (p == null) return;
+
+    final ticker = p['ticker'] as String?;
+    if (ticker != null) _tickerCtrl.text = ticker;
+
+    final type = p['optionType'] as String?;
+    if (type == 'put') _optionType = OptionType.put;
+
+    final strike = p['strike'] as double?;
+    if (strike != null) _strikeCtrl.text = strike.toStringAsFixed(0);
+
+    final expStr = p['expiration'] as String?;
+    if (expStr != null) {
+      final dt = DateTime.tryParse(expStr);
+      if (dt != null) _expiration = dt;
+    }
+
+    final entryPrice = p['entryPrice'] as double?;
+    if (entryPrice != null) _entryCtrl.text = entryPrice.toStringAsFixed(2);
+
+    final delta = p['delta'] as double?;
+    if (delta != null) _deltaCtrl.text = delta.toStringAsFixed(2);
+
+    final iv = p['impliedVol'] as double?;
+    if (iv != null) _impliedVolEntryCtrl.text = iv.toStringAsFixed(1);
   }
 
   Future<void> _pickExpiration() async {
