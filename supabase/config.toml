@@ -422,3 +422,7 @@ entrypoint = "./functions/schwab-bootstrap/index.ts"
 [functions.get-schwab-instruments]
 verify_jwt = false
 entrypoint = "./functions/get-schwab-instruments/index.ts"
+
+[functions.get-kalshi-data]
+verify_jwt = false
+entrypoint = "./functions/get-kalshi-data/index.ts"

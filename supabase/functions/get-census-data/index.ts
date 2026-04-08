@@ -31,16 +31,16 @@ const response = await fetch(url, { signal: controller.signal });
   clearTimeout(id);
 
     const text = await response.text()
-    let data: unknown
 
     if (!response.ok) {
-     const errorText = await response.text();
-     console.error(`Census API Error (${response.status}):`, errorText);
-     return new Response(JSON.stringify({ error: errorText, status: response.status }), {
-       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-       status: 400,
-     });
-  }
+      console.error(`Census API Error (${response.status}):`, text)
+      return new Response(JSON.stringify({ error: text, status: response.status }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      })
+    }
+
+    let data: unknown
     try {
       data = JSON.parse(text)
     } catch {
