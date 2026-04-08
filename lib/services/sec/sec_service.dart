@@ -33,9 +33,12 @@ class SecService {
 
   final _client = http.Client();
 
+  // sec-api.io authenticates via ?token= query param, not Authorization header.
+  Uri get _endpoint => Uri.parse(SecConfig.baseUrl)
+      .replace(queryParameters: {'token': SecConfig.apiKey});
+
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
-        'Authorization': SecConfig.apiKey,
       };
 
   /// Fetch recent filings for a given ticker symbol.
@@ -64,7 +67,7 @@ class SecService {
       });
 
       final res = await _client.post(
-        Uri.parse('${SecConfig.baseUrl}/live-query-api'),
+        _endpoint,
         headers: _headers,
         body: body,
       );
@@ -106,7 +109,7 @@ class SecService {
       });
 
       final res = await _client.post(
-        Uri.parse('${SecConfig.baseUrl}/live-query-api'),
+        _endpoint,
         headers: _headers,
         body: body,
       );
@@ -145,7 +148,7 @@ class SecService {
       });
 
       final res = await _client.post(
-        Uri.parse('${SecConfig.baseUrl}/live-query-api'),
+        _endpoint,
         headers: _headers,
         body: body,
       );

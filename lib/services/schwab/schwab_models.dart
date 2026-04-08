@@ -1,6 +1,28 @@
 // =============================================================================
 // services/schwab/schwab_models.dart
 // =============================================================================
+// All Schwab calls go through Supabase Edge Functions — never direct to Schwab.
+// Edge functions handle OAuth token refresh and key secrecy.
+//
+// Model → Edge Function → Provider → Widget map:
+//
+//  SchwabInstrument
+//    Edge fn: get-schwab-instruments  (Schwab GET /marketdata/v1/instruments)
+//    → SchwabService.searchTicker → schwabTickerSearchProvider
+//    → TickerDashboardScreen (search bar autocomplete)
+//
+//  SchwabQuote  →  .toStockQuote() → StockQuote (fmp_models.dart)
+//    Edge fn: get-schwab-quotes  (Schwab GET /marketdata/v1/quotes)
+//    Response shape: { "SPY": { quote: {lastPrice,...}, realtime: bool } }
+//    → SchwabService.getQuotes → schwabQuotesProvider
+//    → EconomyPulseScreen (Market Snapshot), TradeDetailScreen (_LiveQuoteCard)
+//
+//  SchwabOptionsChain  (contains SchwabExpiration[] → SchwabOptionContract[])
+//    Edge fn: get-schwab-chains  (Schwab GET /marketdata/v1/chains)
+//    → SchwabService.getOptionsChain → schwabOptionsChainProvider (family by symbol)
+//    → OptionsChainScreen (calls + puts tables, expiration picker)
+//    → OptionDecisionWizard
+// =============================================================================
 import '../fmp/fmp_models.dart';
 
 // ── Instrument search result ──────────────────────────────────────────────────

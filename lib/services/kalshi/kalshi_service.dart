@@ -117,7 +117,12 @@ class KalshiService {
       throw Exception('Kalshi event ${res.statusCode}: ${res.body}');
     }
     final body = jsonDecode(res.body) as Map<String, dynamic>;
-    return KalshiEvent.fromJson(body['event'] as Map<String, dynamic>);
+    // The single-event endpoint returns { event: {...}, markets: [...] }
+    // where markets are NOT nested inside event — merge them before parsing.
+    final eventMap = Map<String, dynamic>.from(
+        body['event'] as Map<String, dynamic>);
+    eventMap['markets'] = body['markets'] ?? [];
+    return KalshiEvent.fromJson(eventMap);
   }
 
   // ── Trades ─────────────────────────────────────────────────────────────────

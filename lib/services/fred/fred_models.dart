@@ -1,6 +1,19 @@
 // =============================================================================
 // services/fred/fred_models.dart
 // =============================================================================
+// Endpoint: https://api.stlouisfed.org/fred/series/observations
+//   via Supabase Edge Function: get-fred-data
+//   (direct FRED calls are proxied to keep the API key server-side)
+// Auth: api_key= query param via FRED_API_KEY secret (set in Supabase)
+// Response shape: { observations: [ { date: "YYYY-MM-DD", value: "14.5" } ] }
+//   Missing values come as "." and are skipped in FredService._parse().
+//
+// FredSeries / FredObservation
+//   → FredService.getSeries(seriesId)
+//   → fredVixProvider, fredGoldProvider, fredSilverProvider,
+//     fredHyOasProvider, fredIgOasProvider, fredSpreadProvider, fredFedFundsProvider
+//   → FredTab (economy/widgets/fred_tab.dart) — historical line charts
+//   → MacroScoreService (services/macro/macro_score_service.dart) — regime scoring
 
 class FredObservation {
   final DateTime date;

@@ -1,6 +1,46 @@
 // =============================================================================
 // services/kalshi/kalshi_models.dart
 // =============================================================================
+// Endpoint base: https://api.elections.kalshi.com/trade-api/v2
+// Auth: Bearer token via KALSHI-ACCESS-KEY dart-define
+//
+// Model → Endpoint → Widget map:
+//
+//  KalshiSeries
+//    GET /series?limit=200
+//    → kalshiSeriesProvider
+//    → (available for a series browser — not yet wired to UI)
+//
+//  KalshiEvent  (with KalshiMarket[] nested)
+//    GET /events?status=open&with_nested_markets=true&limit=200
+//    → kalshiMacroEventsProvider  (filtered by _isMacroEvent)
+//    → KalshiTab (economy/widgets/kalshi_tab.dart)
+//
+//    GET /events/{eventTicker}
+//    → KalshiService.getEvent()  (single event lookup)
+//
+//  KalshiEvent (expiration-filtered)
+//    derived from kalshiMacroEventsProvider via closesBeforeExpiration()
+//    → kalshiEventsForExpirationProvider
+//    → _KalshiEventBanner (options/screens/options_chain_screen.dart)
+//
+//  KalshiOrderbook
+//    GET /markets/{ticker}/orderbook
+//    → KalshiService.getOrderbook()  (not yet wired to a provider)
+//
+//  KalshiTrade
+//    GET /markets/{ticker}/trades?limit=100
+//    → KalshiService.getTrades()  (not yet wired to a provider)
+//
+//  KalshiTickerUpdate  (WebSocket)
+//    wss://api.elections.kalshi.com/trade-api/v2/websocket
+//    subscribe: { cmd: "subscribe", params: { channels: ["ticker"], market_tickers: [...] } }
+//    → kalshiLiveOddsProvider (StreamProvider.family)
+//    → (ready to wire to a Probability Meter widget)
+//
+// Price note: all dollar fields (yes_ask_dollars, last_price_dollars, etc.)
+// are already in 0.0–1.0 range. yesProbability == lastPrice (no /100 needed).
+// =============================================================================
 
 // ── Series ────────────────────────────────────────────────────────────────────
 
@@ -100,26 +140,29 @@ class KalshiOrderbook {
   });
 
   factory KalshiOrderbook.fromJson(String ticker, Map<String, dynamic> j) {
-    final ob = j['orderbook'] as Map<String, dynamic>? ?? {};
+    // API returns "orderbook_fp" with "yes_dollars" / "no_dollars" keys.
+    // Each level is a [price_string, quantity_string] tuple.
+    final ob = (j['orderbook_fp'] ?? j['orderbook']) as Map<String, dynamic>? ?? {};
     List<KalshiOrderbookLevel> parseLevels(String key) {
       final raw = ob[key] as List? ?? [];
       return raw.map((e) {
         final row = e as List;
-        return KalshiOrderbookLevel(
-            price: row[0] as int, quantity: row[1] as int);
+        final price    = double.tryParse(row[0].toString()) ?? 0.0;
+        final quantity = double.tryParse(row[1].toString())?.toInt() ?? 0;
+        return KalshiOrderbookLevel(price: price, quantity: quantity);
       }).toList();
     }
 
     return KalshiOrderbook(
-      ticker:    ticker,
-      yesBids:   parseLevels('yes'),
-      yesSells:  parseLevels('no'),
+      ticker:   ticker,
+      yesBids:  parseLevels('yes_dollars'),
+      yesSells: parseLevels('no_dollars'),
     );
   }
 }
 
 class KalshiOrderbookLevel {
-  final int price;     // cents
+  final double price;  // 0.0–1.0 dollar value
   final int quantity;
 
   const KalshiOrderbookLevel({required this.price, required this.quantity});

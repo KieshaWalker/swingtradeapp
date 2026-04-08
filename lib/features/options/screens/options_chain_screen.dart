@@ -25,7 +25,8 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabs;
   int _strikeCount = 10;
-  int _selectedExp = 0; // index into expirations list
+  int _selectedExp = 0;
+  bool _hasAutoSelected = false;
 
   @override
   void initState() {
@@ -114,8 +115,9 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
             );
           }
 
-          // Auto-select the expiration closest to 30 DTE on first load
-          if (_selectedExp == 0) {
+          // Auto-select the expiration closest to 30 DTE on first load only
+          if (!_hasAutoSelected) {
+            _hasAutoSelected = true;
             int bestIdx = 0;
             int bestDist = 999;
             for (var i = 0; i < chain.expirations.length; i++) {

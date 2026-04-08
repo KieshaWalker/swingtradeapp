@@ -119,14 +119,16 @@ class FmpService {
         {'symbol': symbol, 'from': fmt(from), 'to': fmt(to)},
       ));
       if (res.statusCode != 200) return [];
-      final body = jsonDecode(res.body) as Map<String, dynamic>?;
-      final hist = body?['historical'];
-      if (hist is List) {
-        return hist
-            .map((e) => FmpHistoricalPrice.fromJson(e as Map<String, dynamic>))
-            .toList();
-      }
-      return [];
+      final decoded = jsonDecode(res.body);
+      // FMP stable API returns a bare list: [{symbol,date,open,high,low,close,volume,...}]
+      // Legacy v3 returned { historical: [...] } — handle both for safety.
+      final hist = decoded is List
+          ? decoded
+          : (decoded as Map<String, dynamic>?)?['historical'] as List?;
+      if (hist == null) return [];
+      return hist
+          .map((e) => FmpHistoricalPrice.fromJson(e as Map<String, dynamic>))
+          .toList();
     } catch (_) {
       return [];
     }

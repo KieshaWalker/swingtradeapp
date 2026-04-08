@@ -1,3 +1,20 @@
+// =============================================================================
+// services/census/census_models.dart
+// =============================================================================
+// Endpoint: https://api.census.gov/data/{dataset}  (GET)
+//   via Supabase Edge Function: get-census-data
+// Auth: key= query param via CENSUS_API_KEY secret
+// Datasets used: MARTS (retail sales), VALCONS (construction), M3 (mfg orders), M3S (wholesale)
+// Response shape: array-of-arrays — first row is headers, subsequent rows are data
+//   e.g. [["cell_value","time","category_code",...], ["12345","2025-01",...]]
+//
+// CensusDataPoint / CensusRetailRow / CensusResponse
+//   → CensusService (retail sales, construction spending, mfg orders, wholesale trade)
+//   → censusRetailSalesProvider, censusMotorVehiclesProvider, censusNonStoreProvider,
+//     censusConstructionSpendingProvider, censusManufacturingOrdersProvider, censusWholesaleSalesProvider
+//   → CensusTab (economy/widgets/census_tab.dart)
+//   → EconomyStorageService.saveCensusResponse() → economy_indicator_snapshots (Supabase)
+
 class CensusDataPoint {
   final String period;
   final String value;

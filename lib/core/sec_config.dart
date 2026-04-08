@@ -13,7 +13,7 @@
 // Key injection: pass --dart-define=SEC_API_KEY=<key> at build time.
 // =============================================================================
 class SecConfig {
-  static const String baseUrl = 'https://api.secfilingdata.com';
+  static const String baseUrl = 'https://api.sec-api.io';
   static const String apiKey = String.fromEnvironment('SEC_API_KEY');
 }
 

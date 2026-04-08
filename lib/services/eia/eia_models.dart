@@ -1,3 +1,19 @@
+// =============================================================================
+// services/eia/eia_models.dart
+// =============================================================================
+// Endpoint: https://api.eia.gov/v2/{route}/data/  (GET)
+//   via Supabase Edge Function: get-eia-data
+// Auth: api_key= query param via EIA_API_KEY secret
+// Response shape: { response: { total, frequency, data: [ { period, value, unit } ] } }
+//
+// EiaDataPoint / EiaResponse
+//   → EiaService (crude oil, gasoline, nat gas, refinery, electricity, coal, SPR, etc.)
+//   → eiaGasolinePricesProvider, eiaCrudeStocksProvider, eiaCrudeProdProvider,
+//     eiaNatGasStorageProvider, eiaRefineryUtilProvider, eiaSprProvider
+//   → EiaTab (economy/widgets/eia_tab.dart)
+//   → EconomyStorageService.saveEiaResponse() → economy_indicator_snapshots (Supabase)
+//   → GasolinePriceHistoryChart, NatGasImportChart (stored history charts)
+
 class EiaDataPoint {
   final String period;
   final double? value;

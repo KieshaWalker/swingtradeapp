@@ -1,23 +1,30 @@
 // =============================================================================
 // services/sec/sec_models.dart — SEC filing data model
 // =============================================================================
-// Classes:
-//   SecFiling
-//     Fields: accessionNo, cik, ticker, companyName, formType,
-//             linkToHtml, linkToXbrl?, filedAt
+// Endpoint: https://api.sec-api.io?token={SEC_API_KEY}  (POST, Elasticsearch DSL)
+// Auth: token= query param (NOT Authorization header)
+// Response shape: { total: {value,relation}, filings: [ {...} ] }
 //
-//     Getters:
-//       formLabel — human-readable label shown in _SecFilingRow & _FilingCard
-//                   e.g. "10-K  Annual Report", "Form 4  Insider Trade"
-//       category  — drives badge color in _SecFilingRow & _FilingCard:
-//                   'earnings' → blue   (10-K, 10-Q)
-//                   'event'    → yellow (8-K)
-//                   'insider'  → green  (Form 4)
-//                   'holder'   → purple (SC 13G, SC 13D)
+// SecFiling
+//   Endpoint fields used: accessionNo, cik, ticker, companyName, formType,
+//                         linkToHtml, linkToXbrl, filedAt
+//   Additional fields available but unused: companyNameLong, description,
+//     linkToTxt, linkToFilingDetails, documentFormatFiles, periodOfReport,
+//     entities, dataFiles
 //
-//   Used in:
-//     • TradeDetailScreen — _SecFilingsSection → _SecFilingRow (ticker-specific feed)
-//     • ResearchScreen    — _SearchTab → _FilingCard
+//   Getters:
+//     formLabel — human-readable label shown in _SecFilingRow & _FilingCard
+//                 e.g. "10-K  Annual Report", "Form 4  Insider Trade"
+//     category  — drives badge color in _SecFilingRow & _FilingCard:
+//                 'earnings' → blue   (10-K, 10-Q)
+//                 'event'    → yellow (8-K)
+//                 'insider'  → green  (Form 4)
+//                 'holder'   → purple (SC 13G, SC 13D)
+//
+//   SecService methods → providers → widgets:
+//     getFilingsForTicker()  → secFilingsForTickerProvider  → TradeDetailScreen (_SecFilingsSection)
+//     searchFilings()        → secSearchProvider            → ResearchScreen (_SearchTab)
+//     getRecentEvents()      → secRecentEventsProvider      → ResearchScreen (_RecentEventsTab)
 //                         — _RecentEventsTab → _FilingCard
 // =============================================================================
 class SecFiling {

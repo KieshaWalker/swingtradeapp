@@ -1,18 +1,58 @@
 // =============================================================================
 // services/fmp/fmp_models.dart — FMP API response models
 // =============================================================================
-// Classes & where they surface in the UI:
+// Endpoint base: https://financialmodelingprep.com/stable
+// Auth: apikey= query param via FMP_API_KEY dart-define
 //
-//   StockQuote
-//     Fields: symbol, name, price, change, changePercent, open, dayHigh,
-//             dayLow, previousClose, volume
-//     Getter: isPositive — drives green/red color in _LiveQuoteCard & _OpenTradeRow
-//     Used in: TradeDetailScreen (_LiveQuoteCard)
-//              DashboardScreen   (_OpenTradeRow subtitle)
+// Model → Endpoint → Widget map:
 //
-//   TickerSearchResult
-//     Fields: symbol, name, exchange
-//     Used in: AddTradeScreen (_TickerAutocomplete dropdown rows)
+//  StockQuote
+//    GET /quote?symbol={symbol}         (single or comma-separated)
+//    Fields returned: symbol, name, price, changePercentage, change,
+//                     volume, dayLow, dayHigh, open, previousClose
+//    → FmpService.getQuote / getQuotes
+//    → quotesProvider / schwabOptionsChainProvider (via SchwabService fallback)
+//    → TradeDetailScreen (_LiveQuoteCard), EconomyPulseScreen (Market Snapshot tiles)
+//
+//  TickerSearchResult
+//    GET /search-symbol?query={q}
+//    Fields returned: symbol, name, currency, exchangeFullName, exchange
+//    → FmpService.searchTicker → tickerSearchProvider
+//    → AddTradeScreen (_TickerAutocomplete dropdown)
+//
+//  StockProfile
+//    GET /profile?symbol={symbol}
+//    → FmpService.getProfile  (not yet wired to a provider/widget)
+//
+//  EconomicIndicatorPoint
+//    GET /economic-indicators?name={name}&limit={n}
+//    Fields returned: name, date, value
+//    → FmpService.getEconomicIndicator / getEconomicIndicatorHistory
+//    → economyPulseProvider → EconomyPulseScreen (all indicator tiles)
+//    → economy_charts_tab.dart (historical chart cards)
+//
+//  TreasuryRates
+//    GET /treasury-rates?limit=1
+//    Fields returned: date, month1..year30
+//    → FmpService.getLatestTreasuryRates → economyPulseProvider
+//    → EconomyPulseScreen (Interest Rates section)
+//
+//  EconomyPulseData
+//    Aggregated result of getEconomyPulse() — combines quotes + indicators
+//    → economyPulseProvider → EconomyPulseScreen (_PulseBody)
+//
+//  FmpHistoricalPrice
+//    GET /historical-price-eod/full?symbol={symbol}&from={}&to={}
+//    NOTE: stable API returns a bare list [], NOT { historical: [] }
+//    Fields returned: symbol, date, open, high, low, close, volume, change, changePercent, vwap
+//    → FmpService.getHistoricalPrices → tickerHistoricalPricesProvider
+//    → TickerProfileScreen (price history chart)
+//
+//  FmpEarningsDate
+//    GET /earnings-calendar?symbol={symbol}&from={}&to={}
+//    NOTE: requires paid FMP plan — returns empty on free tier
+//    → FmpService.getNextEarnings → tickerNextEarningsProvider
+//    → TickerProfileScreen (Overview tab earnings card)
 //
 //   StockProfile
 //     Fields: symbol, companyName, sector, industry, beta, mktCap

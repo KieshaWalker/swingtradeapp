@@ -1,3 +1,20 @@
+// =============================================================================
+// services/bea/bea_models.dart
+// =============================================================================
+// Endpoint: https://apps.bea.gov/api/data  (GET)
+//   via Supabase Edge Function: get-bea-data
+// Auth: UserID= query param via BEA_API_KEY secret
+// Response shape: { BEAAPI: { Results: { Statistic, Dimensions, Data: [ {...} ], Notes } } }
+//   Data fields: TableName, SeriesCode, LineNumber, LineDescription,
+//                TimePeriod, CL_UNIT, UNIT_MULT, DataValue (string with commas), NoteRef
+//
+// BeaObservation / BeaResponse
+//   → BeaService  (GDP%, real GDP, core PCE, personal income, corporate profits, net exports, PCE)
+//   → beaGdpProvider, beaRealGdpProvider, beaCorePceProvider, beaPersonalIncomeProvider,
+//     beaCorporateProfitsProvider, beaNetExportsProvider, beaPceProvider
+//   → BeaTab (economy/widgets/bea_tab.dart)
+//   → EconomyStorageService.saveBeaResponse() → economy_indicator_snapshots (Supabase)
+
 class BeaObservation {
   final String tableId;
   final String lineDescription;

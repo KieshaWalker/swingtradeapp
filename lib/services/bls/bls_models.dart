@@ -1,3 +1,18 @@
+// =============================================================================
+// services/bls/bls_models.dart
+// =============================================================================
+// Endpoint: https://api.bls.gov/publicAPI/v2/timeseries/data/  (POST)
+//   via Supabase Edge Function: get-bls-data
+// Auth: registrationkey in POST body via BLS_API_KEY secret
+// Response shape: { Results: { series: [ { seriesID, data: [ {year,period,periodName,value} ] } ] } }
+//
+// BlsSeries / BlsDataPoint / BlsResponse
+//   → BlsService.fetchSeries(seriesIds)
+//   → blsEmploymentProvider, blsCpiProvider, blsPpiProvider, blsJoltsProvider
+//   → BlsTab (economy/widgets/bls_tab.dart)
+//   → EconomyStorageService.saveBlsResponse() → economy_indicator_snapshots (Supabase)
+//   → economy_charts_tab.dart (historical charts)
+
 class BlsDataPoint {
   final String year;
   final String period;     // e.g. "M01" or "Q01"
