@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
+import '../../../services/iv/iv_providers.dart';
 import '../../../services/kalshi/kalshi_providers.dart';
 import '../../../services/schwab/schwab_models.dart';
 import '../../../services/schwab/schwab_providers.dart';
@@ -71,6 +72,14 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
           loading: () => Text('${widget.symbol} Options'),
           error:   (_, _) => Text('${widget.symbol} Options'),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.analytics_outlined),
+            tooltip: 'IV Analytics',
+            onPressed: () =>
+                context.push('/ticker/${widget.symbol}/chains/iv'),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           indicatorColor: AppTheme.profitColor,
@@ -114,6 +123,9 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
                   style: TextStyle(color: AppTheme.neutralColor)),
             );
           }
+
+          // Auto-ingest IV snapshot silently on every successful chain load
+          autoIngestIv(chain);
 
           // Auto-select the expiration closest to 30 DTE on first load only
           if (!_hasAutoSelected) {

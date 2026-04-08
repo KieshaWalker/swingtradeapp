@@ -46,55 +46,86 @@ final kalshiSeriesProvider = FutureProvider<List<KalshiSeries>>((ref) async {
 /// Series tickers and title keywords that are relevant to macro / market traders.
 /// Matched case-insensitively against event.seriesTicker and event.title.
 const _macroKeywords = [
-  // Inflation / prices
+  // ── Kalshi confirmed series tickers (matched on seriesTicker field) ──────
+  // Financials
+  'inxd',           // S&P 500 daily
+  'kxinxy',         // S&P 500 yearly range
+  'kxinxw',         // S&P 500 weekly
+  'kxnasdaq100',    // Nasdaq 100
+  'kxdjia',         // Dow Jones
+  'kxrussell',      // Russell 2000
+  'kxwti',          // WTI crude oil
+  'kxgold',         // Gold
+  'kxbtc',          // Bitcoin
+  'kxfedrate',      // Fed funds rate level
+  'ratecutcount',   // Number of rate cuts
+  // Economics
+  'kxcpi',          // CPI
+  'kxcorecpi',      // Core CPI
+  'kxpce',          // PCE / Core PCE
+  'kxnfp',          // Nonfarm payrolls
+  'kxunemployment', // Unemployment rate
+  'kxjolts',        // JOLTS job openings
+  'kxgdp',          // GDP growth
+  'kxrecession',    // Recession probability
+  'kxfomc',         // FOMC rate decision
+  'kxppi',          // PPI
+  'kxretail',       // Retail sales
+  'kxsilver',       // Silver
+  'kxng',           // Natural gas
+
+  // ── Inflation / prices ───────────────────────────────────────────────────
   'cpi', 'pce', 'ppi', 'inflation', 'deflation', 'price index',
 
-  // Energy & commodities
+  // ── Energy & commodities ─────────────────────────────────────────────────
   'oil', 'crude', 'wti', 'brent', 'natural gas', 'gasoline',
   'gold', 'silver', 'copper', 'wheat', 'corn', 'commodity',
 
-  // Labor market
+  // ── Labor market ─────────────────────────────────────────────────────────
   'unemployment', 'jobless', 'payroll', 'nfp', 'non-farm',
   'jolts', 'claims', 'jobs', 'labor', 'wages', 'earnings',
   'participation rate', 'layoff', 'hiring',
 
-  // Growth / output
+  // ── Growth / output ──────────────────────────────────────────────────────
   'gdp', 'gross domestic', 'recession', 'expansion',
   'industrial production', 'capacity utilization',
 
-  // Fed & monetary policy
+  // ── Fed & monetary policy ─────────────────────────────────────────────────
   'fomc', 'federal reserve', 'fed funds', 'rate hike', 'rate cut',
   'interest rate', 'quantitative', 'balance sheet', 'powell',
   'monetary policy', 'basis point',
 
-  // Housing
+  // ── Housing ───────────────────────────────────────────────────────────────
   'housing', 'home sales', 'home price', 'case-shiller',
   'existing home', 'new home', 'building permit', 'housing start',
   'mortgage', 'real estate', 'rent',
 
-  // Retail & consumer
+  // ── Retail & consumer ────────────────────────────────────────────────────
   'retail sales', 'consumer spending', 'consumer confidence',
   'consumer sentiment', 'university of michigan', 'conf board',
   'personal income', 'personal spending', 'credit card',
 
-  // Manufacturing & services
+  // ── Manufacturing & services ─────────────────────────────────────────────
   'manufacturing', 'ism', 'pmi', 'factory orders',
   'durable goods', 'industrial', 'services', 'business activity',
 
-  // Trade & fiscal
+  // ── Trade & fiscal ───────────────────────────────────────────────────────
   'trade deficit', 'trade balance', 'tariff', 'import', 'export',
   'current account', 'budget deficit', 'national debt', 'debt ceiling',
   'treasury', 'yield curve', 'inversion',
 
-  // Market indices & volatility
-  's&p', 'sp500', 'nasdaq', 'dow jones', 'russell',
+  // ── Market indices & volatility ──────────────────────────────────────────
+  's&p', 's&p 500', 'sp500', 'spx', 'sp 500',
+  'nasdaq', 'ndx', 'qqq',
+  'dow', 'djia', 'dow jones', 'russell', 'iwm',
+  'bitcoin', 'btc', 'crypto',
   'vix', 'volatility', 'stocks', 'equity market',
 
-  // Dollar & forex
+  // ── Dollar & forex ───────────────────────────────────────────────────────
   'dollar', 'dxy', 'dollar index', 'euro', 'yen', 'yuan',
   'currency', 'forex', 'exchange rate',
 
-  // Credit & financial conditions
+  // ── Credit & financial conditions ────────────────────────────────────────
   'credit spread', 'high yield', 'investment grade', 'junk bond',
   'bank', 'lending', 'loan', 'delinquency', 'default',
 ];
@@ -115,7 +146,7 @@ final kalshiMacroEventsProvider =
   final all = await KalshiService().getEvents(
     status: 'open',
     withNestedMarkets: true,
-    limit: 200,
+    limit: 1000,
   );
   return all.where(_isMacroEvent).toList();
 });
