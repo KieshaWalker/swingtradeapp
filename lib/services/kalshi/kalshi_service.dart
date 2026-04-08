@@ -1,9 +1,11 @@
 // =============================================================================
 // services/kalshi/kalshi_service.dart
 // =============================================================================
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import '../../core/kalshi_config.dart';
+// All Kalshi calls go through the Supabase Edge Function 'get-kalshi-data'
+// to avoid CORS on Flutter Web. The edge function forwards to
+// api.elections.kalshi.com/trade-api/v2 and injects the API key server-side.
+// =============================================================================
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'kalshi_models.dart';
 
 class KalshiService {
@@ -11,31 +13,30 @@ class KalshiService {
   KalshiService._();
   factory KalshiService() => _instance;
 
-  final _client = http.Client();
+  FunctionsClient get _fn => Supabase.instance.client.functions;
 
-  Uri _url(String path, [Map<String, String>? params]) {
-    return Uri.parse('${KalshiConfig.baseUrl}$path')
-        .replace(queryParameters: params);
+  Future<Map<String, dynamic>> _get(
+    String path, [
+    Map<String, String>? params,
+  ]) async {
+    final res = await _fn.invoke(
+      'get-kalshi-data',
+      body: {'path': path, 'params': params ?? {}},
+    );
+    if (res.status != 200) {
+      throw Exception('Kalshi $path ${res.status}');
+    }
+    final data = res.data;
+    if (data is Map<String, dynamic> && data.containsKey('error')) {
+      throw Exception('Kalshi $path: ${data['error']}');
+    }
+    return data as Map<String, dynamic>;
   }
-
-  Map<String, String> get _headers => {
-        'Authorization': 'Bearer ${KalshiConfig.accessKey}',
-        'Content-Type': 'application/json',
-      };
 
   // ── Series ─────────────────────────────────────────────────────────────────
 
-  /// Fetches all series (broad market categories like FOMC, CPI, NFP, etc.).
-  /// Results are stable enough to cache for the session via FutureProvider.
   Future<List<KalshiSeries>> getSeries({int limit = 200}) async {
-    final res = await _client.get(
-      _url('/series', {'limit': '$limit'}),
-      headers: _headers,
-    );
-    if (res.statusCode != 200) {
-      throw Exception('Kalshi series ${res.statusCode}: ${res.body}');
-    }
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = await _get('/series', {'limit': '$limit'});
     final list = body['series'] as List? ?? [];
     return list
         .map((e) => KalshiSeries.fromJson(e as Map<String, dynamic>))
@@ -44,9 +45,6 @@ class KalshiService {
 
   // ── Events ─────────────────────────────────────────────────────────────────
 
-  /// Fetches events. Pass [withNestedMarkets] = true to include
-  /// Yes/No prices for each market nested inside the event — required
-  /// for the Event Sentiment and options-chain overlay features.
   Future<List<KalshiEvent>> getEvents({
     String? seriesTicker,
     String? status,
@@ -58,16 +56,21 @@ class KalshiService {
     if (status != null) params['status'] = status;
     if (withNestedMarkets) params['with_nested_markets'] = 'true';
 
-    final res =
-        await _client.get(_url('/events', params), headers: _headers);
-    if (res.statusCode != 200) {
-      throw Exception('Kalshi events ${res.statusCode}: ${res.body}');
-    }
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body = await _get('/events', params);
     final list = body['events'] as List? ?? [];
     return list
         .map((e) => KalshiEvent.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  // ── Single event ───────────────────────────────────────────────────────────
+
+  Future<KalshiEvent> getEvent(String eventTicker) async {
+    final body = await _get('/events/$eventTicker');
+    final eventMap = Map<String, dynamic>.from(
+        body['event'] as Map<String, dynamic>);
+    eventMap['markets'] = body['markets'] ?? [];
+    return KalshiEvent.fromJson(eventMap);
   }
 
   // ── Markets ────────────────────────────────────────────────────────────────
@@ -80,12 +83,8 @@ class KalshiService {
     final params = <String, String>{'limit': '$limit'};
     if (eventTicker != null) params['event_ticker'] = eventTicker;
     if (status != null) params['status'] = status;
-    final res =
-        await _client.get(_url('/markets', params), headers: _headers);
-    if (res.statusCode != 200) {
-      throw Exception('Kalshi markets ${res.statusCode}: ${res.body}');
-    }
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+
+    final body = await _get('/markets', params);
     final list = body['markets'] as List? ?? [];
     return list
         .map((e) => KalshiMarket.fromJson(e as Map<String, dynamic>))
@@ -95,48 +94,16 @@ class KalshiService {
   // ── Orderbook ──────────────────────────────────────────────────────────────
 
   Future<KalshiOrderbook> getOrderbook(String ticker) async {
-    final res = await _client.get(
-      _url('/markets/$ticker/orderbook'),
-      headers: _headers,
-    );
-    if (res.statusCode != 200) {
-      throw Exception('Kalshi orderbook ${res.statusCode}: ${res.body}');
-    }
-    return KalshiOrderbook.fromJson(
-        ticker, jsonDecode(res.body) as Map<String, dynamic>);
-  }
-
-  // ── Single event ───────────────────────────────────────────────────────────
-
-  Future<KalshiEvent> getEvent(String eventTicker) async {
-    final res = await _client.get(
-      _url('/events/$eventTicker'),
-      headers: _headers,
-    );
-    if (res.statusCode != 200) {
-      throw Exception('Kalshi event ${res.statusCode}: ${res.body}');
-    }
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
-    // The single-event endpoint returns { event: {...}, markets: [...] }
-    // where markets are NOT nested inside event — merge them before parsing.
-    final eventMap = Map<String, dynamic>.from(
-        body['event'] as Map<String, dynamic>);
-    eventMap['markets'] = body['markets'] ?? [];
-    return KalshiEvent.fromJson(eventMap);
+    final body = await _get('/markets/$ticker/orderbook');
+    return KalshiOrderbook.fromJson(ticker, body);
   }
 
   // ── Trades ─────────────────────────────────────────────────────────────────
 
   Future<List<KalshiTrade>> getTrades(String ticker,
       {int limit = 100}) async {
-    final res = await _client.get(
-      _url('/markets/$ticker/trades', {'limit': '$limit'}),
-      headers: _headers,
-    );
-    if (res.statusCode != 200) {
-      throw Exception('Kalshi trades ${res.statusCode}: ${res.body}');
-    }
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final body =
+        await _get('/markets/$ticker/trades', {'limit': '$limit'});
     final list = body['trades'] as List? ?? [];
     return list
         .map((e) => KalshiTrade.fromJson(e as Map<String, dynamic>))
