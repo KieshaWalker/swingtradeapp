@@ -52,6 +52,8 @@ dart_defines.json
 
 
 # notes/ 
-*notes/
+*.notes/
 notes.md
 notes/api_notes.md
+
+.notes/formulas.md

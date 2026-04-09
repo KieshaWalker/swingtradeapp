@@ -2,6 +2,7 @@
 // features/options/widgets/option_score_sheet.dart
 // Bottom sheet — score breakdown + greeks + IV analytics + "Log Trade" prefill
 // =============================================================================
+import 'dart:math' as math;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -193,6 +194,15 @@ class OptionScoreSheet extends ConsumerWidget {
                   '\$${_intrinsic(contract, underlyingPrice, isCall).toStringAsFixed(2)}'),
               _kv('Time Val', '\$${contract.timeValue.toStringAsFixed(2)}'),
             ]),
+
+            const SizedBox(height: 16),
+
+            // Formula check
+            _FormulaCheck(
+              contract:        contract,
+              underlyingPrice: underlyingPrice,
+              isCall:          isCall,
+            ),
 
             const SizedBox(height: 28),
 
@@ -750,6 +760,430 @@ class _GridRow extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+// ── Formula Check ─────────────────────────────────────────────────────────────
+//
+//  X = |Strike − Current Price|          Distance to target
+//  Y = DTE / ATR                         Movement potential (days per ATR unit)
+//  K = |Delta| / |Current − Strike|      Probability efficiency (delta per $)
+//
+//  (X / Y) > K  →  Good Trade
+//
+//  ATR defaults to an IV-based 14-day estimate:
+//    ATR ≈ Price × (IV/100) / √252 × √14
+//  User can override with a manual entry.
+
+class _FormulaCheck extends StatefulWidget {
+  final SchwabOptionContract contract;
+  final double underlyingPrice;
+  final bool   isCall;
+
+  const _FormulaCheck({
+    required this.contract,
+    required this.underlyingPrice,
+    required this.isCall,
+  });
+
+  @override
+  State<_FormulaCheck> createState() => _FormulaCheckState();
+}
+
+class _FormulaCheckState extends State<_FormulaCheck> {
+  late TextEditingController _atrCtrl;
+
+  // IV-based ATR estimate (14-day)
+  static double _estimateAtr(double price, double ivPct) {
+    final dailyVol = (ivPct / 100) / math.sqrt(252);
+    return price * dailyVol * math.sqrt(14);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final estimate = _estimateAtr(
+      widget.underlyingPrice,
+      widget.contract.impliedVolatility,
+    );
+    _atrCtrl = TextEditingController(
+        text: estimate.toStringAsFixed(2));
+  }
+
+  @override
+  void dispose() {
+    _atrCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final price  = widget.underlyingPrice;
+    final strike = widget.contract.strikePrice;
+    final delta  = widget.contract.delta.abs();
+    final dte    = widget.contract.daysToExpiration;
+    final atr    = double.tryParse(_atrCtrl.text) ?? 1.0;
+
+    // Variables
+    final x = (strike - price).abs();          // distance to strike
+    final y = atr > 0 ? dte / atr : 0.0;      // movement potential
+    final k = x > 0  ? delta / x  : 0.0;      // probability efficiency
+    final ratio = y > 0 ? x / y   : 0.0;      // feasibility ratio (X/Y)
+    final isGood = ratio > k;
+
+    final accentColor = isGood ? AppTheme.profitColor : AppTheme.lossColor;
+
+    return Container(
+      decoration: BoxDecoration(
+        color:        AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border:       Border.all(color: accentColor.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ───────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.08),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              border: Border(bottom: BorderSide(
+                  color: accentColor.withValues(alpha: 0.2))),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.functions_rounded, color: accentColor, size: 15),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'FORMULA CHECK',
+                    style: TextStyle(
+                      color: AppTheme.neutralColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                ),
+                // Verdict badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color:        accentColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border:       Border.all(
+                        color: accentColor.withValues(alpha: 0.5)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isGood ? Icons.check_circle_outline : Icons.cancel_outlined,
+                        color: accentColor, size: 13,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        isGood ? 'GOOD TRADE' : 'PASS',
+                        style: TextStyle(
+                          color:      accentColor,
+                          fontSize:   11,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── ATR input ─────────────────────────────────────────
+                Row(
+                  children: [
+                    const Text(
+                      'ATR (14d)',
+                      style: TextStyle(
+                        color:      AppTheme.neutralColor,
+                        fontSize:   11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 90,
+                      height: 32,
+                      child: TextField(
+                        controller: _atrCtrl,
+                        onChanged:  (_) => setState(() {}),
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 13,
+                            fontWeight: FontWeight.w700),
+                        decoration: InputDecoration(
+                          prefixText:     '\$',
+                          prefixStyle:    const TextStyle(
+                              color: AppTheme.neutralColor, fontSize: 13),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          filled:         true,
+                          fillColor:      AppTheme.elevatedColor,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide:   BorderSide(
+                                color: AppTheme.borderColor.withValues(alpha: 0.5)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide:   BorderSide(
+                                color: AppTheme.borderColor.withValues(alpha: 0.5)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide:   const BorderSide(
+                                color: AppTheme.profitColor),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '(IV estimate: \$${_estimateAtr(widget.underlyingPrice, widget.contract.impliedVolatility).toStringAsFixed(2)})',
+                      style: const TextStyle(
+                          color: AppTheme.neutralColor, fontSize: 10),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                // ── Variable breakdown ────────────────────────────────
+                _varRow(
+                  symbol:  'X',
+                  formula: '|Strike − Price|',
+                  value:   '\$${x.toStringAsFixed(2)}',
+                  desc:    'Distance to target',
+                  color:   const Color(0xFF60A5FA),
+                ),
+                const SizedBox(height: 6),
+                _varRow(
+                  symbol:  'Y',
+                  formula: 'DTE / ATR  =  $dte / \$${atr.toStringAsFixed(2)}',
+                  value:   y.toStringAsFixed(3),
+                  desc:    'Movement potential (days per ATR)',
+                  color:   const Color(0xFFFBBF24),
+                ),
+                const SizedBox(height: 6),
+                _varRow(
+                  symbol:  'K',
+                  formula: '|Δ| / |Price−Strike|  =  '
+                      '${delta.toStringAsFixed(3)} / \$${x.toStringAsFixed(2)}',
+                  value:   k.toStringAsFixed(4),
+                  desc:    'Probability efficiency (delta per \$)',
+                  color:   const Color(0xFFA78BFA),
+                ),
+
+                const SizedBox(height: 14),
+
+                // ── Divider ───────────────────────────────────────────
+                Container(height: 1, color: AppTheme.borderColor.withValues(alpha: 0.3)),
+                const SizedBox(height: 14),
+
+                // ── Final calculation ─────────────────────────────────
+                Container(
+                  width:   double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color:        AppTheme.elevatedColor,
+                    borderRadius: BorderRadius.circular(8),
+                    border:       Border.all(
+                        color: accentColor.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // X/Y computation
+                      Row(
+                        children: [
+                          const Text('X / Y  =  ',
+                              style: TextStyle(
+                                  color: AppTheme.neutralColor, fontSize: 12)),
+                          Text(
+                            '\$${x.toStringAsFixed(2)} / ${y.toStringAsFixed(3)}',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12,
+                                fontWeight: FontWeight.w600),
+                          ),
+                          const Text('  =  ',
+                              style: TextStyle(
+                                  color: AppTheme.neutralColor, fontSize: 12)),
+                          Text(
+                            ratio.toStringAsFixed(4),
+                            style: const TextStyle(
+                                color: Color(0xFF60A5FA), fontSize: 14,
+                                fontWeight: FontWeight.w800),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          const Text('K       =  ',
+                              style: TextStyle(
+                                  color: AppTheme.neutralColor, fontSize: 12)),
+                          Text(
+                            k.toStringAsFixed(4),
+                            style: const TextStyle(
+                                color: Color(0xFFA78BFA), fontSize: 14,
+                                fontWeight: FontWeight.w800),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Final verdict line
+                      Row(
+                        children: [
+                          Text(
+                            '(X/Y) > K',
+                            style: TextStyle(
+                                color: AppTheme.neutralColor.withValues(alpha: 0.7),
+                                fontSize: 11),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('→',
+                              style: TextStyle(
+                                  color: AppTheme.neutralColor.withValues(alpha: 0.5),
+                                  fontSize: 11)),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${ratio.toStringAsFixed(3)}  ${isGood ? '>' : '<'}  ${k.toStringAsFixed(4)}',
+                            style: TextStyle(
+                                color: accentColor, fontSize: 13,
+                                fontWeight: FontWeight.w700),
+                          ),
+                          const Spacer(),
+                          Text(
+                            isGood ? '✓' : '✗',
+                            style: TextStyle(
+                                color: accentColor, fontSize: 18,
+                                fontWeight: FontWeight.w900),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // ── Plain-English interpretation ──────────────────────
+                _interpretation(isGood, x, y, k, ratio, dte, atr),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _varRow({
+    required String symbol,
+    required String formula,
+    required String value,
+    required String desc,
+    required Color  color,
+  }) =>
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Symbol pill
+          Container(
+            width:  22, height: 22,
+            decoration: BoxDecoration(
+              color:        color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(5),
+              border:       Border.all(color: color.withValues(alpha: 0.4)),
+            ),
+            child: Center(
+              child: Text(symbol,
+                  style: TextStyle(color: color, fontSize: 11,
+                      fontWeight: FontWeight.w800)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(formula,
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+                Text(desc,
+                    style: const TextStyle(
+                        color: AppTheme.neutralColor, fontSize: 9)),
+              ],
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+                color: color, fontSize: 13,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'monospace'),
+          ),
+        ],
+      );
+
+  Widget _interpretation(
+      bool isGood, double x, double y, double k, double ratio,
+      int dte, double atr) {
+    String text;
+    if (isGood) {
+      text = 'The stock has enough speed (ATR \$${atr.toStringAsFixed(2)}/day) '
+          'relative to the distance (\$${x.toStringAsFixed(2)}) and time ($dte days) '
+          'to make this trade feasible. The movement potential outweighs the '
+          'probability efficiency — the setup has a realistic path to profit.';
+    } else {
+      text = 'The distance to strike (\$${x.toStringAsFixed(2)}) is too far '
+          'relative to the stock\'s speed (ATR \$${atr.toStringAsFixed(2)}) '
+          'and the time left ($dte days). The option\'s delta (${widget.contract.delta.abs().toStringAsFixed(3)}) '
+          'is not efficient enough for the gap it needs to close. '
+          'Consider a closer strike, longer expiry, or wait for higher ATR.';
+    }
+
+    final accentColor = isGood ? AppTheme.profitColor : AppTheme.lossColor;
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color:        accentColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border:       Border.all(color: accentColor.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, color: accentColor, size: 14),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text,
+                style: TextStyle(color: accentColor, fontSize: 11,
+                    height: 1.5)),
+          ),
+        ],
+      ),
     );
   }
 }

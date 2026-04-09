@@ -23,6 +23,7 @@ class AppMenuButton extends StatelessWidget {
         _navItem('/journal', Icons.book_rounded, 'Journal', location),
         _navItem('/economy', Icons.bar_chart_rounded, 'Economy', location),
         _navItem('/ticker', Icons.candlestick_chart_rounded, 'Tickers', location),
+        _navItem('/blotter', Icons.receipt_long_rounded, 'Blotter', location),
       ],
     );
   }
