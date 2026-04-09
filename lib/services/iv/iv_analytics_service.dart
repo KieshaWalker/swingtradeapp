@@ -28,6 +28,22 @@
 //    Positive GEX → market-makers stabilise price (buy dips, sell rips).
 //    Negative GEX → market-makers amplify moves (buy rallies, sell dips).
 //    Max GEX strike = major support/resistance / "gamma wall."
+//
+//  Second-order Greeks (Vanna, Charm, Volga)
+//    Full Black-Scholes with risk-free rate r (passed in, sourced from FRED DFF).
+//    r=0 is NOT used — with US rates at 4-5%, omitting r causes systematic bias
+//    in d₁/d₂ that de-syncs Vanna and Charm from real dealer hedges.
+//
+//    Time T is computed in fractional years with intraday precision:
+//      T = minutesToExpiry / (365 × 24 × 60)
+//    This prevents Gamma/Charm from exploding incorrectly for 0-DTE contracts.
+//    Minimum T floor = 1 minute to avoid division by zero near expiry.
+//
+//    d₁ = (ln(S/K) + (r + 0.5σ²)T) / (σ√T)   ← full BS with r
+//    d₂ = d₁ − σ√T
+//    Vanna  ≈ −gamma × S × √T × d₂
+//    Charm  ≈  gamma × S × (r×d₁/σ − d₂/(2T)) / 365   (exact BS charm)
+//    Volga  ≈  vega × d₁ × d₂ / σ
 // =============================================================================
 
 import 'dart:math' as math;
@@ -39,12 +55,22 @@ class IvAnalyticsService {
   static const double _otmMaxPct  = 0.15;  // 15% OTM maximum for skew wing
   static const int    _minDtePref = 21;    // prefer expirations ≥ 21 DTE
 
+  // Fallback risk-free rate when FRED data unavailable.
+  // Updated to reflect 2025-2026 Fed Funds reality (~4.33% as of Apr 2026).
+  // The caller should pass the live FRED DFF value instead.
+  static const double _defaultRiskFreeRate = 0.0433;
+
   // ── Main entry point ───────────────────────────────────────────────────────
 
   static IvAnalysis analyse(
     SchwabOptionsChain chain,
-    List<IvSnapshot> history, // sorted ascending by date
-  ) {
+    List<IvSnapshot> history, {  // sorted ascending by date
+    double? riskFreeRate,         // pass live FRED DFF value; falls back to default
+  }) {
+    final r = (riskFreeRate ?? _defaultRiskFreeRate) / 100; // convert % to decimal if needed
+    // Guard: if caller already passed a decimal (e.g. 0.0433) keep it; if they
+    // passed a percentage (e.g. 4.33) normalise it.
+    final rDecimal = r > 0.5 ? r / 100 : r;
     final spot  = chain.underlyingPrice;
     final atmIv = chain.volatility; // chain-level ATM IV from Schwab
 
@@ -122,7 +148,7 @@ class IvAnalyticsService {
     }
 
     // ── Second-order Greeks: Vanna / Charm / Volga ────────────────────────
-    final secondOrder  = _computeSecondOrder(chain, spot);
+    final secondOrder  = _computeSecondOrder(chain, spot, rDecimal);
     double? totalVex;
     double? totalCex;
     double? totalVolga;
@@ -342,19 +368,20 @@ class IvAnalyticsService {
   }
 
   // ── Second-order Greeks: Vanna / Charm / Volga ───────────────────────────
-  // Derived from available Schwab fields (gamma, vega, delta, IV, DTE).
-  // Black-Scholes approximations assuming r≈0, q≈0.
+  // Full Black-Scholes with risk-free rate r and minute-precision T.
   //
-  //  d₁ = (ln(S/K) + 0.5 × σ² × T) / (σ√T)
-  //  d₂ = d₁ − σ√T
+  //  T   = minutesToExpiry / (365 × 24 × 60)   [floor: 1 min]
+  //  d₁  = (ln(S/K) + (r + 0.5σ²)T) / (σ√T)  [full BS]
+  //  d₂  = d₁ − σ√T
   //
-  //  Vanna  ≈ -gamma × S × √T × d₂            (∂²V/∂S∂σ)
-  //  Charm  ≈  gamma × S × σ × d₂ / (2√T×365) (∂Δ/∂t per day)
-  //  Volga  ≈  vega  × d₁ × d₂ / σ            (∂²V/∂σ²)
+  //  Vanna  ≈ −gamma × S × √T × d₂
+  //  Charm  ≈  gamma × S × (r×d₁/σ − d₂/(2T)) / 365   [exact BS charm]
+  //  Volga  ≈  vega  × d₁ × d₂ / σ
 
   static List<SecondOrderStrike> _computeSecondOrder(
     SchwabOptionsChain chain,
     double spot,
+    double r,
   ) {
     // Aggregate across all expirations per strike
     final callsByStrike = <double, List<SchwabOptionContract>>{};
@@ -388,7 +415,8 @@ class IvAnalyticsService {
       for (final c in calls) {
         callOi += c.openInterest;
         final g = _secondOrderGreeks(spot, strike, c.impliedVolatility / 100,
-            c.daysToExpiration, c.gamma, c.vega);
+            c.daysToExpiration, c.gamma, c.vega, r,
+            DateTime.tryParse(c.expirationDate));
         callVanna += g.$1;
         callCharm += g.$2;
         callVolga += g.$3;
@@ -396,7 +424,8 @@ class IvAnalyticsService {
       for (final p in puts) {
         putOi += p.openInterest;
         final g = _secondOrderGreeks(spot, strike, p.impliedVolatility / 100,
-            p.daysToExpiration, p.gamma, p.vega);
+            p.daysToExpiration, p.gamma, p.vega, r,
+            DateTime.tryParse(p.expirationDate));
         putVanna += g.$1;
         putCharm += g.$2;
         putVolga += g.$3;
@@ -430,37 +459,45 @@ class IvAnalyticsService {
     return results;
   }
 
-  /// Returns (vanna, charm, volga) for a single contract using BS approximations.
+  /// Returns (vanna, charm, volga) for a single contract using full BS with r.
   static (double, double, double) _secondOrderGreeks(
     double spot,
     double strike,
-    double sigma,   // IV as decimal (e.g. 0.326)
+    double sigma,          // IV as decimal (e.g. 0.326)
     int    dte,
-    double gamma,   // from Schwab
-    double vega,    // from Schwab
+    double gamma,          // from Schwab
+    double vega,           // from Schwab
+    double r,              // risk-free rate as decimal (e.g. 0.0433)
+    DateTime? expiryDate,  // for intraday minute-precision T
   ) {
-    if (sigma <= 0 || dte <= 0) return (0, 0, 0);
+    if (sigma <= 0 || dte < 0) return (0, 0, 0);
 
-    final T     = dte / 365.0;
-    final sqrtT = math.sqrt(T);
+    // T in fractional years — minute precision to handle 0DTE correctly
+    final now = DateTime.now();
+    final minutesLeft = expiryDate != null
+        ? expiryDate.difference(now).inMinutes.clamp(1, 999999).toDouble()
+        : (dte * 24 * 60.0).clamp(1.0, double.infinity);
+    final T = minutesLeft / (365 * 24 * 60);
+
+    final sqrtT  = math.sqrt(T);
     final sigSqT = sigma * sqrtT;
-
     if (sigSqT < 1e-6) return (0, 0, 0);
 
+    // Full BS d₁ with risk-free rate
     final logMoneyness = math.log(spot / strike);
-    final d1 = (logMoneyness + 0.5 * sigma * sigma * T) / sigSqT;
+    final d1 = (logMoneyness + (r + 0.5 * sigma * sigma) * T) / sigSqT;
     final d2 = d1 - sigSqT;
 
-    // Vanna = -gamma × S × √T × d₂
+    // Vanna = −gamma × S × √T × d₂
     final vanna = -gamma * spot * sqrtT * d2;
 
-    // Charm = gamma × S × σ × d₂ / (2 × √T × 365)
-    final charm = (2 * sqrtT * 365 > 0)
-        ? gamma * spot * sigma * d2 / (2 * sqrtT * 365)
+    // Charm (exact BS) = gamma × S × (r×d₁/σ − d₂/(2T)) / 365
+    final charm = T > 0
+        ? gamma * spot * (r * d1 / sigma - d2 / (2 * T)) / 365
         : 0.0;
 
     // Volga = vega × d₁ × d₂ / σ
-    final volga = sigma > 0 ? vega * d1 * d2 / sigma : 0.0;
+    final volga = vega * d1 * d2 / sigma;
 
     return (vanna, charm, volga);
   }

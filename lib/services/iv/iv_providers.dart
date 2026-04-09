@@ -16,6 +16,7 @@
 // =============================================================================
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/schwab/schwab_models.dart';
 import '../../services/schwab/schwab_providers.dart';
 import 'iv_analytics_service.dart';
@@ -39,16 +40,20 @@ final ivAnalysisProvider =
     throw Exception('No options chain data for $symbol');
   }
 
-  // Load history and save today's snapshot in parallel
+  // Load history and live risk-free rate in parallel
   final storage = IvStorageService();
   final snap    = IvAnalyticsService.snapshotFromChain(chain);
 
-  final history = await storage.getHistory(symbol);
+  final historyFuture      = storage.getHistory(symbol);
+  final riskFreeRateFuture = _fetchRiskFreeRate();
+  final history            = await historyFuture;
+  final riskFreeRate       = await riskFreeRateFuture;
 
   // Persist today's snapshot (fire-and-forget, don't block UI)
   storage.saveSnapshot(snap);
 
-  return IvAnalyticsService.analyse(chain, history);
+  return IvAnalyticsService.analyse(chain, history,
+      riskFreeRate: riskFreeRate);
 });
 
 // ── Raw snapshot history (for sparklines / table) ─────────────────────────────
@@ -67,6 +72,26 @@ final ivWatchlistProvider =
 });
 
 // ── Auto-ingest helper (call from OptionsChainScreen on chain load) ───────────
+
+/// Fetches the latest FRED DFF (Fed Funds rate) from economy_indicator_snapshots.
+/// Returns null on any error so the caller can fall back to the hardcoded default.
+Future<double?> _fetchRiskFreeRate() async {
+  try {
+    final db = Supabase.instance.client;
+    final rows = await db
+        .from('economy_indicator_snapshots')
+        .select('value')
+        .eq('identifier', 'DFF')
+        .order('date', ascending: false)
+        .limit(1);
+    if (rows.isEmpty) return null;
+    final raw = rows.first['value'];
+    if (raw == null) return null;
+    return (raw as num).toDouble();
+  } catch (_) {
+    return null;
+  }
+}
 
 /// Called once per chain load to silently persist an IV snapshot.
 /// Does not block the UI — errors are swallowed to avoid disrupting chain view.
