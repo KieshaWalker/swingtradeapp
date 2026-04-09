@@ -39,6 +39,8 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
   final _breakdownCtrl     = TextEditingController();
   final _maxLossCtrl       = TextEditingController();
   final _timeOfEntryCtrl   = TextEditingController();
+  final _stopLossCtrl      = TextEditingController();
+  final _takeProfitCtrl    = TextEditingController();
 
 
   OptionType _optionType   = OptionType.call;
@@ -65,6 +67,8 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
     _breakdownCtrl.dispose();
     _maxLossCtrl.dispose();
     _timeOfEntryCtrl.dispose();
+    _stopLossCtrl.dispose();
+    _takeProfitCtrl.dispose();
     super.dispose();
   }
 
@@ -149,6 +153,8 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
       entryPointType: _entryPointType,
       maxLoss: _parse(_maxLossCtrl),
       timeOfEntry: _timeOfEntryCtrl.text.isNotEmpty ? _timeOfEntryCtrl.text : null,
+      stopLoss: _parse(_stopLossCtrl),
+      takeProfit: _parse(_takeProfitCtrl),
     );
 
     await ref.read(tradesNotifierProvider.notifier).addTrade(trade);
@@ -461,6 +467,39 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Time of Entry',
                       hintText: 'e.g. 9:45',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // ── Stop Loss & Take Profit ───────────────────────────────────────
+            _SectionLabel('Risk Levels (Optional)'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _stopLossCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Stop Loss',
+                      prefixText: '\$',
+                      hintText: 'option price',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: _takeProfitCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Take Profit',
+                      prefixText: '\$',
+                      hintText: 'option price',
                     ),
                   ),
                 ),

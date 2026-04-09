@@ -144,3 +144,11 @@ final tickerNextEarningsProvider =
     FutureProvider.family<FmpEarningsDate?, String>((ref, symbol) {
       return ref.watch(fmpServiceProvider).getNextEarnings(symbol);
     });
+
+// Dividend info — ex-dividend date + annual yield for dividend-adjusted IV.
+// Consumed by _LiveGreeksCard in TradeDetailScreen to pass q to LiveGreeksService.
+// Returns null for non-dividend-paying stocks (safe to treat as q=0).
+final dividendInfoProvider =
+    FutureProvider.family<FmpDividendInfo?, String>((ref, symbol) {
+      return ref.watch(fmpServiceProvider).getDividendInfo(symbol);
+    });

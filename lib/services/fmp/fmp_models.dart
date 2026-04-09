@@ -337,3 +337,53 @@ class FmpEarningsDate {
         time: json['time'] as String?,
       );
 }
+
+// ── Dividend info ─────────────────────────────────────────────────────────────
+// FMP /stock-dividend response — next ex-dividend date and annual yield.
+// Used by LiveGreeksService to compute the dividend-adjusted forward price
+// F = S·e^{(r−q)T} in the BS d1/d2 formula.
+
+class FmpDividendInfo {
+  final String symbol;
+
+  /// Next ex-dividend date (null if no upcoming dividend).
+  final DateTime? exDividendDate;
+
+  /// Annual dividend yield as a decimal (e.g. 0.015 for 1.5%).
+  final double annualYield;
+
+  /// Next cash dividend per share.
+  final double nextDividend;
+
+  const FmpDividendInfo({
+    required this.symbol,
+    required this.exDividendDate,
+    required this.annualYield,
+    required this.nextDividend,
+  });
+
+  factory FmpDividendInfo.fromJson(Map<String, dynamic> json) {
+    // FMP returns yield as a decimal for stock-dividend; guard against
+    // edge cases where it might come back as a percentage (> 1.0).
+    final rawYield = (json['dividendYield'] as num?)?.toDouble() ?? 0.0;
+    final adjYield = rawYield > 1.0 ? rawYield / 100.0 : rawYield;
+
+    final exDateStr = json['exDividendDate'] as String?
+        ?? json['date'] as String?;
+    final exDate = exDateStr != null ? DateTime.tryParse(exDateStr) : null;
+
+    return FmpDividendInfo(
+      symbol: json['symbol'] as String? ?? '',
+      exDividendDate: exDate,
+      annualYield: adjYield,
+      nextDividend: (json['dividend'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+
+  /// True when the ex-dividend date falls within [dte] calendar days.
+  bool exDivWithinDte(int dte) {
+    if (exDividendDate == null) return false;
+    final daysToExDiv = exDividendDate!.difference(DateTime.now()).inDays;
+    return daysToExDiv >= 0 && daysToExDiv <= dte;
+  }
+}

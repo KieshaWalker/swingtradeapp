@@ -125,6 +125,10 @@ class Trade {
   final String? timeOfEntry;
   final String? timeOfExit;
 
+  // Risk management levels (migration 013)
+  final double? stopLoss;
+  final double? takeProfit;
+
   const Trade({
     required this.id,
     required this.userId,
@@ -155,9 +159,15 @@ class Trade {
     this.maxLoss,
     this.timeOfEntry,
     this.timeOfExit,
+    this.stopLoss,
+    this.takeProfit,
   });
 
   double get costBasis => entryPrice * contracts * 100;
+
+  /// Unrealized P&L using a live mark price (transient — not stored in DB).
+  double unrealizedPnl(double currentMark) =>
+      (currentMark - entryPrice) * contracts * 100;
 
   double? get realizedPnl {
     if (exitPrice == null) return null;
@@ -229,6 +239,12 @@ class Trade {
             : null,
         timeOfEntry: json['time_of_entry'] as String?,
         timeOfExit: json['time_of_exit'] as String?,
+        stopLoss: json['stop_loss'] != null
+            ? (json['stop_loss'] as num).toDouble()
+            : null,
+        takeProfit: json['take_profit'] != null
+            ? (json['take_profit'] as num).toDouble()
+            : null,
       );
 
   Map<String, dynamic> toJson() => {
@@ -257,5 +273,7 @@ class Trade {
         'max_loss': maxLoss,
         'time_of_entry': timeOfEntry,
         'time_of_exit': timeOfExit,
+        'stop_loss': stopLoss,
+        'take_profit': takeProfit,
       };
 }

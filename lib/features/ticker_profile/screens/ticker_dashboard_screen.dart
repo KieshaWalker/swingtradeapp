@@ -71,13 +71,15 @@ class TickerDashboardScreen extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.candlestick_chart_outlined,
-                      size: 64, color: AppTheme.neutralColor),
+                  const Icon(
+                    Icons.candlestick_chart_outlined,
+                    size: 64,
+                    color: AppTheme.neutralColor,
+                  ),
                   const SizedBox(height: 16),
                   const Text(
                     'No tickers yet',
-                    style: TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w700),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 8),
                   const Text(
@@ -95,8 +97,14 @@ class TickerDashboardScreen extends ConsumerWidget {
             );
           }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
+          return GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 4,
+              childAspectRatio: 1.5,
+            ),
+            padding: const EdgeInsets.all(12),
             itemCount: symbols.length,
             itemBuilder: (_, i) => _TickerCard(symbol: symbols[i]),
           );
@@ -106,10 +114,7 @@ class TickerDashboardScreen extends ConsumerWidget {
   }
 
   void _showSearch(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => const _TickerSearchDialog(),
-    );
+    showDialog(context: context, builder: (_) => const _TickerSearchDialog());
   }
 }
 
@@ -125,20 +130,22 @@ class _TickerCard extends ConsumerWidget {
     final analytics = ref.watch(tickerAnalyticsProvider(symbol));
     final tradesAsync = ref.watch(tradesProvider);
 
-    final openCount = tradesAsync.valueOrNull
-            ?.where((t) =>
-                t.ticker.toUpperCase() == symbol &&
-                t.status.name == 'open')
+    final openCount =
+        tradesAsync.valueOrNull
+            ?.where(
+              (t) =>
+                  t.ticker.toUpperCase() == symbol && t.status.name == 'open',
+            )
             .length ??
         0;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.hardEdge,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: () => context.push('/ticker/$symbol'),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -156,7 +163,7 @@ class _TickerCard extends ConsumerWidget {
                             Text(
                               symbol,
                               style: const TextStyle(
-                                fontSize: 22,
+                                fontSize: 20,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),
@@ -164,14 +171,19 @@ class _TickerCard extends ConsumerWidget {
                               const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 2),
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: AppTheme.profitColor
-                                      .withValues(alpha: 0.15),
+                                  color: AppTheme.profitColor.withValues(
+                                    alpha: 0.15,
+                                  ),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                      color: AppTheme.profitColor
-                                          .withValues(alpha: 0.4)),
+                                    color: AppTheme.profitColor.withValues(
+                                      alpha: 0.4,
+                                    ),
+                                  ),
                                 ),
                                 child: Text(
                                   '$openCount open',
@@ -209,20 +221,22 @@ class _TickerCard extends ConsumerWidget {
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
-                    error: (e, _) => const Text('—',
-                        style:
-                            TextStyle(color: AppTheme.neutralColor)),
+                    error: (e, _) => const Text(
+                      '—',
+                      style: TextStyle(color: AppTheme.neutralColor),
+                    ),
                     data: (q) => q == null
-                        ? const Text('—',
-                            style: TextStyle(
-                                color: AppTheme.neutralColor))
+                        ? const Text(
+                            '—',
+                            style: TextStyle(color: AppTheme.neutralColor),
+                          )
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
                                 '\$${q.price.toStringAsFixed(2)}',
                                 style: const TextStyle(
-                                  fontSize: 20,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -244,9 +258,9 @@ class _TickerCard extends ConsumerWidget {
 
               // ── Stats row ────────────────────────────────────────
               if (analytics.totalTrades > 0) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Divider(height: 1, color: AppTheme.borderColor),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     _StatChip(
@@ -256,8 +270,7 @@ class _TickerCard extends ConsumerWidget {
                     const SizedBox(width: 8),
                     _StatChip(
                       label: 'Win Rate',
-                      value:
-                          '${(analytics.winRate * 100).toStringAsFixed(0)}%',
+                      value: '${(analytics.winRate * 100).toStringAsFixed(0)}%',
                       valueColor: analytics.winRate >= 0.5
                           ? AppTheme.profitColor
                           : AppTheme.lossColor,
@@ -273,8 +286,11 @@ class _TickerCard extends ConsumerWidget {
                     ),
                     if (analytics.playbookSummary != null) ...[
                       const SizedBox(width: 8),
-                      const Icon(Icons.auto_awesome,
-                          size: 14, color: AppTheme.profitColor),
+                      const Icon(
+                        Icons.auto_awesome,
+                        size: 14,
+                        color: AppTheme.profitColor,
+                      ),
                     ],
                   ],
                 ),
@@ -292,16 +308,12 @@ class _StatChip extends StatelessWidget {
   final String value;
   final Color? valueColor;
 
-  const _StatChip({
-    required this.label,
-    required this.value,
-    this.valueColor,
-  });
+  const _StatChip({required this.label, required this.value, this.valueColor});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
       decoration: BoxDecoration(
         color: AppTheme.cardColor,
         borderRadius: BorderRadius.circular(8),
@@ -311,8 +323,7 @@ class _StatChip extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
-                color: AppTheme.neutralColor, fontSize: 10),
+            style: const TextStyle(color: AppTheme.neutralColor, fontSize: 10),
           ),
           Text(
             value,
@@ -373,8 +384,10 @@ class _TickerSearchDialogState extends ConsumerState<_TickerSearchDialog> {
             if (_query.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('Type a symbol or company name',
-                    style: TextStyle(color: AppTheme.neutralColor)),
+                child: Text(
+                  'Type a symbol or company name',
+                  style: TextStyle(color: AppTheme.neutralColor),
+                ),
               )
             else
               resultsAsync.when(
@@ -386,34 +399,44 @@ class _TickerSearchDialogState extends ConsumerState<_TickerSearchDialog> {
                 data: (results) => results.isEmpty
                     ? const Padding(
                         padding: EdgeInsets.all(16),
-                        child: Text('No results',
-                            style:
-                                TextStyle(color: AppTheme.neutralColor)),
+                        child: Text(
+                          'No results',
+                          style: TextStyle(color: AppTheme.neutralColor),
+                        ),
                       )
                     : ConstrainedBox(
-                        constraints:
-                            const BoxConstraints(maxHeight: 320),
+                        constraints: const BoxConstraints(maxHeight: 320),
                         child: ListView.builder(
                           shrinkWrap: true,
                           itemCount: results.length,
                           itemBuilder: (_, i) {
                             final r = results[i];
                             return ListTile(
-                              title: Text(r.symbol,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w700)),
-                              subtitle: Text(r.name,
-                                  style: const TextStyle(
-                                      color: AppTheme.neutralColor,
-                                      fontSize: 12)),
-                              trailing: Text(r.exchange,
-                                  style: const TextStyle(
-                                      color: AppTheme.neutralColor,
-                                      fontSize: 11)),
+                              title: Text(
+                                r.symbol,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: Text(
+                                r.name,
+                                style: const TextStyle(
+                                  color: AppTheme.neutralColor,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              trailing: Text(
+                                r.exchange,
+                                style: const TextStyle(
+                                  color: AppTheme.neutralColor,
+                                  fontSize: 11,
+                                ),
+                              ),
                               onTap: () {
                                 ref
-                                    .read(tickerProfileNotifierProvider
-                                        .notifier)
+                                    .read(
+                                      tickerProfileNotifierProvider.notifier,
+                                    )
                                     .addWatchedTicker(r.symbol);
                                 Navigator.pop(context);
                                 context.push('/ticker/${r.symbol}');

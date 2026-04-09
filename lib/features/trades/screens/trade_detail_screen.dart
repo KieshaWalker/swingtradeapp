@@ -36,8 +36,12 @@ import '../../../core/theme.dart';
 import '../../../services/schwab/schwab_providers.dart';
 import '../../../services/sec/sec_models.dart';
 import '../../../services/sec/sec_providers.dart';
+import '../../../services/iv/iv_providers.dart';
+import '../../../services/fmp/fmp_providers.dart'
+    hide quoteProvider, quotesProvider;
 import '../models/trade.dart';
 import '../providers/trades_provider.dart';
+import '../services/live_greeks_service.dart';
 import 'trade_journal_screen.dart';
 
 class TradeDetailScreen extends ConsumerWidget {
@@ -192,26 +196,30 @@ class TradeDetailScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
 
-          // Greeks card
-          if (trade.ivRank != null || trade.delta != null)
+          // Live Greeks card (recomputed from current spot + IV)
+          if (trade.status == TradeStatus.open)
+            _LiveGreeksCard(trade: trade),
+          if (trade.status == TradeStatus.open) const SizedBox(height: 12),
+
+          // Static entry Greeks (closed/expired trades only)
+          if (trade.status != TradeStatus.open &&
+              (trade.ivRank != null || trade.delta != null))
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Greeks & IV',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 15),
-                    ),
+                    const Text('Greeks at Entry',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 15)),
                     const SizedBox(height: 12),
                     Row(
                       children: [
                         if (trade.delta != null)
                           _GreekBox(
                               label: 'Delta',
-                              value: trade.delta!.toStringAsFixed(2)),
+                              value: trade.delta!.toStringAsFixed(3)),
                         if (trade.ivRank != null)
                           _GreekBox(
                               label: 'IV Rank',
@@ -312,6 +320,120 @@ class TradeDetailScreen extends ConsumerWidget {
             child: const Text('Delete'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ----------------------------------------------------------------
+// Live Greeks card — recomputes BS Greeks from current spot + IV.
+// Only shown for open trades. Falls back gracefully when data is loading.
+// ----------------------------------------------------------------
+class _LiveGreeksCard extends ConsumerWidget {
+  final Trade trade;
+  const _LiveGreeksCard({required this.trade});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final quoteAsync = ref.watch(quoteProvider(trade.ticker));
+    final ivAsync = ref.watch(ivAnalysisProvider(trade.ticker));
+    final divAsync = ref.watch(dividendInfoProvider(trade.ticker));
+
+    // Need both spot and IV to compute Greeks.
+    final spot = quoteAsync.valueOrNull?.price;
+    final iv = ivAsync.valueOrNull?.currentIv; // decimal (e.g. 0.28)
+    final dividendYield = divAsync.valueOrNull?.annualYield ?? 0.0;
+
+    if (spot == null || iv == null) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(width: 12),
+              Text(
+                spot == null ? 'Loading live quote…' : 'Loading IV data…',
+                style: const TextStyle(
+                    color: AppTheme.neutralColor, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final g = LiveGreeksService.compute(
+      trade: trade,
+      spot: spot,
+      currentIv: iv,
+      dividendYield: dividendYield,
+    );
+
+    final deltaColor = g.delta >= 0 ? AppTheme.profitColor : AppTheme.lossColor;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.bolt, size: 14, color: AppTheme.profitColor),
+                const SizedBox(width: 6),
+                const Text('Live Greeks',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 15)),
+                const Spacer(),
+                Text(
+                  'IV ${(g.impliedVol * 100).toStringAsFixed(1)}%  '
+                  '· ${g.dteRemaining.toStringAsFixed(1)} DTE',
+                  style: const TextStyle(
+                      color: AppTheme.neutralColor, fontSize: 11),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            // Primary Greeks row
+            Row(
+              children: [
+                _GreekBox(
+                    label: 'Δ Delta',
+                    value: g.delta.toStringAsFixed(3),
+                    valueColor: deltaColor),
+                _GreekBox(
+                    label: 'Γ Gamma',
+                    value: g.gamma.toStringAsFixed(4)),
+                _GreekBox(
+                    label: 'θ Theta',
+                    value: g.theta.toStringAsFixed(3)),
+                _GreekBox(
+                    label: 'ν Vega',
+                    value: g.vega.toStringAsFixed(3)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // Second-order Greeks row
+            Row(
+              children: [
+                _GreekBox(
+                    label: 'Vanna',
+                    value: g.vanna.toStringAsFixed(4)),
+                _GreekBox(
+                    label: 'Charm',
+                    value: g.charm.toStringAsFixed(5)),
+                _GreekBox(
+                    label: 'Volga',
+                    value: g.volga.toStringAsFixed(4)),
+                const Expanded(child: SizedBox()),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -491,11 +613,12 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
-// _GreekBox: dark inset box showing a single Greek value (Delta or IV Rank).
+// _GreekBox: dark inset box showing a single Greek value.
 class _GreekBox extends StatelessWidget {
   final String label;
   final String value;
-  const _GreekBox({required this.label, required this.value});
+  final Color? valueColor;
+  const _GreekBox({required this.label, required this.value, this.valueColor});
 
   @override
   Widget build(BuildContext context) {
@@ -514,7 +637,10 @@ class _GreekBox extends StatelessWidget {
                 style: const TextStyle(color: AppTheme.neutralColor, fontSize: 12)),
             const SizedBox(height: 4),
             Text(value,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: valueColor)),
           ],
         ),
       ),

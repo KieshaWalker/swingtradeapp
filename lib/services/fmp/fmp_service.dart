@@ -344,4 +344,20 @@ class FmpService {
       return null;
     }
   }
+
+  /// Fetches the next ex-dividend date and annual yield for [symbol].
+  /// Endpoint: GET /stock-dividend?symbol={symbol}&limit=2
+  /// Returns null when the symbol pays no dividend or data is unavailable.
+  Future<FmpDividendInfo?> getDividendInfo(String symbol) async {
+    try {
+      final res = await _client
+          .get(_url('/stock-dividend', {'symbol': symbol, 'limit': '2'}));
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body);
+      if (data is! List || data.isEmpty) return null;
+      return FmpDividendInfo.fromJson(data.first as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
 }

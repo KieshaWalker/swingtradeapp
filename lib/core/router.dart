@@ -54,6 +54,7 @@ import '../features/trades/screens/trades_screen.dart';
 import '../features/summary/screens/summary_screen.dart';
 import '../features/iv/screens/iv_screen.dart';
 import '../features/blotter/screens/trade_blotter_screen.dart';
+import '../features/blotter/screens/validated_blotters_screen.dart';
 
 // Thin shell — just provides the route transition wrapper.
 // Navigation is handled by AppMenuButton in each screen's AppBar.
@@ -64,7 +65,6 @@ class _AppShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) => child;
 }
-
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
@@ -86,32 +86,24 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Auth
       GoRoute(path: '/login', builder: (context, _) => const LoginScreen()),
       GoRoute(path: '/signup', builder: (context, _) => const SignupScreen()),
-      GoRoute(path: '/auth/callback', builder: (context, _) => const _AuthCallbackScreen()),
+      GoRoute(
+        path: '/auth/callback',
+        builder: (context, _) => const _AuthCallbackScreen(),
+      ),
 
       GoRoute(
         path: '/',
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: SummaryScreen()),
-        ),
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: _AppShell(child: SummaryScreen())),
       ),
       GoRoute(
         path: '/trades',
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: TradesScreen()),
-        ),
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: _AppShell(child: TradesScreen())),
         routes: [
-          GoRoute(
-            path: 'add',
-            builder: (context, _) => const AddTradeScreen(),
-          ),
-          GoRoute(
-            path: 'blocks',
-            builder: (_, _) => const TradeBlocksScreen(),
-          ),
-          GoRoute(
-            path: 'import',
-            builder: (_, _) => const CsvImportScreen(),
-          ),
+          GoRoute(path: 'add', builder: (context, _) => const AddTradeScreen()),
+          GoRoute(path: 'blocks', builder: (_, _) => const TradeBlocksScreen()),
+          GoRoute(path: 'import', builder: (_, _) => const CsvImportScreen()),
           GoRoute(
             path: ':id',
             builder: (_, state) {
@@ -132,16 +124,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/calculator',
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: CalculatorScreen()),
-        ),
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: _AppShell(child: CalculatorScreen())),
       ),
-      
+
       GoRoute(
         path: '/journal',
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: JournalScreen()),
-        ),
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: _AppShell(child: JournalScreen())),
         routes: [
           GoRoute(
             path: 'add',
@@ -160,6 +150,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => const NoTransitionPage(
           child: _AppShell(child: TradeBlotterScreen()),
         ),
+        routes: [
+          GoRoute(
+            path: 'validated',
+            builder: (ctx, s) => const ValidatedBlottersScreen(),
+          ),
+        ],
       ),
       // Tickers — dashboard + full-screen profile (no shell)
       GoRoute(
@@ -170,15 +166,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: ':symbol',
-            builder: (_, state) => TickerProfileScreen(
-              symbol: state.pathParameters['symbol']!,
-            ),
+            builder: (_, state) =>
+                TickerProfileScreen(symbol: state.pathParameters['symbol']!),
             routes: [
               GoRoute(
                 path: 'chains',
-                builder: (_, state) => OptionsChainScreen(
-                  symbol: state.pathParameters['symbol']!,
-                ),
+                builder: (_, state) =>
+                    OptionsChainScreen(symbol: state.pathParameters['symbol']!),
                 routes: [
                   GoRoute(
                     path: 'wizard',
@@ -188,9 +182,8 @@ final routerProvider = Provider<GoRouter>((ref) {
                   ),
                   GoRoute(
                     path: 'iv',
-                    builder: (_, state) => IvScreen(
-                      symbol: state.pathParameters['symbol']!,
-                    ),
+                    builder: (_, state) =>
+                        IvScreen(symbol: state.pathParameters['symbol']!),
                   ),
                 ],
               ),

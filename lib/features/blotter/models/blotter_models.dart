@@ -12,18 +12,18 @@ enum TradeStatus {
   sent;
 
   String get label => switch (this) {
-        draft     => 'DRAFT',
-        validated => 'VALIDATED',
-        committed => 'DB COMMITTED',
-        sent      => 'TRANSMITTED',
-      };
+    draft => 'DRAFT',
+    validated => 'VALIDATED',
+    committed => 'DB COMMITTED',
+    sent => 'TRANSMITTED',
+  };
 
   Color get color => switch (this) {
-        draft     => const Color(0xFF94A3B8),
-        validated => const Color(0xFFFBBF24),
-        committed => const Color(0xFF60A5FA),
-        sent      => const Color(0xFF4ADE80),
-      };
+    draft => const Color(0xFF94A3B8),
+    validated => const Color(0xFFFBBF24),
+    committed => const Color(0xFF60A5FA),
+    sent => const Color(0xFF4ADE80),
+  };
 
   int get step => index;
 }
@@ -63,6 +63,10 @@ class FairValueResult {
   final double edgeBps;
   final double sabrVol;
   final double impliedVol;
+  final double? vanna;
+  final double? charm;
+  final double? volga;
+  final double? rho;
 
   const FairValueResult({
     required this.bsFairValue,
@@ -72,6 +76,10 @@ class FairValueResult {
     required this.edgeBps,
     required this.sabrVol,
     required this.impliedVol,
+    this.vanna,
+    this.charm,
+    this.volga,
+    this.rho,
   });
 
   /// Positive edge = model thinks contract is cheap vs broker → buy signal.
@@ -79,29 +87,47 @@ class FairValueResult {
   bool get isSellSignal => edgeBps < -5;
 
   String get edgeLabel {
-    if (edgeBps > 20)  return 'STRONG BUY';
-    if (edgeBps > 5)   return 'BUY';
+    if (edgeBps > 20) return 'STRONG BUY';
+    if (edgeBps > 5) return 'BUY';
     if (edgeBps < -20) return 'STRONG SELL';
-    if (edgeBps < -5)  return 'SELL';
+    if (edgeBps < -5) return 'SELL';
     return 'FAIR';
   }
 
   Color get edgeColor {
-    if (edgeBps > 10)  return const Color(0xFF4ADE80);
-    if (edgeBps > 0)   return const Color(0xFF86EFAC);
+    if (edgeBps > 10) return const Color(0xFF4ADE80);
+    if (edgeBps > 0) return const Color(0xFF86EFAC);
     if (edgeBps < -10) return const Color(0xFFFF6B8A);
-    if (edgeBps < 0)   return const Color(0xFFFFB3C1);
+    if (edgeBps < 0) return const Color(0xFFFFB3C1);
     return const Color(0xFFA09FC8);
+  }
+
+  static FairValueResult? fromJson(Map<String, dynamic> j) {
+    final brokerMid = (j['broker_mid'] as num?)?.toDouble();
+    if (brokerMid == null) return null;
+    return FairValueResult(
+      bsFairValue: (j['bs_fair_value'] as num?)?.toDouble() ?? brokerMid,
+      sabrFairValue: (j['sabr_fair_value'] as num?)?.toDouble() ?? brokerMid,
+      modelFairValue: (j['model_fair_value'] as num?)?.toDouble() ?? brokerMid,
+      brokerMid: brokerMid,
+      edgeBps: (j['edge_bps'] as num?)?.toDouble() ?? 0.0,
+      sabrVol: (j['sabr_vol'] as num?)?.toDouble() ?? 0.0,
+      impliedVol: (j['implied_vol'] as num?)?.toDouble() ?? 0.0,
+      vanna: (j['vanna'] as num?)?.toDouble(),
+      charm: (j['charm'] as num?)?.toDouble(),
+      volga: (j['volga'] as num?)?.toDouble(),
+      rho: (j['rho'] as num?)?.toDouble(),
+    );
   }
 }
 
 // ── Portfolio state ───────────────────────────────────────────────────────────
 
 class PortfolioState {
-  final double totalDelta;  // aggregate position delta
+  final double totalDelta; // aggregate position delta
   final double totalVega;
-  final double totalEs95;   // $ Expected Shortfall
-  final int    openPositions;
+  final double totalEs95; // $ Expected Shortfall
+  final int openPositions;
 
   const PortfolioState({
     required this.totalDelta,
@@ -111,7 +137,11 @@ class PortfolioState {
   });
 
   static const empty = PortfolioState(
-      totalDelta: 0, totalVega: 0, totalEs95: 0, openPositions: 0);
+    totalDelta: 0,
+    totalVega: 0,
+    totalEs95: 0,
+    openPositions: 0,
+  );
 }
 
 // ── Pre-trade What-If result ──────────────────────────────────────────────────
@@ -123,7 +153,7 @@ class WhatIfResult {
   final double newDelta;
   final double newVega;
   final double newEs95;
-  final bool   exceedsDeltaThreshold;
+  final bool exceedsDeltaThreshold;
   final double deltaThreshold;
 
   const WhatIfResult({
@@ -141,26 +171,27 @@ class WhatIfResult {
 // ── Staged trade record ───────────────────────────────────────────────────────
 
 class BlotterTrade {
-  final String?       id;
-  final String        symbol;
-  final double        strike;
-  final String        expiration;
-  final ContractType  contractType;
-  final int           quantity;
-  final StrategyTag   strategyTag;
-  final String?       notes;
-  final TradeStatus   status;
-  final DateTime      createdAt;
+  final String? id;
+  final String symbol;
+  final double strike;
+  final String expiration;
+  final ContractType contractType;
+  final int quantity;
+  final StrategyTag strategyTag;
+  final String? notes;
+  final TradeStatus status;
+  final DateTime createdAt;
 
   // Validation output
   final FairValueResult? fairValueResult;
-  final WhatIfResult?    whatIfResult;
+  final WhatIfResult? whatIfResult;
 
   // Greeks
   final double? delta;
   final double? gamma;
   final double? theta;
   final double? vega;
+  final double? rho;
   final double? underlyingPrice;
 
   const BlotterTrade({
@@ -180,93 +211,106 @@ class BlotterTrade {
     this.gamma,
     this.theta,
     this.vega,
+    this.rho,
     this.underlyingPrice,
   });
 
   BlotterTrade copyWith({
-    String?        id,
-    TradeStatus?   status,
+    String? id,
+    TradeStatus? status,
     FairValueResult? fairValueResult,
-    WhatIfResult?    whatIfResult,
-    double? delta, double? gamma, double? theta, double? vega,
+    WhatIfResult? whatIfResult,
+    double? delta,
+    double? gamma,
+    double? theta,
+    double? vega,
+    double? rho,
     double? underlyingPrice,
-  }) =>
-      BlotterTrade(
-        id:              id              ?? this.id,
-        symbol:          symbol,
-        strike:          strike,
-        expiration:      expiration,
-        contractType:    contractType,
-        quantity:        quantity,
-        strategyTag:     strategyTag,
-        notes:           notes,
-        status:          status          ?? this.status,
-        createdAt:       createdAt,
-        fairValueResult: fairValueResult ?? this.fairValueResult,
-        whatIfResult:    whatIfResult    ?? this.whatIfResult,
-        delta:           delta           ?? this.delta,
-        gamma:           gamma           ?? this.gamma,
-        theta:           theta           ?? this.theta,
-        vega:            vega            ?? this.vega,
-        underlyingPrice: underlyingPrice ?? this.underlyingPrice,
-      );
+  }) => BlotterTrade(
+    id: id ?? this.id,
+    symbol: symbol,
+    strike: strike,
+    expiration: expiration,
+    contractType: contractType,
+    quantity: quantity,
+    strategyTag: strategyTag,
+    notes: notes,
+    status: status ?? this.status,
+    createdAt: createdAt,
+    fairValueResult: fairValueResult ?? this.fairValueResult,
+    whatIfResult: whatIfResult ?? this.whatIfResult,
+    delta: delta ?? this.delta,
+    gamma: gamma ?? this.gamma,
+    theta: theta ?? this.theta,
+    vega: vega ?? this.vega,
+    rho: rho ?? this.rho,
+    underlyingPrice: underlyingPrice ?? this.underlyingPrice,
+  );
 
   Map<String, dynamic> toJson() => {
-        'symbol':                 symbol,
-        'strike':                 strike,
-        'expiration':             expiration,
-        'contract_type':          contractType.name,
-        'quantity':               quantity,
-        'strategy_tag':           strategyTag.label,
-        'notes':                  notes,
-        'status':                 status.name,
-        'broker_mid':             fairValueResult?.brokerMid,
-        'bs_fair_value':          fairValueResult?.bsFairValue,
-        'sabr_fair_value':        fairValueResult?.sabrFairValue,
-        'model_fair_value':       fairValueResult?.modelFairValue,
-        'edge_bps':               fairValueResult?.edgeBps,
-        'implied_vol':            fairValueResult?.impliedVol,
-        'sabr_vol':               fairValueResult?.sabrVol,
-        'delta':                  delta,
-        'gamma':                  gamma,
-        'theta':                  theta,
-        'vega':                   vega,
-        'underlying_price':       underlyingPrice,
-        'portfolio_delta_before': whatIfResult != null
-            ? whatIfResult!.newDelta - whatIfResult!.deltaImpact
-            : null,
-        'portfolio_delta_after':  whatIfResult?.newDelta,
-        'portfolio_vega_before':  whatIfResult != null
-            ? whatIfResult!.newVega - whatIfResult!.vegaImpact
-            : null,
-        'portfolio_vega_after':   whatIfResult?.newVega,
-        'es95_before':            whatIfResult != null
-            ? whatIfResult!.newEs95 - whatIfResult!.es95Impact
-            : null,
-        'es95_after':             whatIfResult?.newEs95,
-      };
+    'symbol': symbol,
+    'strike': strike,
+    'expiration': expiration,
+    'contract_type': contractType.name,
+    'quantity': quantity,
+    'strategy_tag': strategyTag.label,
+    'notes': notes,
+    'status': status.name,
+    'broker_mid': fairValueResult?.brokerMid,
+    'bs_fair_value': fairValueResult?.bsFairValue,
+    'sabr_fair_value': fairValueResult?.sabrFairValue,
+    'model_fair_value': fairValueResult?.modelFairValue,
+    'edge_bps': fairValueResult?.edgeBps,
+    'implied_vol': fairValueResult?.impliedVol,
+    'sabr_vol': fairValueResult?.sabrVol,
+    'vanna': fairValueResult?.vanna,
+    'charm': fairValueResult?.charm,
+    'volga': fairValueResult?.volga,
+    'delta': delta,
+    'gamma': gamma,
+    'theta': theta,
+    'vega': vega,
+    'underlying_price': underlyingPrice,
+    'rho': rho ?? fairValueResult?.rho,
+    'portfolio_delta_before': whatIfResult != null
+        ? whatIfResult!.newDelta - whatIfResult!.deltaImpact
+        : null,
+    'portfolio_delta_after': whatIfResult?.newDelta,
+    'portfolio_vega_before': whatIfResult != null
+        ? whatIfResult!.newVega - whatIfResult!.vegaImpact
+        : null,
+    'portfolio_vega_after': whatIfResult?.newVega,
+    'es95_before': whatIfResult != null
+        ? whatIfResult!.newEs95 - whatIfResult!.es95Impact
+        : null,
+    'es95_after': whatIfResult?.newEs95,
+  };
 
   static BlotterTrade fromJson(Map<String, dynamic> j) => BlotterTrade(
-        id:           j['id'] as String?,
-        symbol:       j['symbol'] as String,
-        strike:       (j['strike'] as num).toDouble(),
-        expiration:   j['expiration'] as String,
-        contractType: j['contract_type'] == 'call'
-            ? ContractType.call
-            : ContractType.put,
-        quantity:     j['quantity'] as int,
-        strategyTag:  StrategyTag.values.firstWhere(
-            (s) => s.label == j['strategy_tag'],
-            orElse: () => StrategyTag.deltaNeutral),
-        notes:        j['notes'] as String?,
-        status:       TradeStatus.values.firstWhere(
-            (s) => s.name == j['status'],
-            orElse: () => TradeStatus.draft),
-        createdAt: DateTime.parse(j['created_at'] as String),
-        delta:           (j['delta']            as num?)?.toDouble(),
-        gamma:           (j['gamma']            as num?)?.toDouble(),
-        theta:           (j['theta']            as num?)?.toDouble(),
-        vega:            (j['vega']             as num?)?.toDouble(),
-        underlyingPrice: (j['underlying_price'] as num?)?.toDouble(),
-      );
+    id: j['id'] as String?,
+    symbol: j['symbol'] as String,
+    strike: (j['strike'] as num).toDouble(),
+    expiration: j['expiration'] as String,
+    contractType: j['contract_type'] == 'call'
+        ? ContractType.call
+        : ContractType.put,
+    quantity: j['quantity'] as int,
+    strategyTag: StrategyTag.values.firstWhere(
+      (s) => s.label == j['strategy_tag'],
+      orElse: () => StrategyTag.deltaNeutral,
+    ),
+    notes: j['notes'] as String?,
+    status: TradeStatus.values.firstWhere(
+      (s) => s.name == j['status'],
+      orElse: () => TradeStatus.draft,
+    ),
+    createdAt: DateTime.parse(j['created_at'] as String),
+    fairValueResult: FairValueResult.fromJson(j),
+    delta: (j['delta'] as num?)?.toDouble(),
+    gamma: (j['gamma'] as num?)?.toDouble(),
+    theta: (j['theta'] as num?)?.toDouble(),
+    vega: (j['vega'] as num?)?.toDouble(),
+    rho: (j['rho'] as num?)?.toDouble(),
+    underlyingPrice: (j['underlying_price'] as num?)?.toDouble(),
+  );
 }

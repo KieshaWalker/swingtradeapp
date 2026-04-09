@@ -100,6 +100,8 @@ class TradesNotifier extends AsyncNotifier<void> {
         if (trade.entryPointType      != null) 'entry_point_type':      trade.entryPointType!.name,
         if (trade.maxLoss             != null) 'max_loss':              trade.maxLoss,
         if (trade.timeOfEntry         != null) 'time_of_entry':         trade.timeOfEntry,
+        if (trade.stopLoss            != null) 'stop_loss':             trade.stopLoss,
+        if (trade.takeProfit          != null) 'take_profit':           trade.takeProfit,
       };
 
       if (ext.isNotEmpty) {
@@ -143,3 +145,14 @@ class TradesNotifier extends AsyncNotifier<void> {
 
 final tradesNotifierProvider =
     AsyncNotifierProvider<TradesNotifier, void>(TradesNotifier.new);
+
+// ── Live mark overlay ─────────────────────────────────────────────────────────
+// In-session map of tradeId → current option mid-price.
+// Never written to DB — refreshed on demand, clears on app restart.
+
+final liveMarksProvider =
+    StateProvider<Map<String, double>>((ref) => {});
+
+extension LiveMarksX on Map<String, double> {
+  double? markFor(String tradeId) => this[tradeId];
+}

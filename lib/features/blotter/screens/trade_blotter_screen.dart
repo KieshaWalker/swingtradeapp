@@ -17,10 +17,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/schwab/schwab_models.dart';
 import '../../../services/schwab/schwab_providers.dart';
 import '../models/blotter_models.dart';
 import '../services/fair_value_engine.dart';
+import 'validated_blotters_screen.dart';
 
 // ── Recent trades provider ────────────────────────────────────────────────────
 
@@ -34,6 +36,9 @@ final _recentBlotterProvider = FutureProvider.autoDispose<List<BlotterTrade>>((
       .limit(10);
   return rows.map((r) => BlotterTrade.fromJson(r)).toList();
 });
+
+// ── Committed blotters provider ──────────────────────────────────────────────
+// Uses the shared committed blotters provider defined in validated_blotters_screen.dart.
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +60,7 @@ class _TradeBlotterScreenState extends ConsumerState<TradeBlotterScreen> {
   ContractType _contractType = ContractType.call;
   StrategyTag _strategyTag = StrategyTag.deltaNeutral;
   DateTime? _expiration;
+  double? _spot;
 
   // ── Lifecycle state ───────────────────────────────────────────────────────
   TradeStatus _status = TradeStatus.draft;
@@ -169,6 +175,7 @@ class _TradeBlotterScreenState extends ConsumerState<TradeBlotterScreen> {
       );
 
       setState(() {
+        _spot = chain.underlyingPrice;
         _contract = match;
         _fairValue = fv;
         _whatIf = wi;
@@ -214,7 +221,8 @@ class _TradeBlotterScreenState extends ConsumerState<TradeBlotterScreen> {
         gamma: c.gamma,
         theta: c.theta,
         vega: c.vega,
-        underlyingPrice: c.strikePrice, // spot comes from chain
+        rho: c.rho,
+        underlyingPrice: _spot ?? c.strikePrice,
       );
 
       final payload = trade.toJson()
@@ -228,8 +236,13 @@ class _TradeBlotterScreenState extends ConsumerState<TradeBlotterScreen> {
           .select('id')
           .single();
 
+      final committedId = result['id']?.toString();
+      if (committedId == null || committedId.isEmpty) {
+        throw Exception('DB write succeeded but returned no record id.');
+      }
+
       setState(() {
-        _committedId = result['id'] as String?;
+        _committedId = committedId;
         _status = TradeStatus.committed;
       });
 
@@ -265,6 +278,18 @@ class _TradeBlotterScreenState extends ConsumerState<TradeBlotterScreen> {
     if (_committedId == null) return;
     setState(() => _isTransmitting = true);
     try {
+      if (_committedId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cannot transmit: missing committed trade ID.'),
+              backgroundColor: AppTheme.lossColor,
+            ),
+          );
+        }
+        return;
+      }
+
       await Supabase.instance.client
           .from('blotter_trades')
           .update({
@@ -327,254 +352,286 @@ class _TradeBlotterScreenState extends ConsumerState<TradeBlotterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F14), // near-black terminal bg
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0F0F14),
-        elevation: 0,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.profitColor.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: AppTheme.profitColor.withValues(alpha: 0.4),
-                ),
-              ),
-              child: const Text(
-                'BLOTTER',
-                style: TextStyle(
-                  color: AppTheme.profitColor,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Text(
-              'Trade Builder',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: _LifecycleStepper(status: _status),
-        ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 100),
-              children: [
-                // ── Trade Builder ───────────────────────────────────────────
-                _SectionCard(
-                  label: 'TRADE BUILDER',
-                  accent: const Color(0xFF60A5FA),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Symbol + Type row
-                        Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: _TerminalField(
-                                label: 'SYMBOL',
-                                controller: _symbolCtrl,
-                                hint: 'SPY',
-                                caps: true,
-                                validator: (v) =>
-                                    (v?.isEmpty ?? true) ? 'Required' : null,
-                                onChanged: (_) {
-                                  if (_status != TradeStatus.draft) {
-                                    setState(() {
-                                      _status = TradeStatus.draft;
-                                      _contract = null;
-                                      _fairValue = null;
-                                      _whatIf = null;
-                                    });
-                                  }
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              flex: 2,
-                              child: _TypeToggle(
-                                value: _contractType,
-                                onChanged: (t) => setState(() {
-                                  _contractType = t;
-                                  _status = TradeStatus.draft;
-                                  _contract = null;
-                                  _fairValue = null;
-                                  _whatIf = null;
-                                }),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        // Strike + Qty row
-                        Row(
-                          children: [
-                            Expanded(
-                              flex: 3,
-                              child: _TerminalField(
-                                label: 'STRIKE',
-                                controller: _strikeCtrl,
-                                hint: '580.00',
-                                numeric: true,
-                                validator: (v) {
-                                  if (v?.isEmpty ?? true) return 'Required';
-                                  if (double.tryParse(v!) == null)
-                                    return 'Invalid';
-                                  return null;
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              flex: 2,
-                              child: _TerminalField(
-                                label: 'QTY',
-                                controller: _qtyCtrl,
-                                hint: '1',
-                                numeric: true,
-                                validator: (v) {
-                                  if (v?.isEmpty ?? true) return 'Required';
-                                  if (int.tryParse(v!) == null)
-                                    return 'Integer';
-                                  return null;
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        // Expiration date picker
-                        _DatePickerField(
-                          value: _expiration,
-                          onPicked: (d) => setState(() {
-                            _expiration = d;
-                            _status = TradeStatus.draft;
-                            _contract = null;
-                            _fairValue = null;
-                            _whatIf = null;
-                          }),
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        // Strategy tag
-                        _StrategyDropdown(
-                          value: _strategyTag,
-                          onChanged: (t) => setState(() => _strategyTag = t),
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        // Notes
-                        _TerminalField(
-                          label: 'NOTES (OPTIONAL)',
-                          controller: _notesCtrl,
-                          hint: 'Rationale, risk parameters…',
-                          maxLines: 2,
-                        ),
-
-                        if (_validateError != null) ...[
-                          const SizedBox(height: 10),
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: AppTheme.lossColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: AppTheme.lossColor.withValues(
-                                  alpha: 0.4,
-                                ),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.error_outline,
-                                  color: AppTheme.lossColor,
-                                  size: 15,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _validateError!,
-                                    style: const TextStyle(
-                                      color: AppTheme.lossColor,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0F0F14), // near-black terminal bg
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0F0F14),
+          elevation: 0,
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.profitColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: AppTheme.profitColor.withValues(alpha: 0.4),
                   ),
                 ),
-
-                const SizedBox(height: 10),
-
-                // ── Model vs Market ─────────────────────────────────────────
-                if (_fairValue != null && _contract != null) ...[
-                  _ModelVsMarketCard(fv: _fairValue!, contract: _contract!),
-                  const SizedBox(height: 10),
-                ],
-
-                // ── What-If Matrix ──────────────────────────────────────────
-                if (_whatIf != null) ...[
-                  _WhatIfMatrixCard(portfolio: _portfolio, whatIf: _whatIf!),
-                  const SizedBox(height: 10),
-                ],
-
-                // ── Recent blotter ──────────────────────────────────────────
-                _RecentBlotterCard(ref: ref),
-              ],
-            ),
+                child: const Text(
+                  'BLOTTER',
+                  style: TextStyle(
+                    color: AppTheme.profitColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ),
+            ],
           ),
-
-          // ── Sticky action bar ─────────────────────────────────────────────
-          _ActionBar(
-            status: _status,
-            isValidating: _isValidating,
-            isCommitting: _isCommitting,
-            isTransmitting: _isTransmitting,
-            whatIf: _whatIf,
-            onValidate: _validate,
-            onCommit: _commitToDb,
-            onTransmit: _transmit,
+          actions: const [AppMenuButton()],
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Builder'),
+              Tab(text: 'Committed'),
+            ],
           ),
-        ],
+        ),
+        body: TabBarView(children: [_buildBuilderTab(), _buildValidatedTab()]),
       ),
     );
   }
-}
 
-// ══════════════════════════════════════════════════════════════════════════════
-// Sub-widgets
-// ══════════════════════════════════════════════════════════════════════════════
+  Widget _buildBuilderTab() {
+    return Column(
+      children: [
+        _LifecycleStepper(status: _status),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 100),
+            children: [
+              // ── Trade Builder ───────────────────────────────────────────
+              _SectionCard(
+                label: 'TRADE BUILDER',
+                accent: const Color(0xFF60A5FA),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Symbol + Type row
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _TerminalField(
+                              label: 'SYMBOL',
+                              controller: _symbolCtrl,
+                              hint: 'e.g. AAPL',
+                              caps: true,
+                              validator: (v) =>
+                                  v?.isEmpty ?? true ? 'Required' : null,
+                              onChanged: (_) {
+                                if (_status != TradeStatus.draft) {
+                                  setState(() {
+                                    _status = TradeStatus.draft;
+                                    _contract = null;
+                                    _fairValue = null;
+                                    _whatIf = null;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 130,
+                            child: _TypeToggle(
+                              value: _contractType,
+                              onChanged: (t) => setState(() {
+                                _contractType = t;
+                                _status = TradeStatus.draft;
+                                _contract = null;
+                                _fairValue = null;
+                                _whatIf = null;
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Strike + Expiry row
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _TerminalField(
+                              label: 'STRIKE',
+                              controller: _strikeCtrl,
+                              hint: 'e.g. 150.00',
+                              numeric: true,
+                              validator: (v) {
+                                if (v?.isEmpty ?? true) return 'Required';
+                                if (double.tryParse(v!) == null) {
+                                  return 'Invalid number';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _DatePickerField(
+                              value: _expiration,
+                              onPicked: (d) => setState(() {
+                                _expiration = d;
+                                _status = TradeStatus.draft;
+                                _contract = null;
+                                _fairValue = null;
+                                _whatIf = null;
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Quantity + Strategy row
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _TerminalField(
+                              label: 'QUANTITY',
+                              controller: _qtyCtrl,
+                              hint: 'e.g. 1',
+                              numeric: true,
+                              validator: (v) {
+                                if (v?.isEmpty ?? true) return 'Required';
+                                if (int.tryParse(v!) == null) {
+                                  return 'Invalid integer';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _StrategyDropdown(
+                              value: _strategyTag,
+                              onChanged: (t) =>
+                                  setState(() => _strategyTag = t),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Notes
+                      _TerminalField(
+                        label: 'NOTES (OPTIONAL)',
+                        controller: _notesCtrl,
+                        hint: 'Rationale, risk parameters…',
+                        maxLines: 2,
+                      ),
+
+                      if (_validateError != null) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppTheme.lossColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: AppTheme.lossColor.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                color: AppTheme.lossColor,
+                                size: 15,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _validateError!,
+                                  style: const TextStyle(
+                                    color: AppTheme.lossColor,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              // ── Model vs Market ─────────────────────────────────────────
+              if (_fairValue != null && _contract != null) ...[
+                _ModelVsMarketCard(fv: _fairValue!, contract: _contract!),
+                const SizedBox(height: 10),
+              ],
+
+              // ── What-If Matrix ──────────────────────────────────────────
+              if (_whatIf != null) ...[
+                _WhatIfMatrixCard(portfolio: _portfolio, whatIf: _whatIf!),
+                const SizedBox(height: 10),
+              ],
+
+              // ── Recent blotter ──────────────────────────────────────────
+              _RecentBlotterCard(ref: ref),
+            ],
+          ),
+        ),
+        _ActionBar(
+          status: _status,
+          isValidating: _isValidating,
+          isCommitting: _isCommitting,
+          isTransmitting: _isTransmitting,
+          whatIf: _whatIf,
+          onValidate: _validate,
+          onCommit: _commitToDb,
+          onTransmit: _transmit,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildValidatedTab() {
+    final asyncBlotters = ref.watch(committedBlottersProvider);
+
+    return asyncBlotters.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, _) => Center(
+        child: Text(
+          'Error loading committed blotters: $err',
+          style: const TextStyle(color: AppTheme.lossColor),
+        ),
+      ),
+      data: (blotters) {
+        if (blotters.isEmpty) {
+          return const Center(
+            child: Text(
+              'No committed blotters yet.',
+              style: TextStyle(color: AppTheme.neutralColor),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: blotters.length,
+          itemBuilder: (context, index) {
+            final trade = blotters[index];
+            return CommittedBlotterCard(trade: trade);
+          },
+        );
+      },
+    );
+  }
+}
 
 // ── Lifecycle stepper ─────────────────────────────────────────────────────────
 
@@ -908,7 +965,7 @@ class _DatePickerField extends StatelessWidget {
                   surface: Color(0xFF16161F),
                 ),
               ),
-              child: child!,
+              child: child ?? const SizedBox.shrink(),
             ),
           );
           if (d != null) onPicked(d);
@@ -1028,25 +1085,37 @@ class _ModelVsMarketCard extends StatelessWidget {
           // Price comparison grid
           Row(
             children: [
-              _PriceCell(
-                label: 'BROKER MID',
-                value: '\$${fv.brokerMid.toStringAsFixed(3)}',
-                sub: 'Live (bid+ask)/2',
-                color: Colors.white,
+              Expanded(
+                child: _PriceCell(
+                  label: 'BROKER MID',
+                  value: '\$${fv.brokerMid.toStringAsFixed(3)}',
+                  sub: 'Live (bid+ask)/2',
+                  color: Colors.white,
+                  tooltip:
+                      'The midpoint between the broker\'s bid and ask prices, representing the current market price for the option.',
+                ),
               ),
               const SizedBox(width: 8),
-              _PriceCell(
-                label: 'BS BASELINE',
-                value: '\$${fv.bsFairValue.toStringAsFixed(3)}',
-                sub: 'Black-Scholes',
-                color: const Color(0xFF94A3B8),
+              Expanded(
+                child: _PriceCell(
+                  label: 'BS BASELINE',
+                  value: '\$${fv.bsFairValue.toStringAsFixed(3)}',
+                  sub: 'Black-Scholes',
+                  color: const Color(0xFF94A3B8),
+                  tooltip:
+                      'Fair value calculated using the classic Black-Scholes model, which assumes constant volatility and lognormal stock prices.',
+                ),
               ),
               const SizedBox(width: 8),
-              _PriceCell(
-                label: 'SABR IV',
-                value: '${(fv.sabrVol * 100).toStringAsFixed(2)}%',
-                sub: 'vs mkt ${(fv.impliedVol * 100).toStringAsFixed(2)}%',
-                color: const Color(0xFF60A5FA),
+              Expanded(
+                child: _PriceCell(
+                  label: 'SABR IV',
+                  value: '${(fv.sabrVol * 100).toStringAsFixed(2)}%',
+                  sub: 'vs mkt ${(fv.impliedVol * 100).toStringAsFixed(2)}%',
+                  color: const Color(0xFF60A5FA),
+                  tooltip:
+                      'Implied volatility calibrated using the SABR (Stochastic Alpha Beta Rho) model, which better fits the volatility smile in options markets.',
+                ),
               ),
             ],
           ),
@@ -1067,14 +1136,28 @@ class _ModelVsMarketCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'HESTON/SABR FAIR VALUE',
-                        style: TextStyle(
-                          color: Color(0xFF6B7280),
-                          fontSize: 9,
-                          letterSpacing: 1.0,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      Row(
+                        children: [
+                          const Text(
+                            'HESTON/SABR FAIR VALUE',
+                            style: TextStyle(
+                              color: Color(0xFF6B7280),
+                              fontSize: 9,
+                              letterSpacing: 1.0,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Tooltip(
+                            message:
+                                'Advanced fair value combining Heston stochastic volatility model with SABR calibration for more accurate pricing of options with complex volatility dynamics.',
+                            child: const Icon(
+                              Icons.info_outline,
+                              size: 10,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -1140,14 +1223,24 @@ class _ModelVsMarketCard extends StatelessWidget {
           // Greeks summary row
           Row(
             children: [
-              _GreekCell('Δ', contract.delta.toStringAsFixed(3)),
-              _GreekCell('Γ', contract.gamma.toStringAsFixed(5)),
-              _GreekCell('Θ', contract.theta.toStringAsFixed(3)),
-              _GreekCell('ν', contract.vega.toStringAsFixed(4)),
-              _GreekCell('ρ', contract.rho.toStringAsFixed(4)),
-              _GreekCell(
-                'IV',
-                '${contract.impliedVolatility.toStringAsFixed(1)}%',
+              Expanded(
+                child: _GreekCell('Δ', contract.delta.toStringAsFixed(3)),
+              ),
+              Expanded(
+                child: _GreekCell('Γ', contract.gamma.toStringAsFixed(5)),
+              ),
+              Expanded(
+                child: _GreekCell('Θ', contract.theta.toStringAsFixed(3)),
+              ),
+              Expanded(
+                child: _GreekCell('ν', contract.vega.toStringAsFixed(4)),
+              ),
+              Expanded(child: _GreekCell('ρ', contract.rho.toStringAsFixed(4))),
+              Expanded(
+                child: _GreekCell(
+                  'IV',
+                  '${contract.impliedVolatility.toStringAsFixed(1)}%',
+                ),
               ),
             ],
           ),
@@ -1160,16 +1253,18 @@ class _ModelVsMarketCard extends StatelessWidget {
 class _PriceCell extends StatelessWidget {
   final String label, value, sub;
   final Color color;
+  final String? tooltip;
   const _PriceCell({
     required this.label,
     required this.value,
     required this.sub,
     required this.color,
+    this.tooltip,
   });
 
   @override
-  Widget build(BuildContext context) => Expanded(
-    child: Container(
+  Widget build(BuildContext context) {
+    final cell = Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: const Color(0xFF0F0F14),
@@ -1181,14 +1276,29 @@ class _PriceCell extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF6B7280),
-              fontSize: 8,
-              letterSpacing: 0.8,
-              fontWeight: FontWeight.w700,
-            ),
+          Row(
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF6B7280),
+                  fontSize: 8,
+                  letterSpacing: 0.8,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (tooltip != null) ...[
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: tooltip,
+                  child: const Icon(
+                    Icons.info_outline,
+                    size: 10,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 4),
           Text(
@@ -1206,8 +1316,9 @@ class _PriceCell extends StatelessWidget {
           ),
         ],
       ),
-    ),
-  );
+    );
+    return tooltip != null ? Tooltip(message: tooltip, child: cell) : cell;
+  }
 }
 
 class _GreekCell extends StatelessWidget {
@@ -1215,28 +1326,26 @@ class _GreekCell extends StatelessWidget {
   const _GreekCell(this.symbol, this.value);
 
   @override
-  Widget build(BuildContext context) => Expanded(
-    child: Column(
-      children: [
-        Text(
-          symbol,
-          style: const TextStyle(
-            color: Color(0xFF6B7280),
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-          ),
+  Widget build(BuildContext context) => Column(
+    children: [
+      Text(
+        symbol,
+        style: const TextStyle(
+          color: Color(0xFF6B7280),
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
         ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontFamily: 'monospace',
-          ),
+      ),
+      const SizedBox(height: 2),
+      Text(
+        value,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontFamily: 'monospace',
         ),
-      ],
-    ),
+      ),
+    ],
   );
 }
 

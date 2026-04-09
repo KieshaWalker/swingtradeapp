@@ -36,38 +36,39 @@ class FairValueEngine {
 
   // SABR calibration
   static const double _sabrBeta = 0.5;
-  static const double _sabrRho  = -0.7;
-  static const double _sabrNu   = 0.40;
+  static const double _sabrRho = -0.7;
+  static const double _sabrNu = 0.40;
 
   // Heston calibration
   static const double _hestonKappa = 2.0;
-  static const double _hestonXi    = 0.50;
-  static const double _hestonRho   = -0.70;
+  static const double _hestonXi = 0.50;
+  static const double _hestonRho = -0.70;
 
   // Portfolio risk limits
-  static const double deltaThreshold = 500.0; // max |portfolio delta| in $-delta
-  static const double _es95Mult      = 2.063; // φ(1.645)/0.05
+  static const double deltaThreshold =
+      500.0; // max |portfolio delta| in $-delta
+  static const double _es95Mult = 2.063; // φ(1.645)/0.05
 
   // ── Public entry point ────────────────────────────────────────────────────
 
   static FairValueResult compute({
     required double spot,
     required double strike,
-    required double impliedVol,   // decimal (e.g. 0.21)
-    required int    daysToExpiry,
-    required bool   isCall,
+    required double impliedVol, // decimal (e.g. 0.21)
+    required int daysToExpiry,
+    required bool isCall,
     required double brokerMid,
     double r = _defaultR,
   }) {
     if (daysToExpiry <= 0 || impliedVol <= 0) {
       return FairValueResult(
-        bsFairValue:    brokerMid,
-        sabrFairValue:  brokerMid,
+        bsFairValue: brokerMid,
+        sabrFairValue: brokerMid,
         modelFairValue: brokerMid,
-        brokerMid:      brokerMid,
-        edgeBps:        0,
-        sabrVol:        impliedVol,
-        impliedVol:     impliedVol,
+        brokerMid: brokerMid,
+        edgeBps: 0,
+        sabrVol: impliedVol,
+        impliedVol: impliedVol,
       );
     }
 
@@ -78,30 +79,41 @@ class FairValueEngine {
     final bsPrice = _bsPrice(F, strike, T, r, impliedVol, isCall);
 
     // 2. SABR smile-adjusted vol and price
-    final alpha   = _sabrAlpha(impliedVol, spot, _sabrBeta);
-    final sabrVol = _sabrIv(F: F, K: strike, T: T,
-        alpha: alpha, beta: _sabrBeta, rho: _sabrRho, nu: _sabrNu);
+    final alpha = _sabrAlpha(impliedVol, F, _sabrBeta);
+    final sabrVol = _sabrIv(
+      F: F,
+      K: strike,
+      T: T,
+      alpha: alpha,
+      beta: _sabrBeta,
+      rho: _sabrRho,
+      nu: _sabrNu,
+    );
     final sabrVol_ = sabrVol.clamp(0.01, 5.0); // guard
     final sabrPrice = _bsPrice(F, strike, T, r, sabrVol_, isCall);
 
     // 3. Heston correction (first-order stochastic vol expansion)
-    final vanna  = _bsVanna(F, strike, T, sabrVol_, isCall);
-    final vomma  = _bsVomma(F, strike, T, r, sabrVol_, isCall);
+    final vanna = _bsVanna(F, strike, T, sabrVol_, isCall);
+    final vomma = _bsVomma(F, strike, T, r, sabrVol_, isCall);
+    final charm = _bsCharm(spot, strike, T, r, sabrVol_, isCall);
     final hestonDelta = _hestonCorrection(T, vanna, vomma);
-    final modelPrice  = (sabrPrice + hestonDelta).clamp(0.0, double.infinity);
+    final modelPrice = (sabrPrice + hestonDelta).clamp(0.0, double.infinity);
 
     final edgeBps = brokerMid > 0.001
         ? (modelPrice - brokerMid) / brokerMid * 10000
         : 0.0;
 
     return FairValueResult(
-      bsFairValue:    bsPrice,
-      sabrFairValue:  sabrPrice,
+      bsFairValue: bsPrice,
+      sabrFairValue: sabrPrice,
       modelFairValue: modelPrice,
-      brokerMid:      brokerMid,
-      edgeBps:        edgeBps,
-      sabrVol:        sabrVol_,
-      impliedVol:     impliedVol,
+      brokerMid: brokerMid,
+      edgeBps: edgeBps,
+      sabrVol: sabrVol_,
+      impliedVol: impliedVol,
+      vanna: vanna,
+      charm: charm,
+      volga: vomma,
     );
   }
 
@@ -109,43 +121,43 @@ class FairValueEngine {
 
   static WhatIfResult computeWhatIf({
     required PortfolioState current,
-    required double delta,    // per-contract delta from Schwab
+    required double delta, // per-contract delta from Schwab
     required double gamma,
     required double vega,
     required double spot,
-    required int    quantity,
+    required int quantity,
     required double impliedVol,
-    required int    daysToExpiry,
+    required int daysToExpiry,
   }) {
-    final T       = daysToExpiry / 365.0;
-    final sigma   = impliedVol; // already decimal
+    final T = daysToExpiry / 365.0;
+    final sigma = impliedVol; // already decimal
 
     // Position-level Greeks (contract size = 100 shares)
     final posDelta = delta * quantity * 100;
     final posGamma = gamma * quantity * 100;
-    final posVega  = vega  * quantity * 100;
+    final posVega = vega * quantity * 100;
 
     final es95Impact = _es95(
       delta: posDelta,
       gamma: posGamma,
-      spot:  spot,
+      spot: spot,
       sigma: sigma,
-      T:     T,
+      T: T,
     );
 
     final newDelta = current.totalDelta + posDelta;
-    final newVega  = current.totalVega  + posVega;
-    final newEs95  = current.totalEs95  + es95Impact;
+    final newVega = current.totalVega + posVega;
+    final newEs95 = current.totalEs95 + es95Impact;
 
     return WhatIfResult(
-      deltaImpact:             posDelta,
-      vegaImpact:              posVega,
-      es95Impact:              es95Impact,
-      newDelta:                newDelta,
-      newVega:                 newVega,
-      newEs95:                 newEs95,
-      exceedsDeltaThreshold:   newDelta.abs() > deltaThreshold,
-      deltaThreshold:          deltaThreshold,
+      deltaImpact: posDelta,
+      vegaImpact: posVega,
+      es95Impact: es95Impact,
+      newDelta: newDelta,
+      newVega: newVega,
+      newEs95: newEs95,
+      exceedsDeltaThreshold: newDelta.abs() > deltaThreshold,
+      deltaThreshold: deltaThreshold,
     );
   }
 
@@ -157,23 +169,23 @@ class FairValueEngine {
           .inFilter('status', ['committed', 'sent']);
 
       double totalDelta = 0;
-      double totalVega  = 0;
-      double latestEs   = 0;
+      double totalVega = 0;
+      double latestEs = 0;
 
       for (final r in rows) {
-        final qty   = (r['quantity'] as int? ?? 0);
-        final d     = (r['delta']  as num? ?? 0).toDouble();
-        final v     = (r['vega']   as num? ?? 0).toDouble();
+        final qty = (r['quantity'] as int? ?? 0);
+        final d = (r['delta'] as num? ?? 0).toDouble();
+        final v = (r['vega'] as num? ?? 0).toDouble();
         totalDelta += d * qty * 100;
-        totalVega  += v * qty * 100;
+        totalVega += v * qty * 100;
         final es = (r['es95_after'] as num? ?? 0).toDouble();
         if (es > latestEs) latestEs = es; // use highest snapshot
       }
 
       return PortfolioState(
-        totalDelta:    totalDelta,
-        totalVega:     totalVega,
-        totalEs95:     latestEs,
+        totalDelta: totalDelta,
+        totalVega: totalVega,
+        totalEs95: latestEs,
         openPositions: rows.length,
       );
     } catch (_) {
@@ -184,8 +196,14 @@ class FairValueEngine {
   // ── Black-Scholes ─────────────────────────────────────────────────────────
 
   static double _bsPrice(
-      double F, double K, double T, double r, double sigma, bool isCall) {
-    final sqrtT  = math.sqrt(T);
+    double F,
+    double K,
+    double T,
+    double r,
+    double sigma,
+    bool isCall,
+  ) {
+    final sqrtT = math.sqrt(T);
     final sigSqT = sigma * sqrtT;
     if (sigSqT < 1e-8) {
       final pv = isCall
@@ -203,8 +221,13 @@ class FairValueEngine {
 
   // BS Vanna: ∂²V/∂S∂σ — needed for Heston correction
   static double _bsVanna(
-      double F, double K, double T, double sigma, bool isCall) {
-    final sqrtT  = math.sqrt(T);
+    double F,
+    double K,
+    double T,
+    double sigma,
+    bool isCall,
+  ) {
+    final sqrtT = math.sqrt(T);
     final sigSqT = sigma * sqrtT;
     if (sigSqT < 1e-8 || T < 1e-8) return 0;
     final d1 = (math.log(F / K) + 0.5 * sigma * sigma * T) / sigSqT;
@@ -212,14 +235,40 @@ class FairValueEngine {
     return -_phi(d1) * d2 / sigma; // Vanna = -φ(d₁)·d₂/σ
   }
 
-  // BS Vomma (Volga): ∂²V/∂σ² — needed for Heston correction
-  static double _bsVomma(
-      double F, double K, double T, double r, double sigma, bool isCall) {
-    final sqrtT  = math.sqrt(T);
+  static double _bsCharm(
+    double S,
+    double K,
+    double T,
+    double r,
+    double sigma,
+    bool isCall,
+  ) {
+    final sqrtT = math.sqrt(T);
     final sigSqT = sigma * sqrtT;
     if (sigSqT < 1e-8 || T < 1e-8) return 0;
-    final d1   = (math.log(F / K) + 0.5 * sigma * sigma * T) / sigSqT;
-    final d2   = d1 - sigSqT;
+    final d1 = (math.log(S / K) + 0.5 * sigma * sigma * T) / sigSqT;
+    final d2 = d1 - sigSqT;
+    final df = math.exp(-r * T);
+    return -df *
+        _phi(d1) *
+        (2 * r * T - d2 * sigma * sqrtT) /
+        (2 * sigma * sqrtT);
+  }
+
+  // BS Vomma (Volga): ∂²V/∂σ² — needed for Heston correction
+  static double _bsVomma(
+    double F,
+    double K,
+    double T,
+    double r,
+    double sigma,
+    bool isCall,
+  ) {
+    final sqrtT = math.sqrt(T);
+    final sigSqT = sigma * sqrtT;
+    if (sigSqT < 1e-8 || T < 1e-8) return 0;
+    final d1 = (math.log(F / K) + 0.5 * sigma * sigma * T) / sigSqT;
+    final d2 = d1 - sigSqT;
     final vega = F * math.exp(-r * T) * _phi(d1) * sqrtT;
     return vega * d1 * d2 / sigma;
   }
@@ -249,26 +298,32 @@ class FairValueEngine {
     // ATM case
     if (absLog < 1e-6) {
       final fBeta = math.pow(F, 1 - beta).toDouble();
-      final t1    = math.pow(1 - beta, 2) / 24 * alpha * alpha /
+      final t1 =
+          math.pow(1 - beta, 2) /
+          24 *
+          alpha *
+          alpha /
           math.pow(F, 2 * (1 - beta));
-      final t2    = rho * beta * nu * alpha / (4 * fBeta);
-      final t3    = (2 - 3 * rho * rho) * nu * nu / 24;
+      final t2 = rho * beta * nu * alpha / (4 * fBeta);
+      final t3 = (2 - 3 * rho * rho) * nu * nu / 24;
       return (alpha / fBeta) * (1 + (t1 + t2 + t3) * T);
     }
 
-    final fkBeta  = math.pow(F * K, (1 - beta) / 2).toDouble();
-    final denom   = fkBeta *
+    final fkBeta = math.pow(F * K, (1 - beta) / 2).toDouble();
+    final denom =
+        fkBeta *
         (1 +
             math.pow(1 - beta, 2) / 24 * logFK * logFK +
             math.pow(1 - beta, 4) / 1920 * math.pow(logFK, 4));
 
-    final z     = nu / alpha * fkBeta * logFK;
-    final chiZ  = math.log(
-        (math.sqrt(1 - 2 * rho * z + z * z) + z - rho) / (1 - rho));
-    final zx    = chiZ.abs() < 1e-10 ? 1.0 : z / chiZ;
+    final z = nu / alpha * fkBeta * logFK;
+    final chiZ = math.log(
+      (math.sqrt(1 - 2 * rho * z + z * z) + z - rho) / (1 - rho),
+    );
+    final zx = chiZ.abs() < 1e-10 ? 1.0 : z / chiZ;
 
-    final t1 = math.pow(1 - beta, 2) / 24 * alpha * alpha /
-        math.pow(F * K, 1 - beta);
+    final t1 =
+        math.pow(1 - beta, 2) / 24 * alpha * alpha / math.pow(F * K, 1 - beta);
     final t2 = rho * beta * nu * alpha / (4 * fkBeta);
     final t3 = (2 - 3 * rho * rho) * nu * nu / 24;
 
@@ -283,7 +338,7 @@ class FairValueEngine {
   //             + (ξ²/2) × V_vomma × (1 − e^{−2κT}) / (2κ)
   //
   static double _hestonCorrection(double T, double vanna, double vomma) {
-    final k  = _hestonKappa;
+    final k = _hestonKappa;
     final xi = _hestonXi;
     final rh = _hestonRho;
 
@@ -318,19 +373,17 @@ class FairValueEngine {
 
   static double _erf(double x) {
     // Abramowitz & Stegun 7.1.26 — max error < 1.5e-7
-    const a1 =  0.254829592;
+    const a1 = 0.254829592;
     const a2 = -0.284496736;
-    const a3 =  1.421413741;
+    const a3 = 1.421413741;
     const a4 = -1.453152027;
-    const a5 =  1.061405429;
-    const p  =  0.3275911;
-    final s  = x >= 0 ? 1.0 : -1.0;
-    final t  = 1.0 / (1.0 + p * x.abs());
-    final y  = 1.0 -
-        (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) *
-            t *
-            math.exp(-x * x);
+    const a5 = 1.061405429;
+    const p = 0.3275911;
+    final s = x >= 0 ? 1.0 : -1.0;
+    final t = 1.0 / (1.0 + p * x.abs());
+    final y =
+        1.0 -
+        (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * math.exp(-x * x);
     return s * y;
   }
-
 }
