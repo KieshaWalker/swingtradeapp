@@ -1,15 +1,19 @@
 // =============================================================================
 // features/options/widgets/option_score_sheet.dart
-// Bottom sheet — score breakdown + greeks + "Log Trade" prefill
+// Bottom sheet — score breakdown + greeks + IV analytics + "Log Trade" prefill
 // =============================================================================
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
+import '../../../services/iv/iv_analytics_service.dart';
+import '../../../services/iv/iv_models.dart';
+import '../../../services/iv/iv_providers.dart';
 import '../../../services/schwab/schwab_models.dart';
 import '../services/option_scoring_engine.dart';
 
-class OptionScoreSheet extends StatelessWidget {
+class OptionScoreSheet extends ConsumerWidget {
   final SchwabOptionContract contract;
   final double underlyingPrice;
   final String symbol;
@@ -21,15 +25,17 @@ class OptionScoreSheet extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final score  = OptionScoringEngine.score(contract, underlyingPrice);
-    final isCall = contract.symbol.contains('C');
-    final color  = isCall ? AppTheme.profitColor : AppTheme.lossColor;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final score   = OptionScoringEngine.score(contract, underlyingPrice);
+    final isCall  = contract.symbol.contains('C');
+    final color   = isCall ? AppTheme.profitColor : AppTheme.lossColor;
+    final ivAsync = ref.watch(ivAnalysisProvider(symbol));
+    final greeks  = IvAnalyticsService.contractGreeks(contract, underlyingPrice);
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.85,
+      initialChildSize: 0.90,
       minChildSize:     0.5,
-      maxChildSize:     0.95,
+      maxChildSize:     0.97,
       expand:           false,
       builder: (_, ctrl) => Container(
         decoration: BoxDecoration(
@@ -52,29 +58,38 @@ class OptionScoreSheet extends StatelessWidget {
               ),
             ),
 
-            // Header
+            // Header — contract identity
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '\$${contract.strikePrice.toStringAsFixed(0)} '
-                        '${isCall ? 'CALL' : 'PUT'}',
+                        '$symbol  \$${contract.strikePrice.toStringAsFixed(0)}  ${isCall ? 'CALL' : 'PUT'}',
                         style: TextStyle(
                           color:      color,
                           fontSize:   22,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      Text(
-                        '${contract.daysToExpiration}d to exp  ·  '
-                        '${contract.expirationDate}',
-                        style: const TextStyle(
-                          color:    AppTheme.neutralColor,
-                          fontSize: 12,
-                        ),
+                      const SizedBox(height: 4),
+                      // Contract identity chips
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _tag('EXP ${contract.expirationDate}', AppTheme.neutralColor),
+                          _tag('${contract.daysToExpiration}d DTE',
+                              contract.daysToExpiration <= 7
+                                  ? AppTheme.lossColor
+                                  : AppTheme.neutralColor),
+                          _tag('IV ${contract.impliedVolatility.toStringAsFixed(1)}%',
+                              AppTheme.neutralColor),
+                          _tag(contract.inTheMoney ? 'ITM' : 'OTM',
+                              contract.inTheMoney ? color : AppTheme.neutralColor),
+                        ],
                       ),
                     ],
                   ),
@@ -85,7 +100,7 @@ class OptionScoreSheet extends StatelessWidget {
 
             const SizedBox(height: 20),
 
-            // Score bar chart
+            // ── Score breakdown ──────────────────────────────────────────
             _sectionLabel('Score Breakdown'),
             const SizedBox(height: 8),
             _ScoreBarChart(score: score),
@@ -114,23 +129,45 @@ class OptionScoreSheet extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            // Pricing
+            // ── IV Environment ───────────────────────────────────────────
+            _sectionLabel('IV Environment'),
+            const SizedBox(height: 8),
+            ivAsync.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+              error: (_, _) => const SizedBox.shrink(),
+              data:  (iv)   => _IvEnvironmentSection(
+                iv:      iv,
+                contract: contract,
+                greeks:  greeks,
+                isCall:  isCall,
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // ── Pricing ──────────────────────────────────────────────────
             _sectionLabel('Pricing'),
             const SizedBox(height: 8),
             _GridRow(items: [
-              _kv('Bid',  '\$${contract.bid.toStringAsFixed(2)}'),
-              _kv('Ask',  '\$${contract.ask.toStringAsFixed(2)}'),
-              _kv('Last', '\$${contract.last.toStringAsFixed(2)}'),
-              _kv('Mid',  '\$${contract.midpoint.toStringAsFixed(2)}'),
-              _kv('Spread',
-                  '${(contract.spreadPct * 100).toStringAsFixed(1)}%'),
-              _kv('IV',
-                  '${contract.impliedVolatility.toStringAsFixed(1)}%'),
+              _kv('Bid',    '\$${contract.bid.toStringAsFixed(2)}'),
+              _kv('Ask',    '\$${contract.ask.toStringAsFixed(2)}'),
+              _kv('Last',   '\$${contract.last.toStringAsFixed(2)}'),
+              _kv('Mid',    '\$${contract.midpoint.toStringAsFixed(2)}'),
+              _kv('Spread', '${(contract.spreadPct * 100).toStringAsFixed(1)}%'),
+              _kv('IV',     '${contract.impliedVolatility.toStringAsFixed(1)}%'),
             ]),
 
             const SizedBox(height: 16),
 
-            // Greeks
+            // ── Greeks ───────────────────────────────────────────────────
             _sectionLabel('Greeks'),
             const SizedBox(height: 8),
             _GridRow(items: [
@@ -144,14 +181,14 @@ class OptionScoreSheet extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            // Volume / value
+            // ── Market ───────────────────────────────────────────────────
             _sectionLabel('Market'),
             const SizedBox(height: 8),
             _GridRow(items: [
-              _kv('Volume',  _fmtInt(contract.totalVolume)),
-              _kv('OI',      _fmtInt(contract.openInterest)),
-              _kv('DTE',     '${contract.daysToExpiration}d'),
-              _kv('ITM',     contract.inTheMoney ? 'Yes' : 'No'),
+              _kv('Volume',   _fmtInt(contract.totalVolume)),
+              _kv('OI',       _fmtInt(contract.openInterest)),
+              _kv('DTE',      '${contract.daysToExpiration}d'),
+              _kv('ITM',      contract.inTheMoney ? 'Yes' : 'No'),
               _kv('Intrinsic',
                   '\$${_intrinsic(contract, underlyingPrice, isCall).toStringAsFixed(2)}'),
               _kv('Time Val', '\$${contract.timeValue.toStringAsFixed(2)}'),
@@ -169,13 +206,13 @@ class OptionScoreSheet extends StatelessWidget {
                   Navigator.pop(context);
                   context.push('/trades/add', extra: {
                     'prefill': {
-                      'ticker':      symbol,
-                      'optionType':  isCall ? 'call' : 'put',
-                      'strike':      contract.strikePrice,
-                      'expiration':  contract.expirationDate,
-                      'entryPrice':  contract.ask,
-                      'delta':       contract.delta.abs(),
-                      'impliedVol':  contract.impliedVolatility,
+                      'ticker':     symbol,
+                      'optionType': isCall ? 'call' : 'put',
+                      'strike':     contract.strikePrice,
+                      'expiration': contract.expirationDate,
+                      'entryPrice': contract.ask,
+                      'delta':      contract.delta.abs(),
+                      'impliedVol': contract.impliedVolatility,
                     },
                   });
                 },
@@ -197,6 +234,17 @@ class OptionScoreSheet extends StatelessWidget {
         ),
       );
 
+  static Widget _tag(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color:        color.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(5),
+      border:       Border.all(color: color.withValues(alpha: 0.35)),
+    ),
+    child: Text(label,
+        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600)),
+  );
+
   static Map<String, String> _kv(String k, String v) => {'k': k, 'v': v};
 
   static double _intrinsic(
@@ -208,6 +256,316 @@ class OptionScoreSheet extends StatelessWidget {
 
   static String _fmtInt(int n) =>
       n >= 1000 ? '${(n / 1000).toStringAsFixed(1)}k' : '$n';
+}
+
+// ── IV Environment section ────────────────────────────────────────────────────
+
+class _IvEnvironmentSection extends StatelessWidget {
+  final IvAnalysis iv;
+  final SchwabOptionContract contract;
+  final ({double vanna, double charm, double volga}) greeks;
+  final bool isCall;
+
+  const _IvEnvironmentSection({
+    required this.iv,
+    required this.contract,
+    required this.greeks,
+    required this.isCall,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ivrColor = iv.ivRank == null
+        ? AppTheme.neutralColor
+        : iv.ivRank! >= 80
+            ? AppTheme.lossColor
+            : iv.ivRank! >= 50
+                ? const Color(0xFFFBBF24)
+                : iv.ivRank! >= 25
+                    ? const Color(0xFF60A5FA)
+                    : AppTheme.profitColor;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── IVR / IVP / Rating row ──────────────────────────────────────
+        Row(
+          children: [
+            Expanded(
+              child: _ivStat(
+                label: 'IV Rank',
+                value: iv.ivRank != null
+                    ? '${iv.ivRank!.toStringAsFixed(0)}%'
+                    : '—',
+                color: ivrColor,
+                sub:   iv.rating.label,
+              ),
+            ),
+            Expanded(
+              child: _ivStat(
+                label: 'IV Percentile',
+                value: iv.ivPercentile != null
+                    ? '${iv.ivPercentile!.toStringAsFixed(0)}%'
+                    : '—',
+                color: ivrColor,
+                sub:   iv.historyDays < 10
+                    ? '${iv.historyDays}/10d data'
+                    : '${iv.historyDays}d history',
+              ),
+            ),
+            Expanded(
+              child: _ivStat(
+                label: 'Skew',
+                value: iv.skew != null
+                    ? '${iv.skew! >= 0 ? '+' : ''}${iv.skew!.toStringAsFixed(1)}pp'
+                    : '—',
+                color: iv.skew != null && iv.skew! > 2
+                    ? AppTheme.lossColor
+                    : AppTheme.neutralColor,
+                sub: iv.skew != null && iv.skew! > 2
+                    ? 'Put fear premium'
+                    : iv.skew != null && iv.skew! < -1
+                        ? 'Call premium'
+                        : 'Neutral',
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 8),
+
+        // ── Gamma regime banner ─────────────────────────────────────────
+        Container(
+          width:   double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color:        (iv.gammaRegime == GammaRegime.positive
+                    ? AppTheme.profitColor
+                    : AppTheme.lossColor)
+                .withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: (iv.gammaRegime == GammaRegime.positive
+                      ? AppTheme.profitColor
+                      : AppTheme.lossColor)
+                  .withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                iv.gammaRegime == GammaRegime.positive
+                    ? Icons.compress_rounded
+                    : Icons.open_in_full_rounded,
+                size:  14,
+                color: iv.gammaRegime == GammaRegime.positive
+                    ? AppTheme.profitColor
+                    : AppTheme.lossColor,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  iv.gammaRegime.description,
+                  style: TextStyle(
+                    color:    iv.gammaRegime == GammaRegime.positive
+                        ? AppTheme.profitColor
+                        : AppTheme.lossColor,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
+        // ── IV recommendation ───────────────────────────────────────────
+        _ivRecommendation(iv, isCall),
+
+        const SizedBox(height: 12),
+
+        // ── This contract's second-order Greeks ─────────────────────────
+        Container(
+          padding:    const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color:        AppTheme.cardColor,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'THIS CONTRACT — 2nd ORDER GREEKS',
+                style: TextStyle(
+                  color:      AppTheme.neutralColor,
+                  fontSize:   10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  _greek2('Vanna', greeks.vanna, 3,
+                      'Δ sensitivity to IV change'),
+                  _greek2('Charm', greeks.charm, 4,
+                      'Δ decay per day'),
+                  _greek2('Volga', greeks.volga, 3,
+                      'Vega sensitivity to IV'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _greekInterpretation(greeks, isCall),
+                style: const TextStyle(
+                    color: AppTheme.neutralColor, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _ivStat({
+    required String label,
+    required String value,
+    required Color  color,
+    required String sub,
+  }) =>
+      Container(
+        margin:  const EdgeInsets.only(right: 6),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color:        AppTheme.cardColor,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(value,
+                style: TextStyle(
+                    color: color, fontSize: 16, fontWeight: FontWeight.w800)),
+            Text(label,
+                style: const TextStyle(
+                    color: AppTheme.neutralColor, fontSize: 10)),
+            const SizedBox(height: 2),
+            Text(sub,
+                style: const TextStyle(
+                    color: AppTheme.neutralColor, fontSize: 9),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+          ],
+        ),
+      );
+
+  Widget _greek2(String label, double val, int dp, String sub) =>
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${val >= 0 ? '+' : ''}${val.toStringAsFixed(dp)}',
+              style: TextStyle(
+                color:      val.abs() < 1e-6
+                    ? AppTheme.neutralColor
+                    : val > 0
+                        ? AppTheme.profitColor
+                        : AppTheme.lossColor,
+                fontSize:   13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 11,
+                    fontWeight: FontWeight.w600)),
+            Text(sub,
+                style: const TextStyle(
+                    color: AppTheme.neutralColor, fontSize: 9)),
+          ],
+        ),
+      );
+
+  Widget _ivRecommendation(IvAnalysis iv, bool isCall) {
+    String text;
+    Color  color;
+
+    if (iv.ivRank == null) {
+      return const SizedBox.shrink();
+    }
+
+    final rank = iv.ivRank!;
+    if (rank >= 80) {
+      text  = isCall
+          ? 'IV is extreme — buying calls is expensive. Consider selling premium or using spreads.'
+          : 'IV is extreme — puts carry a heavy premium. Selling puts or using put spreads may offer better risk/reward.';
+      color = AppTheme.lossColor;
+    } else if (rank >= 50) {
+      text  = isCall
+          ? 'IV is elevated — call buyers pay above-average premium. Favor spreads over naked longs.'
+          : 'IV is elevated — put premium is above average. Good environment for put spreads or cash-secured puts.';
+      color = const Color(0xFFFBBF24);
+    } else if (rank >= 25) {
+      text  = 'IV is in a fair range — option pricing is reasonable. Standard directional plays apply.';
+      color = const Color(0xFF60A5FA);
+    } else {
+      text  = isCall
+          ? 'IV is cheap — calls are inexpensive relative to recent history. Good environment for long calls or debit spreads.'
+          : 'IV is cheap — puts are inexpensive. Consider long puts or debit put spreads for directional downside exposure.';
+      color = AppTheme.profitColor;
+    }
+
+    return Container(
+      padding:    const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color:        color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(8),
+        border:       Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.lightbulb_outline_rounded, color: color, size: 15),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text,
+                style: TextStyle(color: color, fontSize: 11)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _greekInterpretation(
+      ({double vanna, double charm, double volga}) g, bool isCall) {
+    final parts = <String>[];
+
+    // Vanna
+    if (g.vanna.abs() > 0.01) {
+      parts.add(g.vanna > 0
+          ? 'Positive Vanna: delta rises if IV rises — ${isCall ? 'call' : 'put'} gains if market moves and vol spikes together.'
+          : 'Negative Vanna: delta falls if IV rises — vol expansion works against your delta.');
+    }
+
+    // Charm
+    if (g.charm.abs() > 0.001) {
+      parts.add(g.charm < 0
+          ? 'Negative Charm: delta bleeds away each day — time decay erodes your directional exposure.'
+          : 'Positive Charm: delta grows each day — a favorable time-decay effect on positioning.');
+    }
+
+    // Volga
+    if (g.volga.abs() > 0.05) {
+      parts.add(g.volga > 0
+          ? 'Positive Volga: vega accelerates as IV moves — benefits from volatility-of-volatility.'
+          : 'Negative Volga: vega shrinks as IV moves — exposure decreases in high-vol regimes.');
+    }
+
+    if (parts.isEmpty) return 'Second-order effects are small for this contract.';
+    return parts.join(' ');
+  }
 }
 
 // ── Score badge ───────────────────────────────────────────────────────────────

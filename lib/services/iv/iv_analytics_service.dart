@@ -502,6 +502,28 @@ class IvAnalyticsService {
     return (vanna, charm, volga);
   }
 
+  // ── Public per-contract Greek helper ─────────────────────────────────────
+  // Called from OptionScoreSheet to show Vanna/Charm/Volga for a single
+  // contract without needing the full chain analysis.
+
+  static ({double vanna, double charm, double volga}) contractGreeks(
+    SchwabOptionContract contract,
+    double spot, {
+    double r = _defaultRiskFreeRate,
+  }) {
+    final g = _secondOrderGreeks(
+      spot,
+      contract.strikePrice,
+      contract.impliedVolatility / 100,
+      contract.daysToExpiration,
+      contract.gamma,
+      contract.vega,
+      r,
+      DateTime.tryParse(contract.expirationDate),
+    );
+    return (vanna: g.$1, charm: g.$2, volga: g.$3);
+  }
+
   // ── Rating helper ─────────────────────────────────────────────────────────
 
   static IvRating _ratingFromRank(double ivr) {

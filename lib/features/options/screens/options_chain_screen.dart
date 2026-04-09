@@ -72,14 +72,6 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
           loading: () => Text('${widget.symbol} Options'),
           error:   (_, _) => Text('${widget.symbol} Options'),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.analytics_outlined),
-            tooltip: 'IV Analytics',
-            onPressed: () =>
-                context.push('/ticker/${widget.symbol}/chains/iv'),
-          ),
-        ],
         bottom: TabBar(
           controller: _tabs,
           indicatorColor: AppTheme.profitColor,
