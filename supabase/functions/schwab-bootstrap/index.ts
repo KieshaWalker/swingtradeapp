@@ -76,8 +76,9 @@ Deno.serve(async (req) => {
       const tokens    = await resp.json()
       const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
-      // Upsert into schwab_tokens (delete old row first to keep it single-row)
-      await fetch(`${supabaseUrl}/rest/v1/schwab_tokens`, {
+      // Delete all existing rows (keep table single-row)
+      // PostgREST requires at least one filter — use a catch-all UUID comparison
+      await fetch(`${supabaseUrl}/rest/v1/schwab_tokens?id=neq.00000000-0000-0000-0000-000000000000`, {
         method:  'DELETE',
         headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${serviceKey}` },
       })

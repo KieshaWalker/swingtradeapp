@@ -73,7 +73,7 @@ async function _fetchTokenRow(
   serviceRoleKey: string,
 ): Promise<{ id: string; access_token: string; refresh_token: string; expires_at: string } | null> {
   const resp = await fetch(
-    `${supabaseUrl}/rest/v1/schwab_tokens?select=id,access_token,refresh_token,expires_at&limit=1`,
+    `${supabaseUrl}/rest/v1/schwab_tokens?select=id,access_token,refresh_token,expires_at&order=created_at.desc&limit=1`,
     { headers: _headers(serviceRoleKey) },
   )
   if (!resp.ok) return null

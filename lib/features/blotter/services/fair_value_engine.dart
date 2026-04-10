@@ -95,7 +95,7 @@ class FairValueEngine {
     // 3. Heston correction (first-order stochastic vol expansion)
     final vanna = _bsVanna(F, strike, T, sabrVol_, isCall);
     final vomma = _bsVomma(F, strike, T, r, sabrVol_, isCall);
-    final charm = _bsCharm(spot, strike, T, r, sabrVol_, isCall);
+    final charm = _bsCharm(F, strike, T, r, sabrVol_, isCall);
     final hestonDelta = _hestonCorrection(T, vanna, vomma);
     final modelPrice = (sabrPrice + hestonDelta).clamp(0.0, double.infinity);
 
@@ -235,8 +235,9 @@ class FairValueEngine {
     return -_phi(d1) * d2 / sigma; // Vanna = -φ(d₁)·d₂/σ
   }
 
+  // BS Charm: ∂Δ/∂T — uses forward price F for d1/d2, consistent with the rest of the model.
   static double _bsCharm(
-    double S,
+    double F, // forward price Se^{rT}
     double K,
     double T,
     double r,
@@ -246,7 +247,7 @@ class FairValueEngine {
     final sqrtT = math.sqrt(T);
     final sigSqT = sigma * sqrtT;
     if (sigSqT < 1e-8 || T < 1e-8) return 0;
-    final d1 = (math.log(S / K) + 0.5 * sigma * sigma * T) / sigSqT;
+    final d1 = (math.log(F / K) + 0.5 * sigma * sigma * T) / sigSqT;
     final d2 = d1 - sigSqT;
     final df = math.exp(-r * T);
     return -df *

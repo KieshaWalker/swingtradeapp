@@ -122,14 +122,19 @@ class TradesNotifier extends AsyncNotifier<void> {
   Future<void> closeTrade({
     required String tradeId,
     required double exitPrice,
+    double? impliedVolExit,
+    String? timeOfExit,
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await _client.from('trades').update({
+      final patch = <String, dynamic>{
         'exit_price': exitPrice,
         'status': 'closed',
         'closed_at': DateTime.now().toIso8601String(),
-      }).eq('id', tradeId);
+        if (impliedVolExit != null) 'implied_vol_exit': impliedVolExit,
+        if (timeOfExit != null) 'time_of_exit': timeOfExit,
+      };
+      await _client.from('trades').update(patch).eq('id', tradeId);
       ref.invalidate(tradesProvider);
     });
   }
