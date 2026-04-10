@@ -19,18 +19,24 @@ class KalshiService {
     String path, [
     Map<String, String>? params,
   ]) async {
-    final res = await _fn.invoke(
-      'get-kalshi-data',
-      body: {'path': path, 'params': params ?? {}},
-    );
-    if (res.status != 200) {
-      throw Exception('Kalshi $path ${res.status}');
+    try {
+      final body = {'path': path, 'params': params ?? <String, String>{}};
+
+      final res = await _fn.invoke('get-kalshi-data', body: body);
+
+      if (res.status != 200) {
+        throw Exception('Kalshi $path ${res.status}');
+      }
+
+      final data = res.data;
+      if (data is Map<String, dynamic> && data.containsKey('error')) {
+        throw Exception('Kalshi $path: ${data['error']}');
+      }
+      return data as Map<String, dynamic>;
+    } catch (e) {
+      print('Kalshi API Error: $e');
+      rethrow;
     }
-    final data = res.data;
-    if (data is Map<String, dynamic> && data.containsKey('error')) {
-      throw Exception('Kalshi $path: ${data['error']}');
-    }
-    return data as Map<String, dynamic>;
   }
 
   // ── Series ─────────────────────────────────────────────────────────────────
@@ -68,7 +74,8 @@ class KalshiService {
   Future<KalshiEvent> getEvent(String eventTicker) async {
     final body = await _get('/events/$eventTicker');
     final eventMap = Map<String, dynamic>.from(
-        body['event'] as Map<String, dynamic>);
+      body['event'] as Map<String, dynamic>,
+    );
     eventMap['markets'] = body['markets'] ?? [];
     return KalshiEvent.fromJson(eventMap);
   }
@@ -100,10 +107,8 @@ class KalshiService {
 
   // ── Trades ─────────────────────────────────────────────────────────────────
 
-  Future<List<KalshiTrade>> getTrades(String ticker,
-      {int limit = 100}) async {
-    final body =
-        await _get('/markets/$ticker/trades', {'limit': '$limit'});
+  Future<List<KalshiTrade>> getTrades(String ticker, {int limit = 100}) async {
+    final body = await _get('/markets/$ticker/trades', {'limit': '$limit'});
     final list = body['trades'] as List? ?? [];
     return list
         .map((e) => KalshiTrade.fromJson(e as Map<String, dynamic>))

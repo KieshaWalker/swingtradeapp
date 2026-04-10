@@ -1,6 +1,6 @@
 name: swing_options_trader
 description: "Swing Options Trader — track, journal, and analyze options swing trades."
-publish_to: 'none'
+publish_to: "none"
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -58,6 +58,9 @@ dependencies:
   # CSV import
   csv: ^6.0.0
 
+  # WebView — renders the Vol Surface tool natively on all platforms
+  webview_flutter: ^4.10.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -70,11 +73,13 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - web/vol-surface/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

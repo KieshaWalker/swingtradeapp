@@ -37,3 +37,5 @@ echo "→ Building for web (release)..."
 flutter build web --release $DART_DEFINES
 
 echo "✓ Build complete → build/web"
+# Vol Surface Tool (web/vol-surface/index.html) is copied automatically
+# by flutter build web as part of the web/ directory — no separate build step.

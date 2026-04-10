@@ -55,6 +55,7 @@ import '../features/summary/screens/summary_screen.dart';
 import '../features/iv/screens/iv_screen.dart';
 import '../features/blotter/screens/trade_blotter_screen.dart';
 import '../features/blotter/screens/validated_blotters_screen.dart';
+import '../features/vol_surface/screens/vol_surface_screen.dart';
 
 // Thin shell — just provides the route transition wrapper.
 // Navigation is handled by AppMenuButton in each screen's AppBar.
@@ -157,6 +158,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
+      GoRoute(
+        path: '/vol-surface',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: VolSurfaceScreen()),
+        ),
+      ),
+
       // Tickers — dashboard + full-screen profile (no shell)
       GoRoute(
         path: '/ticker',

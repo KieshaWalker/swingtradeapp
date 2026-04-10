@@ -19,10 +19,31 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { path, params = {} } = await req.json()
+    const body = await req.json()
+    const { path, params = {} } = body
+    
+    if (!path) {
+      return new Response(JSON.stringify({ error: 'Missing path parameter' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      })
+    }
+    
     const apiKey = Deno.env.get('KALSHI_ACCESS_KEY')
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: 'Missing KALSHI_ACCESS_KEY' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500,
+      })
+    }
 
-    const qs = new URLSearchParams(params).toString()
+    // Convert all param values to strings
+    const stringParams: Record<string, string> = {}
+    for (const [key, value] of Object.entries(params)) {
+      stringParams[key] = String(value)
+    }
+    
+    const qs = new URLSearchParams(stringParams).toString()
     const url = `${BASE}${path}${qs ? '?' + qs : ''}`
 
     const response = await fetch(url, {
@@ -46,6 +67,7 @@ Deno.serve(async (req) => {
       status: 200,
     })
   } catch (error) {
+    console.error('Error:', error)
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,

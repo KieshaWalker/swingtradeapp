@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vol Surface</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.0.min.js" charset="utf-8"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-base:    #0f0f14; --bg-panel:  #111827; --bg-card:   #1a1f2e;
+      --bg-input:   #0d1117; --border:    #1f2937; --border-lt: #374151;
+      --txt:        #d1d5db; --txt-hi:    #f9fafb; --txt-lo:    #6b7280; --txt-dim: #4b5563;
+      --blue:       #3b82f6; --red:       #ef4444;
+      --mono: 'JetBrains Mono','Fira Code',ui-monospace,monospace;
+    }
+    html,body { height:100%; background:var(--bg-base); color:var(--txt); font-family:var(--mono); font-size:13px; overflow:hidden; }
+    #app { display:flex; height:100vh; }
+
+    /* ── Sidebar ── */
+    #sidebar { width:280px; min-width:240px; background:var(--bg-panel); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow-y:auto; }
+    .sb-head { padding:14px 16px 12px; border-bottom:1px solid var(--border); font-size:13px; font-weight:700; letter-spacing:.05em; color:var(--txt-hi); text-transform:uppercase; }
+    .sb-sec { padding:12px 14px 10px; border-bottom:1px solid var(--border); }
+    .lbl { display:block; font-size:10px; font-weight:700; letter-spacing:.1em; color:var(--txt-lo); text-transform:uppercase; margin-bottom:5px; }
+    .mt8 { margin-top:8px; }
+    input[type=date],textarea,select {
+      width:100%; background:var(--bg-input); border:1px solid var(--border); border-radius:4px;
+      color:var(--txt); font-family:var(--mono); font-size:12px; padding:6px 8px; outline:none;
+    }
+    input[type=date]:focus,textarea:focus,select:focus { border-color:var(--blue); }
+    textarea { resize:vertical; min-height:110px; }
+    textarea::placeholder { color:var(--txt-dim); }
+    .btn-primary {
+      width:100%; margin-top:8px; background:var(--blue); border:none; border-radius:4px;
+      color:#fff; font-family:var(--mono); font-size:12px; font-weight:600; padding:7px 14px; cursor:pointer;
+    }
+    .btn-primary:hover { background:#2563eb; }
+    .msg { font-size:11px; padding:5px 8px; border-radius:4px; margin-top:6px; word-break:break-word; line-height:1.4; }
+    .msg-err  { background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.3); color:#fca5a5; }
+    .msg-info { background:rgba(59,130,246,.1);  border:1px solid rgba(59,130,246,.25); color:#93c5fd; }
+    .sec-title { font-size:10px; font-weight:700; letter-spacing:.1em; color:var(--txt-lo); text-transform:uppercase; margin-bottom:8px; }
+    #ds-list { list-style:none; display:flex; flex-direction:column; gap:4px; margin-top:4px; }
+    .ds-item { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 8px; border-radius:4px; border:1px solid transparent; cursor:pointer; }
+    .ds-item:hover { background:var(--bg-card); border-color:var(--border-lt); }
+    .ds-item.active { background:rgba(59,130,246,.1); border-color:rgba(59,130,246,.35); }
+    .ds-date { font-size:12px; font-weight:600; color:var(--txt-hi); }
+    .ds-meta { font-size:10px; color:var(--txt-lo); }
+    .del-btn { background:transparent; border:none; color:var(--txt-lo); cursor:pointer; font-size:13px; padding:2px 5px; border-radius:4px; }
+    .del-btn:hover { color:var(--red); background:rgba(239,68,68,.1); }
+    .empty { font-size:11px; color:var(--txt-dim); font-style:italic; padding:2px 0; }
+
+    /* ── Main panel ── */
+    #main { flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+    #controls { display:flex; align-items:center; flex-wrap:wrap; gap:14px; padding:9px 16px; background:var(--bg-panel); border-bottom:1px solid var(--border); min-height:50px; }
+    .cg { display:flex; align-items:center; gap:6px; }
+    .clbl { font-size:10px; font-weight:700; letter-spacing:.1em; color:var(--txt-lo); text-transform:uppercase; white-space:nowrap; }
+    .segmented { display:flex; border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+    .seg { background:transparent; border:none; color:var(--txt-lo); cursor:pointer; font-family:var(--mono); font-size:11px; font-weight:600; padding:5px 11px; }
+    .seg+.seg { border-left:1px solid var(--border); }
+    .seg:hover { background:var(--bg-card); color:var(--txt); }
+    .seg.on { background:var(--blue); color:#fff; }
+    #controls select { width:auto; min-width:130px; padding:5px 8px; font-size:11px; }
+    #stats { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:6px 14px 0; min-height:28px; }
+    .chip { display:inline-flex; align-items:center; gap:5px; border:1px solid; border-radius:20px; padding:2px 9px; font-size:11px; }
+    #plot { flex:1; min-height:0; background:var(--bg-base); }
+
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-thumb { background:var(--border-lt); border-radius:3px; }
+
+    /* ── Print button ── */
+    .btn-print {
+      background: transparent; border: 1px solid var(--border-lt); border-radius: 4px;
+      color: var(--txt-lo); cursor: pointer; font-family: var(--mono); font-size: 11px;
+      font-weight: 600; padding: 5px 11px; white-space: nowrap; margin-left: auto;
+    }
+    .btn-print:hover { border-color: var(--blue); color: var(--txt); }
+
+    /* ── Print styles ── */
+    @media print {
+      #sidebar, #controls, #stats { display: none !important; }
+      #app { display: block; }
+      #main { display: block; height: 100vh; }
+      #plot { height: 100vh; width: 100vw; }
+      html, body { overflow: visible; background: white; }
+      .plotly-graph-div { background: white !important; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div class="sb-head">Vol Surface</div>
+    <div class="sb-sec">
+      <div class="sec-title">Add Snapshot</div>
+      <label class="lbl" for="obs-date">Observation Date</label>
+      <input type="date" id="obs-date">
+      <label class="lbl mt8" for="csv-in">ThinkorSwim CSV</label>
+      <textarea id="csv-in" placeholder="Paste Stock and Option Quote export here…"></textarea>
+      <div id="parse-msg"></div>
+      <button class="btn-primary" id="parse-btn">Parse &amp; Save</button>
+    </div>
+    <div class="sb-sec">
+      <div class="sec-title">Datasets</div>
+      <ul id="ds-list"><li class="empty">No datasets yet</li></ul>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="controls">
+      <div class="cg">
+        <span class="clbl">Mode</span>
+        <div class="segmented">
+          <button class="seg on" data-mode="single">Single</button>
+          <button class="seg" data-mode="diff">Difference B−A</button>
+        </div>
+      </div>
+      <div class="cg" id="cg-single">
+        <span class="clbl">Date</span>
+        <select id="sel-single"></select>
+      </div>
+      <div class="cg" id="cg-diff" style="display:none">
+        <span class="clbl">A (base)</span>
+        <select id="sel-a"></select>
+        <span class="clbl">B (compare)</span>
+        <select id="sel-b"></select>
+      </div>
+      <div class="cg">
+        <span class="clbl">IV</span>
+        <select id="sel-iv" title="IV display mode">
+          <option value="otm">OTM Convention</option>
+          <option value="call">Call IV</option>
+          <option value="put">Put IV</option>
+          <option value="average">Average</option>
+        </select>
+      </div>
+      <button type="button" class="btn-print" id="print-btn">⎙ Print</button>
+    </div>
+    <div id="stats"></div>
+    <div id="plot"></div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let datasets = {};
+let mode = 'single', singleDate = null, dateA = null, dateB = null, ivMode = 'otm';
+let sb = null;
+
+// ── Auth & Supabase init ──────────────────────────────────────────────────────
+console.log('[vol] script start');
+console.log('[vol] __SUPA_CFG:', JSON.stringify(window.__SUPA_CFG ?? 'NOT SET'));
+console.log('[vol] window.supabase:', typeof window.supabase);
+console.log('[vol] window.Plotly:', typeof window.Plotly);
+
+const _cfg = window.__SUPA_CFG || {};
+const _hp  = new URLSearchParams(location.hash.slice(1));
+const SUPA_URL = _cfg.url || _hp.get('supabase_url') || '';
+const SUPA_KEY = _cfg.key || _hp.get('anon_key')     || '';
+const _at      = _cfg.at  || _hp.get('access_token') || '';
+const _rt      = _cfg.rt  || _hp.get('refresh_token')|| '';
+console.log('[vol] SUPA_URL:', SUPA_URL ? SUPA_URL.slice(0,40)+'…' : 'MISSING');
+console.log('[vol] has access_token:', !!_at, '| has refresh_token:', !!_rt);
+if (SUPA_URL && SUPA_KEY && window.supabase) {
+  sb = window.supabase.createClient(SUPA_URL, SUPA_KEY, {
+    auth: { detectSessionInUrl: false, persistSession: true, storageKey: 'vol_sb' }
+  });
+  console.log('[vol] supabase client created');
+  if (_at && _rt) {
+    sb.auth.setSession({ access_token: _at, refresh_token: _rt })
+      .then(r => r.error ? console.error('[vol] setSession error:', r.error) : console.log('[vol] session set OK'));
+  }
+} else {
+  console.warn('[vol] Supabase NOT initialised — url:', !!SUPA_URL, 'key:', !!SUPA_KEY, 'lib:', !!window.supabase);
+}
+if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+
+// ── Persistence ───────────────────────────────────────────────────────────────
+const LS = 'vol_surface_datasets_v1';
+function lsLoad() { try { return JSON.parse(localStorage.getItem(LS) || '{}'); } catch { return {}; } }
+function lsSave(d) { try { localStorage.setItem(LS, JSON.stringify(d)); } catch {} }
+
+async function dbLoad() {
+  console.log('[vol] dbLoad — sb:', !!sb);
+  if (!sb) { console.warn('[vol] No Supabase client — using localStorage only'); return lsLoad(); }
+  const { data, error } = await sb.from('vol_surface_snapshots')
+    .select('ticker,obs_date,spot_price,points,parsed_at').order('obs_date');
+  if (error) { console.error('[vol] dbLoad error:', error.message, error); return lsLoad(); }
+  console.log('[vol] dbLoad rows:', data.length);
+  const r = {};
+  for (const row of data)
+    r[row.obs_date] = { ticker: row.ticker, spotPrice: row.spot_price ? +row.spot_price : null, points: row.points, parsedAt: row.parsed_at };
+  lsSave(r); return r;
+}
+async function dbSave(date, ds) {
+  console.log('[vol] dbSave', date, ds.ticker, ds.points.length, 'rows');
+  const cur = lsLoad(); cur[date] = ds; lsSave(cur);
+  console.log('[vol] localStorage saved');
+  if (!sb) { console.warn('[vol] no sb client, localStorage only'); return; }
+  const payload = { ticker: ds.ticker, obs_date: date, spot_price: ds.spotPrice ?? null, points: ds.points, parsed_at: ds.parsedAt };
+  console.log('[vol] upserting to supabase:', JSON.stringify(payload).slice(0,200));
+  const { data, error } = await sb.from('vol_surface_snapshots').upsert(payload, { onConflict: 'user_id,obs_date' }).select();
+  if (error) console.error('[vol] dbSave error:', error.message, error);
+  else console.log('[vol] Supabase upsert OK:', data);
+}
+async function dbDelete(date) {
+  console.log('[vol] dbDelete', date);
+  const cur = lsLoad(); delete cur[date]; lsSave(cur);
+  if (!sb) return;
+  const { error } = await sb.from('vol_surface_snapshots').delete().eq('obs_date', date);
+  if (error) console.error('[vol] dbDelete error:', error.message);
+  else console.log('[vol] deleted', date, 'from Supabase');
+}
+
+// ── CSV Parser (ThinkorSwim "Stock and Option Quote" format) ──────────────────
+function parseCsv(text) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  function parseLine(line) {
+    const cols = []; let inQ = false, cur = '';
+    for (const c of line) {
+      if (c === '"') inQ = !inQ;
+      else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else cur += c;
+    }
+    cols.push(cur.trim()); return cols;
+  }
+  const toNum = s => { const n = parseFloat((s||'').replace(/[,%]/g,'')); return isNaN(n) ? null : n; };
+  const normIv = v => (v !== null && v > 1) ? v / 100 : v;
+  const SECT = /^\d{1,2}\s+[A-Z]{3}\s+\d{2,4}\s+\((\d+)\)/i;
+
+  let ticker = '', spotPrice = null, currentDte = null;
+  let inUnderlying = false, spotNext = false;
+  const points = [];
+
+  for (const raw of lines) {
+    const line = raw.trim(); if (!line) continue;
+    const tm = line.match(/Stock and Option Quote for\s+(\w+)/i);
+    if (tm) { ticker = tm[1]; continue; }
+    if (line.startsWith('Underlying')) { inUnderlying = true; continue; }
+    if (inUnderlying) {
+      if (spotNext) { spotPrice = toNum(parseLine(line)[0]); spotNext = false; inUnderlying = false; continue; }
+      if (line.startsWith('LAST,')) { spotNext = true; continue; }
+      continue;
+    }
+    const sm = line.match(SECT);
+    if (sm) { currentDte = parseInt(sm[1], 10); continue; }
+    if (currentDte === null) continue;
+    if (/^(CALLS|PUTS|Bid,|Delta,)/.test(line)) continue;
+    const cols = parseLine(line);
+    if (cols.length < 26) continue;
+    const strike = toNum(cols[14]);
+    if (strike === null) continue;
+    points.push({ strike, dte: currentDte, callIv: normIv(toNum(cols[8])), putIv: normIv(toNum(cols[25])) });
+  }
+  if (!points.length) throw new Error('No option rows found. Is this a ThinkorSwim "Stock and Option Quote" export?');
+  return { ticker: ticker || 'UNKNOWN', spotPrice, points };
+}
+
+// ── Surface math ──────────────────────────────────────────────────────────────
+function selectIv(p, spot, mode) {
+  if (mode === 'call') return p.callIv;
+  if (mode === 'put') return p.putIv;
+  if (mode === 'average') return (p.callIv!=null && p.putIv!=null) ? (p.callIv+p.putIv)/2 : p.callIv??p.putIv;
+  return (spot==null || p.strike >= spot) ? p.callIv : p.putIv;
+}
+function buildMatrix(points, spot, ivm) {
+  const xs = [...new Set(points.map(p=>p.strike))].sort((a,b)=>a-b);
+  const ys = [...new Set(points.map(p=>p.dte))].sort((a,b)=>a-b);
+  const z = ys.map(()=>xs.map(()=>null));
+  for (const p of points) {
+    const iv = selectIv(p, spot, ivm);
+    if (iv !== null) z[ys.indexOf(p.dte)][xs.indexOf(p.strike)] = iv;
+  }
+  return { x: xs, y: ys, z };
+}
+function buildDiff(a, b) {
+  const xs = a.x.filter(s => b.x.includes(s));
+  const ys = a.y.filter(d => b.y.includes(d));
+  const z = ys.map((d, yi) => {
+    const ai = a.y.indexOf(d), bi = b.y.indexOf(d);
+    return xs.map((s, xi) => {
+      const va = a.z[ai]?.[a.x.indexOf(s)], vb = b.z[bi]?.[b.x.indexOf(s)];
+      return (va!=null && vb!=null) ? vb-va : null;
+    });
+  });
+  return { x: xs, y: ys, z };
+}
+function stats(surf) {
+  const vals = surf.z.flat().filter(v=>v!=null);
+  if (!vals.length) return null;
+  return { min:Math.min(...vals), max:Math.max(...vals), mean:vals.reduce((a,b)=>a+b,0)/vals.length };
+}
+
+// ── Plot ──────────────────────────────────────────────────────────────────────
+function render() {
+  const plotEl = document.getElementById('plot');
+  const statsEl = document.getElementById('stats');
+  let surf, spotPrice = null, title = '', diff = mode === 'diff';
+
+  if (mode === 'single') {
+    if (!singleDate || !datasets[singleDate]) { Plotly.purge(plotEl); statsEl.innerHTML = ''; return; }
+    const ds = datasets[singleDate];
+    surf = buildMatrix(ds.points, ds.spotPrice, ivMode);
+    spotPrice = ds.spotPrice;
+    title = `${ds.ticker} · IV Surface · ${singleDate}`;
+  } else {
+    if (!dateA || !dateB || dateA === dateB || !datasets[dateA] || !datasets[dateB]) { Plotly.purge(plotEl); statsEl.innerHTML = ''; return; }
+    const a = datasets[dateA], b = datasets[dateB];
+    surf = buildDiff(buildMatrix(a.points, a.spotPrice, ivMode), buildMatrix(b.points, b.spotPrice, ivMode));
+    const tk = a.ticker === b.ticker ? a.ticker : `${a.ticker}/${b.ticker}`;
+    title = `${tk} · ΔIV · ${dateB} − ${dateA}`;
+  }
+
+  const st = stats(surf);
+  const pct = v => (v*100).toFixed(1)+'%';
+  statsEl.innerHTML = st ? [
+    ['Min IV', pct(st.min), '#60a5fa'],
+    ['Max IV', pct(st.max), '#f472b6'],
+    ['Mean IV', pct(st.mean), '#4ade80'],
+  ].map(([l,v,c]) => `<span class="chip" style="color:${c};border-color:${c}44"><span style="opacity:.65">${l}</span><strong>${v}</strong></span>`).join('')
+    + (diff ? `<span style="font-size:10px;color:var(--txt-lo);font-style:italic;margin-left:4px">Positive (red) = IV rose</span>` : '')
+  : '';
+
+  const traces = [{
+    type:'surface', x:surf.x, y:surf.y, z:surf.z,
+    colorscale: diff ? 'RdBu' : 'Viridis',
+    reversescale: diff, zmid: diff ? 0 : undefined, connectgaps: true,
+    showscale:true, colorbar:{ thickness:14, len:0.7, tickfont:{color:'#9ca3af',size:10} },
+    hovertemplate:'Strike: %{x}<br>DTE: %{y}<br>IV: %{z:.1%}<extra></extra>',
+  }];
+
+  if (!diff && spotPrice) {
+    const yv = [Math.min(...surf.y), Math.max(...surf.y)];
+    traces.push({ type:'surface', x:[spotPrice,spotPrice], y:yv, z:[[0,0],[1,1]],
+      colorscale:[[0,'rgba(251,191,36,0.15)'],[1,'rgba(251,191,36,0.15)']],
+      showscale:false, hoverinfo:'skip' });
+  }
+
+  Plotly.react(plotEl, traces, {
+    title: { text:title, font:{color:'#f9fafb',size:13,family:'monospace'} },
+    paper_bgcolor:'#0f0f14',
+    scene: {
+      xaxis:{ title:'Strike', color:'#6b7280', gridcolor:'#1f2937', zerolinecolor:'#374151' },
+      yaxis:{ title:'DTE',    color:'#6b7280', gridcolor:'#1f2937', zerolinecolor:'#374151' },
+      zaxis:{ title:'IV',     color:'#6b7280', gridcolor:'#1f2937', tickformat:'.0%' },
+      bgcolor:'#111827', camera:{ eye:{x:1.6,y:-1.6,z:0.8} },
+    },
+    margin:{l:0,r:0,t:40,b:0},
+    font:{color:'#d1d5db',family:'monospace',size:11},
+  }, { responsive:true, displayModeBar:false });
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+const dates = () => Object.keys(datasets).sort();
+
+function populateSelects() {
+  const ds = dates();
+  const opts = ds.map(d=>`<option value="${d}">${d}</option>`).join('') || '<option value="">— no data —</option>';
+  ['sel-single','sel-a','sel-b'].forEach(id => document.getElementById(id).innerHTML = opts);
+  if (singleDate) document.getElementById('sel-single').value = singleDate;
+  if (dateA) document.getElementById('sel-a').value = dateA;
+  if (dateB) document.getElementById('sel-b').value = dateB;
+}
+
+function renderList() {
+  const list = document.getElementById('ds-list');
+  const ds = dates();
+  if (!ds.length) { list.innerHTML = '<li class="empty">No datasets yet</li>'; return; }
+  list.innerHTML = ds.map(d => {
+    const s = datasets[d], act = mode==='single' && singleDate===d;
+    return `<li class="ds-item${act?' active':''}" data-date="${d}">
+      <div><div class="ds-date">${d}</div>
+      <div class="ds-meta">${s.ticker} · ${s.points.length} rows · ${s.spotPrice?'$'+s.spotPrice.toFixed(2):'no spot'}</div></div>
+      <button class="del-btn" data-del="${d}">✕</button></li>`;
+  }).join('');
+}
+
+function refresh() { populateSelects(); renderList(); render(); }
+
+// ── Events ────────────────────────────────────────────────────────────────────
+document.getElementById('parse-btn').addEventListener('click', async () => {
+  console.log('[vol] parse-btn clicked');
+  const date = document.getElementById('obs-date').value;
+  const csv  = document.getElementById('csv-in').value.trim();
+  const msg  = document.getElementById('parse-msg');
+  console.log('[vol] date:', date, '| csv length:', csv.length);
+  if (!date) { msg.innerHTML='<div class="msg msg-err">Select an observation date.</div>'; return; }
+  if (!csv)  { msg.innerHTML='<div class="msg msg-err">Paste CSV content.</div>'; return; }
+  try {
+    console.log('[vol] parsing CSV...');
+    const { ticker, spotPrice, points } = parseCsv(csv);
+    console.log('[vol] parsed:', ticker, spotPrice, points.length, 'rows');
+    const ds = { ticker, spotPrice, points, parsedAt: new Date().toISOString() };
+    datasets[date] = ds; singleDate = date;
+    msg.innerHTML = `<div class="msg msg-info">${ticker} · ${points.length} rows · ${spotPrice?'$'+spotPrice.toFixed(2):'no spot'}</div>`;
+    document.getElementById('csv-in').value = '';
+    await dbSave(date, ds); refresh();
+  } catch(e) {
+    console.error('[vol] parse error:', e);
+    msg.innerHTML=`<div class="msg msg-err">${e.message}</div>`;
+  }
+});
+
+document.getElementById('ds-list').addEventListener('click', async e => {
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    const d = del.dataset.del; delete datasets[d];
+    if (singleDate===d) singleDate = dates().at(-1) ?? null;
+    if (dateA===d) dateA = null; if (dateB===d) dateB = null;
+    await dbDelete(d); refresh(); return;
+  }
+  const item = e.target.closest('[data-date]');
+  if (item) { singleDate = item.dataset.date; if (mode!=='single'){mode='single';syncMode();} refresh(); }
+});
+
+document.querySelectorAll('.seg').forEach(btn => btn.addEventListener('click', () => {
+  mode = btn.dataset.mode; syncMode();
+  if (mode==='diff') { if (!dateA) dateA=dates()[0]??null; if (!dateB) dateB=dates().at(-1)??null; }
+  refresh();
+}));
+
+function syncMode() {
+  document.querySelectorAll('.seg').forEach(b => b.classList.toggle('on', b.dataset.mode===mode));
+  document.getElementById('cg-single').style.display = mode==='single' ? '' : 'none';
+  document.getElementById('cg-diff').style.display   = mode==='diff'   ? '' : 'none';
+}
+
+document.getElementById('sel-single').addEventListener('change', e => { singleDate=e.target.value; render(); renderList(); });
+document.getElementById('sel-a').addEventListener('change', e => { dateA=e.target.value; render(); });
+document.getElementById('sel-b').addEventListener('change', e => { dateB=e.target.value; render(); });
+document.getElementById('sel-iv').addEventListener('change', e => { ivMode=e.target.value; render(); });
+document.getElementById('print-btn').addEventListener('click', () => {
+  // Resize plot to fill the page before printing, then restore
+  const plotEl = document.getElementById('plot');
+  const origW = plotEl.style.width, origH = plotEl.style.height;
+  plotEl.style.width  = '100vw';
+  plotEl.style.height = '100vh';
+  if (window.Plotly) Plotly.relayout(plotEl, { width: window.innerWidth, height: window.innerHeight });
+  window.print();
+  // Restore after dialog closes
+  setTimeout(() => {
+    plotEl.style.width = origW;
+    plotEl.style.height = origH;
+    if (window.Plotly) Plotly.relayout(plotEl, { autosize: true });
+  }, 500);
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+(async () => {
+  console.log('[vol] boot start');
+  datasets = await dbLoad();
+  const ds = dates();
+  console.log('[vol] boot loaded', ds.length, 'datasets:', ds);
+  if (ds.length) { singleDate=ds.at(-1); if (ds.length>=2){dateA=ds[0];dateB=ds.at(-1);} }
+  refresh();
+  console.log('[vol] boot complete');
+})();
+</script>
+</body>
+</html>

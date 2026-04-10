@@ -57,3 +57,6 @@ notes.md
 notes/api_notes.md
 
 /notes/
+# Vol Surface Tool (React/Vite)
+vol_surface_tool/node_modules/
+vol_surface_tool/dist/
