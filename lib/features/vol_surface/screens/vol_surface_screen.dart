@@ -9,6 +9,7 @@ import '../providers/vol_surface_provider.dart';
 import '../services/vol_surface_parser.dart';
 import '../widgets/vol_heatmap.dart';
 import '../widgets/vol_smile_chart.dart';
+import '../widgets/vol_surface_guide.dart';
 
 // ── IV mode options ────────────────────────────────────────────────────────────
 const _ivModes = [
@@ -110,7 +111,14 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Vol Surface'),
-        actions: const [AppMenuButton()],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.help_outline_rounded, size: 20),
+            tooltip: 'How to read this',
+            onPressed: () => showVolSurfaceGuide(context, _tabs.index),
+          ),
+          const AppMenuButton(),
+        ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
@@ -369,21 +377,11 @@ class _Sidebar extends StatelessWidget {
                               color: Color(0xFF4b5563),
                               fontSize: 11,
                               fontStyle: FontStyle.italic)))
-                  : ListView.builder(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      itemCount: snaps.length,
-                      itemBuilder: (_, i) {
-                        final s = snaps[i];
-                        final active =
-                            activeSnap?.obsDateStr == s.obsDateStr;
-                        return _DatasetTile(
-                          snap: s,
-                          active: active,
-                          onTap: () => onSelectSnap(s),
-                          onDelete: () => onDeleteSnap(s),
-                        );
-                      },
+                  : _GroupedDatasetList(
+                      snaps: snaps,
+                      activeSnap: activeSnap,
+                      onSelectSnap: onSelectSnap,
+                      onDeleteSnap: onDeleteSnap,
                     ),
             ),
           ],
@@ -455,6 +453,67 @@ class _DatasetTile extends StatelessWidget {
           ),
         ]),
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Grouped dataset list — ticker headers with date rows underneath
+// ═══════════════════════════════════════════════════════════════════════════════
+class _GroupedDatasetList extends StatelessWidget {
+  final List<VolSnapshot> snaps;
+  final VolSnapshot? activeSnap;
+  final ValueChanged<VolSnapshot> onSelectSnap;
+  final ValueChanged<VolSnapshot> onDeleteSnap;
+
+  const _GroupedDatasetList({
+    required this.snaps,
+    required this.activeSnap,
+    required this.onSelectSnap,
+    required this.onDeleteSnap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Group by ticker (order is already ticker asc, date asc from DB)
+    final Map<String, List<VolSnapshot>> grouped = {};
+    for (final s in snaps) {
+      grouped.putIfAbsent(s.ticker, () => []).add(s);
+    }
+
+    final items = <Widget>[];
+    for (final ticker in grouped.keys) {
+      // Ticker header
+      items.add(Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+        child: Text(
+          ticker,
+          style: const TextStyle(
+            color: Color(0xFF60a5fa),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ));
+      // Date rows
+      for (final s in grouped[ticker]!) {
+        items.add(Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: _DatasetTile(
+            snap: s,
+            active: activeSnap?.obsDateStr == s.obsDateStr,
+            onTap: () => onSelectSnap(s),
+            onDelete: () => onDeleteSnap(s),
+          ),
+        ));
+      }
+    }
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 8),
+      children: items,
     );
   }
 }

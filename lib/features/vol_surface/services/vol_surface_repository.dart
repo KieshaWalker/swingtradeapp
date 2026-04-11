@@ -14,6 +14,7 @@ class VolSurfaceRepository {
     final response = await _db
         .from(_table)
         .select('id,ticker,obs_date,spot_price,points,parsed_at')
+        .order('ticker', ascending: true)
         .order('obs_date', ascending: true);
     return (response as List<dynamic>)
         .map((r) => VolSnapshot.fromRow(r as Map<String, dynamic>))

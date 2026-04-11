@@ -5,14 +5,20 @@
 import '../models/vol_surface_models.dart';
 
 class VolSurfaceParser {
+  // Matches both known ThinkorSwim title formats:
+  //   "Stock and Option Quote for AMZN"
+  //   "Stock quote and option quote for AMZN on 4/10/26 07:31:41"
   static final _titleRe =
-      RegExp(r'Stock and Option Quote for\s+(\w+)', caseSensitive: false);
+      RegExp(r'stock.*?quote.*?\bfor\b\s+([A-Z0-9.]+)', caseSensitive: false);
   // Matches "(N)" anywhere in a section header line, e.g. "10 APR 26  (0)  100 (Weeklys)"
   static final _dteRe = RegExp(r'\((\d+)\)');
 
   static VolSnapshot parse(String csv, DateTime obsDate) {
-    final lines =
-        csv.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
+    final lines = csv
+        .replaceAll('\u{FEFF}', '') // strip UTF-8 BOM
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .split('\n');
 
     String ticker = '';
     double? spotPrice;
@@ -32,8 +38,8 @@ class VolSurfaceParser {
         continue;
       }
 
-      // Underlying section — grab spot price from next "LAST" row
-      if (line.startsWith('Underlying')) {
+      // Underlying section — exact match only ("UNDERLYING EXTRA INFO" must not trigger)
+      if (line.toUpperCase() == 'UNDERLYING') {
         inUnderlying = true;
         continue;
       }
@@ -45,9 +51,10 @@ class VolSurfaceParser {
           inUnderlying = false;
           continue;
         }
+        // "LAST,LX,..." header row precedes the spot price row
         if (line.startsWith('LAST,')) {
           spotNext = true;
-          continue; // ignore other underlying rows
+          continue;
         }
         continue;
       }
