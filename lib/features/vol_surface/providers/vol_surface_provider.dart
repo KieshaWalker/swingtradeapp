@@ -24,6 +24,11 @@ class VolSurfaceNotifier extends AsyncNotifier<List<VolSnapshot>> {
     await ref.read(_repoProvider).delete(snap);
     ref.invalidateSelf();
   }
+
+  Future<void> deleteByTicker(String ticker) async {
+    await ref.read(_repoProvider).deleteByTicker(ticker);
+    ref.invalidateSelf();
+  }
 }
 
 final volSurfaceProvider =

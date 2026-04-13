@@ -24,10 +24,14 @@ class VolSurfaceRepository {
   Future<void> save(VolSnapshot snap) async {
     await _db
         .from(_table)
-        .upsert(snap.toUpsertRow(), onConflict: 'user_id,obs_date');
+        .upsert(snap.toUpsertRow(), onConflict: 'user_id,ticker,obs_date');
   }
 
   Future<void> delete(VolSnapshot snap) async {
     await _db.from(_table).delete().eq('obs_date', snap.obsDateStr);
+  }
+
+  Future<void> deleteByTicker(String ticker) async {
+    await _db.from(_table).delete().eq('ticker', ticker);
   }
 }

@@ -94,6 +94,8 @@ const _macroKeywords = [
   'fomc', 'federal reserve', 'fed funds', 'rate hike', 'rate cut',
   'interest rate', 'quantitative', 'balance sheet', 'powell',
   'monetary policy', 'basis point',
+  'kxfedcombo', 'fed combo', 'kxdotplot', 'dot plot', 'median dot',
+  'ratecutcount', 'kxfedratemin',
 
   // ── Housing ───────────────────────────────────────────────────────────────
   'housing', 'home sales', 'home price', 'case-shiller',
@@ -136,19 +138,111 @@ bool _isMacroEvent(KalshiEvent e) {
   return _macroKeywords.any((kw) => haystack.contains(kw));
 }
 
+// ── Known financial series tickers ────────────────────────────────────────────
+// Queried in parallel rather than relying on the bulk /events endpoint.
+// The Kalshi API sorts bulk events by internal ID (long-term events like
+// "Elon Mars 2099" appear first), so a limit:200 bulk fetch reliably misses
+// near-term macro events.  Querying specific series fixes this.
+
+const _macroSeriesTickers = [
+  // ── Economic indicators ────────────────────────────────────────────────────
+  'KXCPI',          // CPI monthly
+  'KXCORECPI',      // Core CPI
+  'KXPCE',          // PCE / Core PCE
+  'KXPPI',          // PPI
+  'KXNFP',          // Nonfarm Payrolls
+  'KXUNEMPLOYMENT', // Unemployment rate
+  'KXJOLTS',        // JOLTS job openings
+  'KXRETAIL',       // Retail sales
+  'KXGDP',          // US GDP growth
+  'KXRECESSION',    // Recession probability
+  'KXQRECESS',      // Recession start
+  // ── Fed / rates ────────────────────────────────────────────────────────────
+  'KXFEDRATE',      // Fed funds rate level
+  'KXFEDCOMBO',     // Fed combo (rate + statement)
+  'KXDOTPLOT',      // Fed dot plot
+  'KXFEDRATEMIN',   // How low will the Fed rate go
+  'RATECUTCOUNT',   // Number of rate cuts
+  // ── Commodities ────────────────────────────────────────────────────────────
+  'KXWTI',          // WTI crude oil price
+  'KXGOLD',         // Gold price
+  'KXSILVER',       // Silver price
+  'KXNG',           // Natural gas
+  'WTIMIN',         // WTI yearly low
+  'KXSPRLVL',       // Strategic Petroleum Reserve level
+  // ── Equity indices ─────────────────────────────────────────────────────────
+  'INXD',           // S&P 500 daily
+  'KXINXW',         // S&P 500 weekly range
+  'KXINXY',         // S&P 500 yearly range
+  'KXNASDAQ100',    // Nasdaq 100 range
+  'KXDJIA',         // Dow Jones
+  'KXRUSSELL',      // Russell 2000
+  // ── Crypto ─────────────────────────────────────────────────────────────────
+  'KXBTC',          // Bitcoin range
+];
+
 // ── Events (with nested markets) ──────────────────────────────────────────────
 
 /// Active macro events with yes/no market prices nested inside.
-/// Filtered to CPI, gold, oil, unemployment, FOMC, GDP, etc.
-/// This is the primary data source for sentiment and option overlays.
+///
+/// Queries each known financial series in parallel rather than using the
+/// bulk /events endpoint (which sorts by internal ID and puts long-dated
+/// "Elon Mars 2099" events before near-term CPI/WTI events).
+///
+/// Falls back to keyword-filtered bulk fetch to catch any series not in
+/// the static list.
 final kalshiMacroEventsProvider =
     FutureProvider<List<KalshiEvent>>((ref) async {
-  final all = await KalshiService().getEvents(
-    status: 'open',
-    withNestedMarkets: true,
-    limit: 1000,
+  final svc = KalshiService();
+
+  // 1. Parallel per-series queries for known macro series
+  final seriesResults = await Future.wait(
+    _macroSeriesTickers.map((ticker) async {
+      try {
+        return await svc.getEvents(
+          seriesTicker:      ticker,
+          status:            'open',
+          withNestedMarkets: true,
+          limit:             20, // each series rarely has >10 open events
+        );
+      } catch (_) {
+        return <KalshiEvent>[];
+      }
+    }),
   );
-  return all.where(_isMacroEvent).toList();
+
+  // 2. Keyword-filtered bulk fetch as a catch-all (first page only)
+  List<KalshiEvent> bulkEvents = [];
+  try {
+    final all = await svc.getEvents(
+      status:            'open',
+      withNestedMarkets: true,
+      limit:             200,
+    );
+    bulkEvents = all.where(_isMacroEvent).toList();
+  } catch (_) {}
+
+  // 3. Merge, deduplicate by eventTicker
+  final seen   = <String>{};
+  final merged = <KalshiEvent>[];
+
+  for (final event in [...seriesResults.expand((b) => b), ...bulkEvents]) {
+    if (seen.add(event.eventTicker)) {
+      merged.add(event);
+    }
+  }
+
+  // Sort by close_time ascending so nearest events appear first
+  merged.sort((a, b) {
+    final ca = a.closeDateTime;
+    final cb = b.closeDateTime;
+    if (ca == null && cb == null) return 0;
+    if (ca == null) return 1;
+    if (cb == null) return -1;
+    return ca.compareTo(cb);
+  });
+
+  return merged;
 });
 
 // ── Events filtered by option expiration ──────────────────────────────────────

@@ -53,6 +53,7 @@ import '../features/trades/screens/trade_journal_screen.dart';
 import '../features/trades/screens/trades_screen.dart';
 import '../features/summary/screens/summary_screen.dart';
 import '../features/iv/screens/iv_screen.dart';
+import '../features/blotter/screens/five_phase_blotter_screen.dart';
 import '../features/blotter/screens/trade_blotter_screen.dart';
 import '../features/blotter/screens/validated_blotters_screen.dart';
 import '../features/vol_surface/screens/vol_surface_screen.dart';
@@ -155,6 +156,12 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'validated',
             builder: (ctx, s) => const ValidatedBlottersScreen(),
+          ),
+          GoRoute(
+            path: 'evaluate',
+            builder: (_, state) => FivePhaseBlotterScreen(
+              initialTicker: state.uri.queryParameters['ticker'],
+            ),
           ),
         ],
       ),

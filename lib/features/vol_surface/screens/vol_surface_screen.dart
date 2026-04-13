@@ -458,9 +458,9 @@ class _DatasetTile extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Grouped dataset list — ticker headers with date rows underneath
+// Grouped dataset list — collapsible ticker sections, clickable headers
 // ═══════════════════════════════════════════════════════════════════════════════
-class _GroupedDatasetList extends StatelessWidget {
+class _GroupedDatasetList extends ConsumerStatefulWidget {
   final List<VolSnapshot> snaps;
   final VolSnapshot? activeSnap;
   final ValueChanged<VolSnapshot> onSelectSnap;
@@ -474,46 +474,187 @@ class _GroupedDatasetList extends StatelessWidget {
   });
 
   @override
+  ConsumerState<_GroupedDatasetList> createState() =>
+      _GroupedDatasetListState();
+}
+
+class _GroupedDatasetListState extends ConsumerState<_GroupedDatasetList> {
+  final Set<String> _collapsed = {};
+
+  @override
   Widget build(BuildContext context) {
-    // Group by ticker (order is already ticker asc, date asc from DB)
     final Map<String, List<VolSnapshot>> grouped = {};
-    for (final s in snaps) {
+    for (final s in widget.snaps) {
       grouped.putIfAbsent(s.ticker, () => []).add(s);
     }
-
-    final items = <Widget>[];
-    for (final ticker in grouped.keys) {
-      // Ticker header
-      items.add(Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-        child: Text(
-          ticker,
-          style: const TextStyle(
-            color: Color(0xFF60a5fa),
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-            fontFamily: 'monospace',
-          ),
-        ),
-      ));
-      // Date rows
-      for (final s in grouped[ticker]!) {
-        items.add(Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: _DatasetTile(
-            snap: s,
-            active: activeSnap?.obsDateStr == s.obsDateStr,
-            onTap: () => onSelectSnap(s),
-            onDelete: () => onDeleteSnap(s),
-          ),
-        ));
-      }
+    // Sort each ticker's snaps newest-first
+    for (final v in grouped.values) {
+      v.sort((a, b) => b.obsDate.compareTo(a.obsDate));
     }
 
     return ListView(
       padding: const EdgeInsets.only(bottom: 8),
-      children: items,
+      children: [
+        for (final ticker in grouped.keys) ...[
+          _TickerHeader(
+            ticker:     ticker,
+            count:      grouped[ticker]!.length,
+            collapsed:  _collapsed.contains(ticker),
+            isActive:   widget.activeSnap?.ticker == ticker,
+            onTap: () {
+              // Select most recent snapshot for this ticker
+              widget.onSelectSnap(grouped[ticker]!.first);
+            },
+            onToggle: () => setState(() {
+              if (_collapsed.contains(ticker)) {
+                _collapsed.remove(ticker);
+              } else {
+                _collapsed.add(ticker);
+              }
+            }),
+            onDeleteAll: () => _confirmDeleteTicker(context, ticker),
+          ),
+          if (!_collapsed.contains(ticker))
+            for (final s in grouped[ticker]!)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: _DatasetTile(
+                  snap:     s,
+                  active:   widget.activeSnap?.id == s.id ||
+                            (widget.activeSnap?.obsDateStr == s.obsDateStr &&
+                             widget.activeSnap?.ticker == s.ticker),
+                  onTap:    () => widget.onSelectSnap(s),
+                  onDelete: () => widget.onDeleteSnap(s),
+                ),
+              ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _confirmDeleteTicker(BuildContext context, String ticker) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1a1f2e),
+        title: Text(
+          'Delete all $ticker snapshots?',
+          style: const TextStyle(color: Colors.white, fontSize: 15),
+        ),
+        content: Text(
+          'This will permanently remove all ${widget.snaps.where((s) => s.ticker == ticker).length} '
+          'uploaded surfaces for $ticker.',
+          style: const TextStyle(color: Colors.white60, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete All',
+                style: TextStyle(color: Color(0xFFFF6B8A))),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      await ref.read(volSurfaceProvider.notifier).deleteByTicker(ticker);
+    }
+  }
+}
+
+class _TickerHeader extends StatelessWidget {
+  final String ticker;
+  final int    count;
+  final bool   collapsed;
+  final bool   isActive;
+  final VoidCallback onTap;
+  final VoidCallback onToggle;
+  final VoidCallback onDeleteAll;
+
+  const _TickerHeader({
+    required this.ticker,
+    required this.count,
+    required this.collapsed,
+    required this.isActive,
+    required this.onTap,
+    required this.onToggle,
+    required this.onDeleteAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(8, 8, 8, 2),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: isActive
+              ? const Color(0x1A3b82f6)
+              : const Color(0xFF0d1117),
+          border: Border.all(
+              color: isActive
+                  ? const Color(0x553b82f6)
+                  : const Color(0xFF1f2937)),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          children: [
+            // Collapse toggle
+            GestureDetector(
+              onTap: onToggle,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Icon(
+                  collapsed
+                      ? Icons.chevron_right_rounded
+                      : Icons.expand_more_rounded,
+                  size: 16,
+                  color: const Color(0xFF4b5563),
+                ),
+              ),
+            ),
+            // Ticker name
+            Text(
+              ticker,
+              style: TextStyle(
+                color: isActive
+                    ? const Color(0xFF60a5fa)
+                    : const Color(0xFF93c5fd),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '$count',
+              style: const TextStyle(
+                color: Color(0xFF4b5563),
+                fontSize: 10,
+                fontFamily: 'monospace',
+              ),
+            ),
+            const Spacer(),
+            // Delete all for this ticker
+            GestureDetector(
+              onTap: onDeleteAll,
+              behavior: HitTestBehavior.opaque,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Icon(Icons.delete_outline_rounded,
+                    size: 14, color: Color(0xFF4b5563)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
