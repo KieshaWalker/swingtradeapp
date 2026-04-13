@@ -87,19 +87,19 @@ class CensusSurveys {
   static const String marts = 'timeseries/eits/marts';
 
   // Housing & Construction
-  static const String newResidentialConstruction = 'eits/sopr';
-  static const String newResidentialSales = 'eits/ressales';
-  static const String constructionSpending = 'eits/vip';
-  static const String housingVacancyRate = 'eits/hv';   // CPS/HVS
+  static const String newResidentialConstruction = 'timeseries/eits/resconst';
+  static const String newResidentialSales = 'timeseries/eits/ressales';
+  static const String constructionSpending = 'timeseries/eits/vip';
+  static const String housingVacancyRate = 'timeseries/eits/hv';   // CPS/HVS
 
   // Manufacturing (M3 Survey)
-  static const String manufacturersSurveyM3 = 'eits/m3';
+  static const String manufacturersSurveyM3 = 'timeseries/eits/m3';
 
   // Wholesale Trade
-  static const String wholesaleTrade = 'eits/mwts';
+  static const String wholesaleTrade = 'timeseries/eits/mwts';
 
   // International Trade in Goods (FT-900)
-  static const String internationalTradeGoods = 'eits/ftd';
+  static const String internationalTradeGoods = 'timeseries/eits/ftd';
 
   // Demographics
   static const String populationEstimates = '2023/pep/population';

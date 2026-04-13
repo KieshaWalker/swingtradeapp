@@ -144,16 +144,19 @@ final censusNonStoreProvider = FutureProvider<CensusResponse>((ref) async {
 });
 
 final censusConstructionSpendingProvider = FutureProvider<CensusResponse>((ref) async {
-  return CensusService().constructionSpending(from: _yearMonth(13));
+  return CensusService().constructionSpending(fromYear: _yearForEits(2));
 });
 
 final censusManufacturingOrdersProvider = FutureProvider<CensusResponse>((ref) async {
-  return CensusService().manufacturersNewOrders(from: _yearMonth(13));
+  return CensusService().manufacturersNewOrders(fromYear: _yearForEits(2));
 });
 
 final censusWholesaleSalesProvider = FutureProvider<CensusResponse>((ref) async {
-  return CensusService().wholesaleTradeSales(from: _yearMonth(13));
+  return CensusService().wholesaleTradeSales(fromYear: _yearForEits(2));
 });
+
+// Returns year N years ago (for EITS endpoints that accept a year predicate)
+int _yearForEits(int yearsAgo) => DateTime.now().year - yearsAgo;
 
 // Returns "YYYY-MM" for n months ago
 String _yearMonth(int monthsAgo) {

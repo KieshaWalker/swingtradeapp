@@ -248,11 +248,16 @@ class _FivePhaseBlotterScreenState
         ),
       ),
 
-      body: Stack(
-        children: [
-          // ── Scrollable content ───────────────────────────────────────────────
-          ListView(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
+      bottomNavigationBar: _hasFullTrade
+          ? _ActionBar(
+              results:   [_p1, _p2, _p3, _p4, _p5],
+              canCommit: _canCommit,
+              onCommit:  _commitTrade,
+            )
+          : null,
+
+      body: ListView(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
             children: [
               // Trade form card
               _TradeFormCard(
@@ -379,22 +384,9 @@ class _FivePhaseBlotterScreenState
                     onResult:   (r) => _notifyResult(5, r, autoExpand: true),
                   ),
                 ),
-              ],
-            ],
-          ),
-
-          // ── Sticky bottom action bar ─────────────────────────────────────────
-          if (_hasFullTrade)
-            Positioned(
-              left: 0, right: 0, bottom: 0,
-              child: _ActionBar(
-                results:   [_p1, _p2, _p3, _p4, _p5],
-                canCommit: _canCommit,
-                onCommit:  _commitTrade,
-              ),
-            ),
-        ],
-      ),
+              ], // end if _hasFullTrade spread
+            ], // end ListView children
+          ), // end ListView
     );
   }
 
@@ -718,7 +710,10 @@ class _PhaseTile extends StatelessWidget {
       child: Theme(
         // Remove the extra divider ExpansionTile adds
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        // NOTE: initiallyExpanded only works at first build — key forces rebuild
+        // when expanded changes so the tile actually opens/closes programmatically.
         child: ExpansionTile(
+          key: ValueKey('phase-$phaseNum-$expanded'),
           initiallyExpanded: expanded,
           onExpansionChanged: onChanged,
           tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),

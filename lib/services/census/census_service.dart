@@ -76,35 +76,37 @@ class CensusService {
   // ── Housing & Construction ────────────────────────────────────────────────
 
   /// New residential construction (housing starts, permits, completions)
-  Future<CensusResponse> newResidentialConstruction({String from = '2020-01'}) => _get(
+  /// EITS endpoints require time as a year and time_slot_id in the get fields.
+  Future<CensusResponse> newResidentialConstruction({int fromYear = 2020}) => _get(
         CensusSurveys.newResidentialConstruction,
         {
-          'get': 'cell_value,error_data,category_code,data_type_code,geo_level_code',
+          'get': 'cell_value,error_data,category_code,data_type_code,time_slot_id,seasonally_adj',
           'for': 'us:*',
-          'time': 'from+$from',
+          'time': '$fromYear',
           'seasonally_adj': 'yes',
         },
         requiresKey: false,
       );
 
   /// New residential sales (new home sales level and median price)
-  Future<CensusResponse> newResidentialSales({String from = '2020-01'}) => _get(
+  Future<CensusResponse> newResidentialSales({int fromYear = 2020}) => _get(
         CensusSurveys.newResidentialSales,
         {
-          'get': 'cell_value,error_data,category_code,data_type_code',
+          'get': 'cell_value,error_data,category_code,data_type_code,time_slot_id,seasonally_adj',
           'for': 'us:*',
-          'time': 'from+$from',
+          'time': '$fromYear',
+          'seasonally_adj': 'yes',
         },
         requiresKey: false,
       );
 
   /// Value of construction put in place
-  Future<CensusResponse> constructionSpending({String from = '2020-01'}) => _get(
+  Future<CensusResponse> constructionSpending({int fromYear = 2020}) => _get(
         CensusSurveys.constructionSpending,
         {
-          'get': 'cell_value,error_data,category_code,data_type_code',
+          'get': 'cell_value,error_data,category_code,data_type_code,time_slot_id,seasonally_adj',
           'for': 'us:*',
-          'time': 'from+$from',
+          'time': '$fromYear',
           'seasonally_adj': 'yes',
         },
         requiresKey: false,
@@ -112,36 +114,36 @@ class CensusService {
 
   // ── Manufacturing (M3 Survey) ─────────────────────────────────────────────
 
-  Future<CensusResponse> manufacturersNewOrders({String from = '2020-01'}) => _get(
+  Future<CensusResponse> manufacturersNewOrders({int fromYear = 2020}) => _get(
         CensusSurveys.manufacturersSurveyM3,
         {
-          'get': 'cell_value,error_data,category_code,data_type_code',
+          'get': 'cell_value,error_data,category_code,data_type_code,time_slot_id,seasonally_adj',
           'for': 'us:*',
-          'time': 'from+$from',
+          'time': '$fromYear',
           'data_type_code': 'NO',  // new orders
           'seasonally_adj': 'yes',
         },
         requiresKey: false,
       );
 
-  Future<CensusResponse> manufacturersShipments({String from = '2020-01'}) => _get(
+  Future<CensusResponse> manufacturersShipments({int fromYear = 2020}) => _get(
         CensusSurveys.manufacturersSurveyM3,
         {
-          'get': 'cell_value,error_data,category_code,data_type_code',
+          'get': 'cell_value,error_data,category_code,data_type_code,time_slot_id,seasonally_adj',
           'for': 'us:*',
-          'time': 'from+$from',
+          'time': '$fromYear',
           'data_type_code': 'NS',  // net shipments
           'seasonally_adj': 'yes',
         },
         requiresKey: false,
       );
 
-  Future<CensusResponse> manufacturersInventories({String from = '2020-01'}) => _get(
+  Future<CensusResponse> manufacturersInventories({int fromYear = 2020}) => _get(
         CensusSurveys.manufacturersSurveyM3,
         {
-          'get': 'cell_value,error_data,category_code,data_type_code',
+          'get': 'cell_value,error_data,category_code,data_type_code,time_slot_id,seasonally_adj',
           'for': 'us:*',
-          'time': 'from+$from',
+          'time': '$fromYear',
           'data_type_code': 'EI',  // end-of-period inventories
           'seasonally_adj': 'yes',
         },
@@ -150,24 +152,24 @@ class CensusService {
 
   // ── Wholesale Trade ───────────────────────────────────────────────────────
 
-  Future<CensusResponse> wholesaleTradeSales({String from = '2020-01'}) => _get(
+  Future<CensusResponse> wholesaleTradeSales({int fromYear = 2020}) => _get(
         CensusSurveys.wholesaleTrade,
         {
-          'get': 'cell_value,error_data,category_code,data_type_code',
+          'get': 'cell_value,error_data,category_code,data_type_code,time_slot_id,seasonally_adj',
           'for': 'us:*',
-          'time': 'from+$from',
+          'time': '$fromYear',
           'data_type_code': 'SM',
           'seasonally_adj': 'yes',
         },
         requiresKey: false,
       );
 
-  Future<CensusResponse> wholesaleTradeInventories({String from = '2020-01'}) => _get(
+  Future<CensusResponse> wholesaleTradeInventories({int fromYear = 2020}) => _get(
         CensusSurveys.wholesaleTrade,
         {
-          'get': 'cell_value,error_data,category_code,data_type_code',
+          'get': 'cell_value,error_data,category_code,data_type_code,time_slot_id,seasonally_adj',
           'for': 'us:*',
-          'time': 'from+$from',
+          'time': '$fromYear',
           'data_type_code': 'EI',
           'seasonally_adj': 'yes',
         },
@@ -176,12 +178,12 @@ class CensusService {
 
   // ── International Trade in Goods (FT-900) ─────────────────────────────────
 
-  Future<CensusResponse> goodsTradeBalance({String from = '2020-01'}) => _get(
+  Future<CensusResponse> goodsTradeBalance({int fromYear = 2020}) => _get(
         CensusSurveys.internationalTradeGoods,
         {
-          'get': 'cell_value,error_data,category_code,data_type_code',
+          'get': 'cell_value,error_data,category_code,data_type_code,time_slot_id,seasonally_adj',
           'for': 'us:*',
-          'time': 'from+$from',
+          'time': '$fromYear',
           'seasonally_adj': 'yes',
         },
         requiresKey: false,
