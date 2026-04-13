@@ -47,9 +47,11 @@ class MacroScoreService {
     ]);
 
     final components = results.whereType<MacroSubScore>().toList();
-    final hasEnough = components.length == 8;
-    final total = components.fold<double>(0, (s, c) => s + c.score);
     final zScoredCount = components.where((c) => c.zScored).length;
+    // hasEnoughData = at least 4 of 8 components have real historical data to
+    // z-score against. Fewer means the DB is essentially empty or very new.
+    final hasEnough = zScoredCount >= 4;
+    final total = components.fold<double>(0, (s, c) => s + c.score);
 
     return MacroScore(
       total: total,
@@ -68,11 +70,14 @@ class MacroScoreService {
 
   double? _z(double current, List<double> history) {
     if (history.length < _minHistory) return null;
-    final mean = history.reduce((a, b) => a + b) / history.length;
+    final n = history.length;
+    final mean = history.reduce((a, b) => a + b) / n;
+    // Sample variance (Bessel's correction: n-1) to avoid underestimating
+    // dispersion with small samples (minimum n = _minHistory = 10).
     final variance = history
             .map((x) => (x - mean) * (x - mean))
             .reduce((a, b) => a + b) /
-        history.length;
+        (n - 1);
     final std = math.sqrt(variance);
     if (std < 0.0001) return 0;
     return (current - mean) / std;
@@ -92,7 +97,7 @@ class MacroScoreService {
           .from('economy_quote_snapshots')
           .select('date, price')
           .eq('symbol', symbol)
-          .order('date', ascending: true)
+          .order('date', ascending: false)   // newest first → values.first = today
           .limit(_maxHistory);
 
   Future<List<Map<String, dynamic>>> _indicatorHistory(
@@ -101,7 +106,7 @@ class MacroScoreService {
           .from('economy_indicator_snapshots')
           .select('date, value')
           .eq('identifier', identifier)
-          .order('date', ascending: true)
+          .order('date', ascending: false)   // newest first → values.first = latest
           .limit(_maxHistory);
 
   // ─── 1. VIX Level — 20 pts ───────────────────────────────────────────────
@@ -174,7 +179,7 @@ class MacroScoreService {
       final tRows = await _db
           .from('economy_treasury_snapshots')
           .select('date, year2, year10')
-          .order('date', ascending: true)
+          .order('date', ascending: false)   // newest first
           .limit(_maxHistory);
       spreads = tRows
           .where((r) => r['year2'] != null && r['year10'] != null)
