@@ -176,30 +176,66 @@ class IvAnalyticsService {
           : VannaRegime.bearishOnVolCrush;  // vol drop → dealers sell delta
     }
 
+    // ── Advanced GEX metrics ───────────────────────────────────────────────
+
+    // Zero Gamma Level — strike where per-strike GEX crosses from − to +
+    final zeroGammaLevel = _computeZeroGammaLevel(gexStrikes, spot);
+    double? spotToZeroGammaPct;
+    if (zeroGammaLevel != null && spot > 0) {
+      spotToZeroGammaPct = (spot - zeroGammaLevel) / spot * 100;
+    }
+
+    // ΔGEX — day-over-day change in total GEX
+    double? deltaGex;
+    if (totalGex != null && history.length >= 2) {
+      final withGex = history.where((s) => s.totalGex != null).toList();
+      if (withGex.isNotEmpty) {
+        deltaGex = totalGex - withGex.last.totalGex!;
+      }
+    }
+
+    // Gamma Slope — direction of GEX profile across strikes near spot
+    final gammaSlope = _computeGammaSlope(gexStrikes, spot);
+
+    // IV/GEX Signal — combined regime classification
+    final ivGexSignal = _computeIvGexSignal(
+      gammaRegime: gammaRegime,
+      ivPercentile: ivPercentile,
+    );
+
+    // Put Wall Density — nearest put wall OI vs average OI within ±5% of spot
+    final putWallDensity = _computePutWallDensity(gexStrikes, spot);
+
     return IvAnalysis(
-      ticker:         chain.symbol,
-      currentIv:      atmIv,
-      iv52wHigh:      iv52wHigh,
-      iv52wLow:       iv52wLow,
-      ivRank:         ivRank,
-      ivPercentile:   ivPercentile,
-      rating:         rating,
-      historyDays:    history.length,
-      skew:           skewVal,
-      skewAvg52w:     skewAvg52w,
-      skewZScore:     skewZScore,
-      skewCurve:      skewCurve,
-      gexStrikes:     gexStrikes,
-      totalGex:       totalGex,
-      maxGexStrike:   maxGexStrike,
-      putCallRatio:   putCallRatio,
-      secondOrder:    secondOrder,
-      totalVex:       totalVex,
-      totalCex:       totalCex,
-      totalVolga:     totalVolga,
-      maxVexStrike:   maxVexStrike,
-      gammaRegime:    gammaRegime,
-      vannaRegime:    vannaRegime,
+      ticker:           chain.symbol,
+      currentIv:        atmIv,
+      iv52wHigh:        iv52wHigh,
+      iv52wLow:         iv52wLow,
+      ivRank:           ivRank,
+      ivPercentile:     ivPercentile,
+      rating:           rating,
+      historyDays:      history.length,
+      skew:             skewVal,
+      skewAvg52w:       skewAvg52w,
+      skewZScore:       skewZScore,
+      skewCurve:        skewCurve,
+      gexStrikes:       gexStrikes,
+      totalGex:         totalGex,
+      maxGexStrike:     maxGexStrike,
+      putCallRatio:     putCallRatio,
+      secondOrder:      secondOrder,
+      totalVex:         totalVex,
+      totalCex:         totalCex,
+      totalVolga:       totalVolga,
+      maxVexStrike:     maxVexStrike,
+      gammaRegime:      gammaRegime,
+      vannaRegime:      vannaRegime,
+      zeroGammaLevel:   zeroGammaLevel,
+      spotToZeroGammaPct: spotToZeroGammaPct,
+      deltaGex:         deltaGex,
+      gammaSlope:       gammaSlope,
+      ivGexSignal:      ivGexSignal,
+      putWallDensity:   putWallDensity,
     );
   }
 
@@ -365,6 +401,126 @@ class IvAnalyticsService {
     }
 
     return results;
+  }
+
+  // ── Zero Gamma Level ─────────────────────────────────────────────────────
+  // Scan sorted strikes for the zero crossing in per-strike dealer GEX.
+  // When no clean crossing exists, return the strike near spot with the
+  // smallest absolute GEX (closest to the flip point).
+
+  static double? _computeZeroGammaLevel(List<GexStrike> strikes, double spot) {
+    if (strikes.isEmpty) return null;
+    final sorted = [...strikes]..sort((a, b) => a.strike.compareTo(b.strike));
+
+    for (int i = 0; i < sorted.length - 1; i++) {
+      final gA = sorted[i].dealerGex(spot);
+      final gB = sorted[i + 1].dealerGex(spot);
+      if (gA <= 0 && gB >= 0) {
+        // Linear interpolation to the exact zero crossing
+        final dg = gB - gA;
+        if (dg == 0) return (sorted[i].strike + sorted[i + 1].strike) / 2;
+        final t = -gA / dg;
+        return sorted[i].strike + t * (sorted[i + 1].strike - sorted[i].strike);
+      }
+    }
+
+    // No zero crossing — return nearest-to-zero GEX strike within ±10% of spot
+    final near = sorted
+        .where((s) => (s.strike - spot).abs() / spot < 0.10)
+        .toList();
+    if (near.isEmpty) return null;
+    return near
+        .reduce((a, b) =>
+            a.dealerGex(spot).abs() < b.dealerGex(spot).abs() ? a : b)
+        .strike;
+  }
+
+  // ── Gamma Slope ───────────────────────────────────────────────────────────
+  // Measure whether GEX is rising or falling as price moves up.
+  // Looks at the ±8% band around spot: if the upper half averages higher GEX
+  // than the lower half, the slope is rising.
+
+  static GammaSlope _computeGammaSlope(List<GexStrike> strikes, double spot) {
+    final band = strikes
+        .where((s) => (s.strike - spot).abs() / spot < 0.08)
+        .toList()
+        ..sort((a, b) => a.strike.compareTo(b.strike));
+
+    if (band.length < 3) return GammaSlope.flat;
+
+    final mid  = band.length ~/ 2;
+    final lower = band.sublist(0, mid);
+    final upper = band.sublist(mid);
+
+    final avgLower = lower.map((s) => s.dealerGex(spot)).reduce((a, b) => a + b)
+        / lower.length;
+    final avgUpper = upper.map((s) => s.dealerGex(spot)).reduce((a, b) => a + b)
+        / upper.length;
+
+    final diff = avgUpper - avgLower;
+    // Use 10% of the total GEX range as a significance threshold
+    final allGex = strikes.map((s) => s.dealerGex(spot).abs());
+    final maxAbs = allGex.isEmpty ? 1.0 : allGex.reduce((a, b) => a > b ? a : b);
+    final threshold = maxAbs * 0.10;
+
+    if (diff >  threshold) return GammaSlope.rising;
+    if (diff < -threshold) return GammaSlope.falling;
+    return GammaSlope.flat;
+  }
+
+  // ── IV / GEX Signal ───────────────────────────────────────────────────────
+  // Cross-classifies the gamma regime with IV percentile to identify
+  // which of the four quadrants the market is currently in.
+
+  static IvGexSignal _computeIvGexSignal({
+    required GammaRegime gammaRegime,
+    required double?     ivPercentile,
+  }) {
+    if (gammaRegime == GammaRegime.unknown) return IvGexSignal.unknown;
+
+    // IV "elevated" = IVP > 50; "suppressed" = IVP < 40.
+    // When no history yet, treat as neutral → unknown.
+    if (ivPercentile == null) return IvGexSignal.unknown;
+    final ivElevated   = ivPercentile >= 50;
+
+    if (gammaRegime == GammaRegime.negative) {
+      return ivElevated
+          ? IvGexSignal.classicShortGamma
+          : IvGexSignal.regimeShift;
+    } else {
+      return ivElevated
+          ? IvGexSignal.eventOverPosGamma
+          : IvGexSignal.stableGamma;
+    }
+  }
+
+  // ── Put Wall Density ──────────────────────────────────────────────────────
+  // Finds the largest put OI strike below spot (the put wall), then expresses
+  // its OI as a multiple of average OI across all strikes within ±5% of spot.
+  // < 0.5 = thin wall (washout risk). > 2.0 = strong structural support.
+
+  static double? _computePutWallDensity(List<GexStrike> strikes, double spot) {
+    if (strikes.isEmpty || spot == 0) return null;
+
+    // Strikes within ±5% of spot
+    final band = strikes
+        .where((s) => (s.strike - spot).abs() / spot < 0.05)
+        .toList();
+    if (band.isEmpty) return null;
+
+    final avgOi = band.map((s) => s.putOi).reduce((a, b) => a + b) / band.length;
+    if (avgOi == 0) return null;
+
+    // Nearest put wall = highest putOI strike below spot
+    final belowSpot = strikes
+        .where((s) => s.strike < spot)
+        .toList()
+        ..sort((a, b) => b.putOi.compareTo(a.putOi)); // sort by OI desc
+
+    if (belowSpot.isEmpty) return null;
+    final wallOi = belowSpot.first.putOi;
+
+    return wallOi / avgOi;
   }
 
   // ── Second-order Greeks: Vanna / Charm / Volga ───────────────────────────

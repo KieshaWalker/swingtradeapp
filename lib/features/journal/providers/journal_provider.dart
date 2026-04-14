@@ -51,6 +51,17 @@ class JournalNotifier extends AsyncNotifier<void> {
     });
   }
 
+  Future<void> updateEntry(JournalEntry entry) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      await _client
+          .from('journal_entries')
+          .update(entry.toJson())
+          .eq('id', entry.id);
+      ref.invalidate(journalProvider);
+    });
+  }
+
   Future<void> deleteEntry(String id) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {

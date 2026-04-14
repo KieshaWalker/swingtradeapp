@@ -3,7 +3,9 @@
 // =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../services/schwab/schwab_models.dart';
 import '../models/vol_surface_models.dart';
+import '../services/vol_surface_parser.dart';
 import '../services/vol_surface_repository.dart';
 
 final _repoProvider = Provider<VolSurfaceRepository>(
@@ -35,3 +37,17 @@ final volSurfaceProvider =
     AsyncNotifierProvider<VolSurfaceNotifier, List<VolSnapshot>>(
   VolSurfaceNotifier.new,
 );
+
+/// Called from OptionsChainScreen once per chain load to silently persist a
+/// vol surface snapshot. Mirrors autoIngestIv — errors are swallowed so they
+/// never disrupt the options chain UI. The upsert key is (user_id, ticker,
+/// obs_date) so repeated views on the same day overwrite with the latest data.
+Future<void> autoIngestVolSurface(SchwabOptionsChain chain) async {
+  try {
+    final snap = VolSurfaceParser.fromChain(chain);
+    if (snap.points.isEmpty) return;
+    await VolSurfaceRepository(Supabase.instance.client).save(snap);
+  } catch (_) {
+    // Never disrupt the options chain UI on ingestion failure.
+  }
+}

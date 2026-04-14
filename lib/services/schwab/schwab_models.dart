@@ -200,6 +200,11 @@ class SchwabOptionContract {
   final double  bid;
   final double  ask;
   final double  last;
+  final double  markPrice;       // Schwab mark = (bid+ask)/2
+  final int     bidSize;
+  final int     askSize;
+  final double  highPrice;       // daily high for this contract
+  final double  lowPrice;        // daily low for this contract
   final double  delta;
   final double  gamma;
   final double  theta;
@@ -211,7 +216,7 @@ class SchwabOptionContract {
   final int     daysToExpiration;
   final bool    inTheMoney;
   final double  intrinsicValue;
-  final double  timeValue;
+  final double  timeValue;       // extrinsic value
   final double  theoreticalOptionValue;
   final String  expirationDate;
 
@@ -221,6 +226,11 @@ class SchwabOptionContract {
     required this.bid,
     required this.ask,
     required this.last,
+    required this.markPrice,
+    required this.bidSize,
+    required this.askSize,
+    required this.highPrice,
+    required this.lowPrice,
     required this.delta,
     required this.gamma,
     required this.theta,
@@ -244,6 +254,11 @@ class SchwabOptionContract {
         bid:                     (j['bid']                     as num? ?? 0).toDouble(),
         ask:                     (j['ask']                     as num? ?? 0).toDouble(),
         last:                    (j['last']                    as num? ?? 0).toDouble(),
+        markPrice:               (j['mark']                    as num? ?? 0).toDouble(),
+        bidSize:                 (j['bidSize']                 as num? ?? 0).toInt(),
+        askSize:                 (j['askSize']                 as num? ?? 0).toInt(),
+        highPrice:               (j['highPrice']               as num? ?? 0).toDouble(),
+        lowPrice:                (j['lowPrice']                as num? ?? 0).toDouble(),
         delta:                   (j['delta']                   as num? ?? 0).toDouble(),
         gamma:                   (j['gamma']                   as num? ?? 0).toDouble(),
         theta:                   (j['theta']                   as num? ?? 0).toDouble(),

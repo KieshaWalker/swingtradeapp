@@ -96,67 +96,71 @@ class _JournalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                if (entry.mood != null)
-                  Text(entry.mood!.emoji, style: const TextStyle(fontSize: 20)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    entry.title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 15),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => context.push('/journal/add', extra: entry),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  if (entry.mood != null)
+                    Text(entry.mood!.emoji, style: const TextStyle(fontSize: 20)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      entry.title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 15),
+                    ),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline,
-                      color: AppTheme.neutralColor, size: 20),
-                  onPressed: () => _confirmDelete(context),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              entry.body,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  color: AppTheme.neutralColor, height: 1.5),
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                ...entry.tags.map((tag) => Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: AppTheme.profitColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(20),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline,
+                        color: AppTheme.neutralColor, size: 20),
+                    onPressed: () => _confirmDelete(context),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                entry.body,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: AppTheme.neutralColor, height: 1.5),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  ...entry.tags.map((tag) => Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppTheme.profitColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            tag,
+                            style: const TextStyle(
+                                color: AppTheme.profitColor, fontSize: 11),
+                          ),
                         ),
-                        child: Text(
-                          tag,
-                          style: const TextStyle(
-                              color: AppTheme.profitColor, fontSize: 11),
-                        ),
-                      ),
-                    )),
-                const Spacer(),
-                Text(
-                  DateFormat('MMM d, yyyy').format(entry.createdAt),
-                  style: const TextStyle(
-                      color: AppTheme.neutralColor, fontSize: 12),
-                ),
-              ],
-            ),
-          ],
+                      )),
+                  const Spacer(),
+                  Text(
+                    DateFormat('MMM d, yyyy').format(entry.createdAt),
+                    style: const TextStyle(
+                        color: AppTheme.neutralColor, fontSize: 12),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

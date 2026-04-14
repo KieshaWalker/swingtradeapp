@@ -60,9 +60,25 @@ class GexChart extends StatelessWidget {
                   ? '\$${analysis.maxGexStrike!.toStringAsFixed(0)}'
                   : '—'),
               const SizedBox(width: 8),
+              _chip('Zero Gamma', analysis.zeroGammaLevel != null
+                  ? '\$${analysis.zeroGammaLevel!.toStringAsFixed(0)}'
+                  : '—'),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
               _chip('P/C OI Ratio', analysis.putCallRatio != null
                   ? analysis.putCallRatio!.toStringAsFixed(2)
                   : '—'),
+              const SizedBox(width: 8),
+              _chip('ΔGEX', analysis.deltaGexLabel),
+              const SizedBox(width: 8),
+              _chip('Spot → Flip',
+                analysis.spotToZeroGammaPct != null
+                    ? '${analysis.spotToZeroGammaPct! >= 0 ? '+' : ''}'
+                      '${analysis.spotToZeroGammaPct!.toStringAsFixed(1)}%'
+                    : '—'),
             ],
           ),
 
@@ -87,6 +103,12 @@ class GexChart extends StatelessWidget {
 
           const SizedBox(height: 12),
           _GexInterpretation(analysis: analysis),
+          const SizedBox(height: 12),
+          _GammaSlopeRow(analysis: analysis),
+          const SizedBox(height: 8),
+          _IvGexSignalRow(analysis: analysis),
+          const SizedBox(height: 8),
+          _WallDensityRow(analysis: analysis),
         ],
       ),
     );
@@ -308,4 +330,149 @@ class _GexInterpretation extends StatelessWidget {
     return Text(text,
         style: const TextStyle(color: AppTheme.neutralColor, fontSize: 12));
   }
+}
+
+// ── Gamma Slope ───────────────────────────────────────────────────────────────
+
+class _GammaSlopeRow extends StatelessWidget {
+  final IvAnalysis analysis;
+  const _GammaSlopeRow({required this.analysis});
+
+  @override
+  Widget build(BuildContext context) {
+    final slope = analysis.gammaSlope;
+    final color = switch (slope) {
+      GammaSlope.rising  => AppTheme.profitColor,
+      GammaSlope.flat    => AppTheme.neutralColor,
+      GammaSlope.falling => AppTheme.lossColor,
+    };
+    return _infoRow(
+      label: 'Gamma Slope',
+      badge: slope.label,
+      badgeColor: color,
+      detail: slope.description,
+    );
+  }
+}
+
+// ── IV / GEX Signal ───────────────────────────────────────────────────────────
+
+class _IvGexSignalRow extends StatelessWidget {
+  final IvAnalysis analysis;
+  const _IvGexSignalRow({required this.analysis});
+
+  @override
+  Widget build(BuildContext context) {
+    final sig = analysis.ivGexSignal;
+    final color = sig.isDangerous ? AppTheme.lossColor : AppTheme.profitColor;
+    return _infoRow(
+      label: 'IV / GEX Signal',
+      badge: sig.label,
+      badgeColor: color,
+      detail: sig.description,
+    );
+  }
+}
+
+// ── Wall Density ──────────────────────────────────────────────────────────────
+
+class _WallDensityRow extends StatelessWidget {
+  final IvAnalysis analysis;
+  const _WallDensityRow({required this.analysis});
+
+  @override
+  Widget build(BuildContext context) {
+    final density = analysis.putWallDensity;
+    if (density == null) {
+      return _infoRow(
+        label: 'Wall Density',
+        badge: '—',
+        badgeColor: AppTheme.neutralColor,
+        detail: 'No put wall data available.',
+      );
+    }
+
+    final String badge;
+    final Color  color;
+    final String detail;
+
+    if (density < 0.5) {
+      badge  = 'THIN WALL';
+      color  = AppTheme.lossColor;
+      detail = 'Put wall OI is ${density.toStringAsFixed(2)}× the average within ±5% of spot — '
+          'structural support is thin. If spot drops through, there is no "buyer of last resort." '
+          'Dealers will consume liquidity rather than provide it. Washout risk is elevated.';
+    } else if (density > 2.0) {
+      badge  = 'STRONG WALL';
+      color  = AppTheme.profitColor;
+      detail = 'Put wall OI is ${density.toStringAsFixed(2)}× the average within ±5% of spot — '
+          'dense dealer hedging support below. Price is likely to find structural buyers at this level.';
+    } else {
+      badge  = 'NORMAL';
+      color  = const Color(0xFF60A5FA);
+      detail = 'Put wall OI is ${density.toStringAsFixed(2)}× average — '
+          'typical hedging concentration near spot. No unusual washout or pinning risk.';
+    }
+
+    return _infoRow(
+      label: 'Wall Density',
+      badge: badge,
+      badgeColor: color,
+      detail: detail,
+    );
+  }
+}
+
+// ── Shared info row ───────────────────────────────────────────────────────────
+
+Widget _infoRow({
+  required String label,
+  required String badge,
+  required Color  badgeColor,
+  required String detail,
+}) {
+  return Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color:        AppTheme.elevatedColor.withValues(alpha: 0.5),
+      borderRadius: BorderRadius.circular(8),
+      border:       Border.all(color: AppTheme.borderColor.withValues(alpha: 0.5)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppTheme.neutralColor, fontSize: 10,
+                fontWeight: FontWeight.w700, letterSpacing: 0.6,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color:        badgeColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(4),
+                border:       Border.all(color: badgeColor.withValues(alpha: 0.5)),
+              ),
+              child: Text(
+                badge,
+                style: TextStyle(
+                  color: badgeColor, fontSize: 10, fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        Text(
+          detail,
+          style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11, height: 1.4),
+        ),
+      ],
+    ),
+  );
 }

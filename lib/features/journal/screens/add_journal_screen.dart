@@ -1,25 +1,17 @@
 // =============================================================================
-// features/journal/screens/add_journal_screen.dart — New journal entry form
+// features/journal/screens/add_journal_screen.dart — New / edit journal entry
 // =============================================================================
 // Widgets defined here:
-//   • AddJournalScreen (ConsumerStatefulWidget) — full form for a new entry;
-//     navigated to from JournalScreen FAB via context.push('/journal/add')
+//   • AddJournalScreen (ConsumerStatefulWidget) — form for adding or editing an
+//     entry; pass [initialEntry] to open in edit mode.
 //
 // Route: '/journal/add' (child of /journal in router.dart)
+//   Add:  context.push('/journal/add')
+//   Edit: context.push('/journal/add', extra: existingEntry)
 //
 // Providers consumed:
-//   • currentUserProvider          — attaches user_id to new JournalEntry
-//   • journalNotifierProvider      — .addEntry(entry) inserts to Supabase,
-//                                    then invalidates journalProvider
-//
-// Form sections:
-//   1. Mood picker — 5 animated emoji buttons (TradeMood enum);
-//      selected mood highlighted with profitColor ring
-//   2. Title text field (required)
-//   3. Body textarea, 8 lines (required)
-//   4. Tag input — text field + add button; added tags shown as dismissible Chips
-//
-// On success: context.pop() back to JournalScreen
+//   • currentUserProvider          — attaches user_id on new entries
+//   • journalNotifierProvider      — .addEntry() / .updateEntry()
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,7 +23,8 @@ import '../models/journal_entry.dart';
 import '../providers/journal_provider.dart';
 
 class AddJournalScreen extends ConsumerStatefulWidget {
-  const AddJournalScreen({super.key});
+  final JournalEntry? initialEntry;
+  const AddJournalScreen({super.key, this.initialEntry});
 
   @override
   ConsumerState<AddJournalScreen> createState() => _AddJournalScreenState();
@@ -39,12 +32,24 @@ class AddJournalScreen extends ConsumerStatefulWidget {
 
 class _AddJournalScreenState extends ConsumerState<AddJournalScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _titleCtrl = TextEditingController();
-  final _bodyCtrl = TextEditingController();
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _bodyCtrl;
   final _tagCtrl = TextEditingController();
 
   TradeMood? _mood;
-  final List<String> _tags = [];
+  late List<String> _tags;
+
+  bool get _isEditing => widget.initialEntry != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.initialEntry;
+    _titleCtrl = TextEditingController(text: e?.title ?? '');
+    _bodyCtrl  = TextEditingController(text: e?.body ?? '');
+    _mood = e?.mood;
+    _tags = List<String>.from(e?.tags ?? []);
+  }
 
   @override
   void dispose() {
@@ -65,20 +70,34 @@ class _AddJournalScreenState extends ConsumerState<AddJournalScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    final user = ref.read(currentUserProvider);
-    if (user == null) return;
+    final notifier = ref.read(journalNotifierProvider.notifier);
 
-    final entry = JournalEntry(
-      id: const Uuid().v4(),
-      userId: user.id,
-      title: _titleCtrl.text.trim(),
-      body: _bodyCtrl.text.trim(),
-      mood: _mood,
-      tags: _tags,
-      createdAt: DateTime.now(),
-    );
-
-    await ref.read(journalNotifierProvider.notifier).addEntry(entry);
+    if (_isEditing) {
+      final updated = JournalEntry(
+        id:        widget.initialEntry!.id,
+        userId:    widget.initialEntry!.userId,
+        tradeId:   widget.initialEntry!.tradeId,
+        title:     _titleCtrl.text.trim(),
+        body:      _bodyCtrl.text.trim(),
+        mood:      _mood,
+        tags:      _tags,
+        createdAt: widget.initialEntry!.createdAt,
+      );
+      await notifier.updateEntry(updated);
+    } else {
+      final user = ref.read(currentUserProvider);
+      if (user == null) return;
+      final entry = JournalEntry(
+        id:        const Uuid().v4(),
+        userId:    user.id,
+        title:     _titleCtrl.text.trim(),
+        body:      _bodyCtrl.text.trim(),
+        mood:      _mood,
+        tags:      _tags,
+        createdAt: DateTime.now(),
+      );
+      await notifier.addEntry(entry);
+    }
 
     if (mounted) {
       final state = ref.read(journalNotifierProvider);
@@ -100,7 +119,9 @@ class _AddJournalScreenState extends ConsumerState<AddJournalScreen> {
     final isLoading = ref.watch(journalNotifierProvider).isLoading;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('New Journal Entry')),
+      appBar: AppBar(
+        title: Text(_isEditing ? 'Edit Entry' : 'New Journal Entry'),
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -213,7 +234,7 @@ class _AddJournalScreenState extends ConsumerState<AddJournalScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : ElevatedButton(
                     onPressed: _submit,
-                    child: const Text('Save Entry'),
+                    child: Text(_isEditing ? 'Save Changes' : 'Save Entry'),
                   ),
             const SizedBox(height: 16),
           ],

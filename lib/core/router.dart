@@ -38,6 +38,7 @@ import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/signup_screen.dart';
 import '../features/calculator/screens/calculator_screen.dart';
 import '../features/economy/screens/economy_pulse_screen.dart';
+import '../features/journal/models/journal_entry.dart';
 import '../features/journal/screens/add_journal_screen.dart';
 import '../features/journal/screens/journal_screen.dart';
 import '../features/ticker_profile/screens/ticker_dashboard_screen.dart';
@@ -137,7 +138,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: 'add',
-            builder: (context, _) => const AddJournalScreen(),
+            builder: (context, state) => AddJournalScreen(
+              initialEntry: state.extra as JournalEntry?,
+            ),
           ),
         ],
       ),

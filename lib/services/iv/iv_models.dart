@@ -241,6 +241,63 @@ enum GammaRegime {
   unknown,
 }
 
+/// Direction of the GEX profile as price moves up the strike ladder
+enum GammaSlope {
+  rising,  // GEX increasing toward higher strikes → cushion strengthening
+  flat,    // GEX roughly constant
+  falling, // GEX declining toward higher strikes → approaching danger zone
+}
+
+extension GammaSlopeX on GammaSlope {
+  String get label => switch (this) {
+    GammaSlope.rising  => '↗ Rising',
+    GammaSlope.flat    => '→ Flat',
+    GammaSlope.falling => '↘ Falling',
+  };
+  String get description => switch (this) {
+    GammaSlope.rising  => 'Dealer cushion strengthening — mean-reversion support is building.',
+    GammaSlope.flat    => 'GEX profile stable near spot. No structural change imminent.',
+    GammaSlope.falling => 'GEX declining as price moves up — glide path toward Short Gamma danger zone.',
+  };
+}
+
+/// Single-snapshot IV / GEX combined regime classification
+enum IvGexSignal {
+  classicShortGamma,   // negative GEX + elevated IV → inverse correlation active
+  regimeShift,         // negative GEX + suppressed IV → correlation breaking; hidden risk
+  eventOverPosGamma,   // positive GEX + IV elevated → post-event, dealers long gamma
+  stableGamma,         // positive GEX + suppressed IV → ideal premium-selling environment
+  unknown,
+}
+
+extension IvGexSignalX on IvGexSignal {
+  String get label => switch (this) {
+    IvGexSignal.classicShortGamma => 'Classic Short Gamma',
+    IvGexSignal.regimeShift       => 'Regime Shift Signal',
+    IvGexSignal.eventOverPosGamma => 'Event / Pos Gamma',
+    IvGexSignal.stableGamma       => 'Stable Gamma',
+    IvGexSignal.unknown           => 'Unknown',
+  };
+  String get description => switch (this) {
+    IvGexSignal.classicShortGamma =>
+      'Short Gamma regime + elevated IV — dealers selling into weakness; '
+      'volatility expansion actively in progress. Standard 3σ models underestimate tail risk.',
+    IvGexSignal.regimeShift =>
+      'Short Gamma regime but IV is suppressed — correlation breaking. '
+      'This is the stealth danger zone: the market looks calm but structural support is absent. '
+      'Increase tail-risk probabilities in ES95 and Monte Carlo now.',
+    IvGexSignal.eventOverPosGamma =>
+      'Positive Gamma + elevated IV — dealers are long gamma, providing a cushion. '
+      'IV should mean-revert as the event passes. Good environment for premium selling.',
+    IvGexSignal.stableGamma =>
+      'Positive Gamma + suppressed IV — optimal for net-short premium strategies. '
+      'Dealers are stabilising. Iron condors and credit spreads thrive here.',
+    IvGexSignal.unknown => 'Insufficient data to classify the IV/GEX signal.',
+  };
+  bool get isDangerous => this == IvGexSignal.classicShortGamma ||
+      this == IvGexSignal.regimeShift;
+}
+
 extension GammaRegimeX on GammaRegime {
   String get label => switch (this) {
     GammaRegime.positive => 'Positive Gamma',
@@ -322,6 +379,29 @@ class IvAnalysis {
   final GammaRegime gammaRegime;
   final VannaRegime  vannaRegime;
 
+  // ── Advanced GEX metrics ─────────────────────────────────────────────────
+  // Zero Gamma Level: the strike where per-strike GEX crosses zero
+  // (the "flip point" — above = dealers long gamma, below = short gamma)
+  final double? zeroGammaLevel;
+
+  // Distance from spot to Zero Gamma Level as a percentage of spot.
+  // Negative = spot is already below the flip point (Short Gamma regime).
+  final double? spotToZeroGammaPct;
+
+  // Day-over-day change in total GEX (GEX_t − GEX_{t−1}).
+  // Deeply negative = glide path to Short Gamma washout.
+  final double? deltaGex;
+
+  // Directional slope of the GEX profile across strikes near spot.
+  final GammaSlope gammaSlope;
+
+  // Combined IV + GEX regime classification.
+  final IvGexSignal ivGexSignal;
+
+  // Wall density: put wall OI as a multiple of average OI within ±5% of spot.
+  // < 0.5 = thin wall (washout risk). > 2.0 = strong structural support.
+  final double? putWallDensity;
+
   const IvAnalysis({
     required this.ticker,
     required this.currentIv,
@@ -346,6 +426,12 @@ class IvAnalysis {
     this.maxVexStrike,
     this.gammaRegime  = GammaRegime.unknown,
     this.vannaRegime  = VannaRegime.unknown,
+    this.zeroGammaLevel,
+    this.spotToZeroGammaPct,
+    this.deltaGex,
+    this.gammaSlope   = GammaSlope.flat,
+    this.ivGexSignal  = IvGexSignal.unknown,
+    this.putWallDensity,
   });
 
   bool get hasHistory => historyDays >= 10;
@@ -385,6 +471,16 @@ class IvAnalysis {
         : abs >= 1e3 ? '\$${(abs / 1e3).toStringAsFixed(0)}K'
         : '\$${abs.toStringAsFixed(0)}';
     return v >= 0 ? '+$fmt' : '-$fmt';
+  }
+
+  String get deltaGexLabel {
+    if (deltaGex == null) return '—';
+    final d = deltaGex!;
+    final abs = d.abs();
+    final fmt = abs >= 1000
+        ? '\$${(abs / 1000).toStringAsFixed(1)}B'
+        : '\$${abs.toStringAsFixed(0)}M';
+    return d >= 0 ? '+$fmt' : '-$fmt';
   }
 
   String get cexLabel {

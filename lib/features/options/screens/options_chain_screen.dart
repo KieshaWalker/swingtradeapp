@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
+import '../../../features/vol_surface/providers/vol_surface_provider.dart';
 import '../../../services/iv/iv_providers.dart';
 import '../../../services/kalshi/kalshi_providers.dart';
 import '../../../services/schwab/schwab_models.dart';
@@ -28,12 +29,12 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
   int _strikeCount = 10;
   int _selectedExp = 0;
   bool _hasAutoSelected = false;
+  bool _hasIngested = false;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
-    _tabs.addListener(() => setState(() {}));
   }
 
   @override
@@ -116,8 +117,12 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
             );
           }
 
-          // Auto-ingest IV snapshot silently on every successful chain load
-          autoIngestIv(chain);
+          // Auto-ingest IV + vol surface snapshot once per chain load.
+          if (!_hasIngested) {
+            _hasIngested = true;
+            autoIngestIv(chain);
+            autoIngestVolSurface(chain);
+          }
 
           // Auto-select the expiration closest to 30 DTE on first load only.
           // Use addPostFrameCallback so setState isn't called during build.
@@ -134,6 +139,10 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
             });
           }
 
+          // Clamp in case the chain refreshes with fewer expirations than before.
+          if (_selectedExp >= chain.expirations.length) {
+            _selectedExp = chain.expirations.length - 1;
+          }
           final exp = chain.expirations[_selectedExp];
 
           return Column(
@@ -145,7 +154,10 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
                 strikeCount:    _strikeCount,
                 onExpChanged:   (i) => setState(() => _selectedExp = i),
                 onCountChanged: (v) => setState(() => _strikeCount = v),
-                onRefresh:      () => ref.invalidate(schwabOptionsChainProvider(_params)),
+                onRefresh:      () {
+                  _hasIngested = false;
+                  ref.invalidate(schwabOptionsChainProvider(_params));
+                },
               ),
 
               // ── Kalshi event overlay ─────────────────────────────────────
