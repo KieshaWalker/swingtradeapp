@@ -6,12 +6,20 @@ class VolPoint {
   final int dte;
   final double? callIv;
   final double? putIv;
+  final int? callVolume;
+  final int? putVolume;
+  final int? callOI;
+  final int? putOI;
 
   const VolPoint({
     required this.strike,
     required this.dte,
     this.callIv,
     this.putIv,
+    this.callVolume,
+    this.putVolume,
+    this.callOI,
+    this.putOI,
   });
 
   /// Returns the IV value for the given display mode and spot price.
@@ -35,14 +43,21 @@ class VolPoint {
         'dte': dte,
         if (callIv != null) 'call_iv': callIv,
         if (putIv != null) 'put_iv': putIv,
+        if (callVolume != null) 'call_vol': callVolume,
+        if (putVolume != null) 'put_vol': putVolume,
+        if (callOI != null) 'call_oi': callOI,
+        if (putOI != null) 'put_oi': putOI,
       };
 
   factory VolPoint.fromJson(Map<String, dynamic> j) => VolPoint(
         strike: (j['strike'] as num).toDouble(),
         dte: (j['dte'] as num).toInt(),
-        callIv:
-            j['call_iv'] != null ? (j['call_iv'] as num).toDouble() : null,
+        callIv: j['call_iv'] != null ? (j['call_iv'] as num).toDouble() : null,
         putIv: j['put_iv'] != null ? (j['put_iv'] as num).toDouble() : null,
+        callVolume: j['call_vol'] != null ? (j['call_vol'] as num).toInt() : null,
+        putVolume: j['put_vol'] != null ? (j['put_vol'] as num).toInt() : null,
+        callOI: j['call_oi'] != null ? (j['call_oi'] as num).toInt() : null,
+        putOI: j['put_oi'] != null ? (j['put_oi'] as num).toInt() : null,
       );
 }
 

@@ -102,7 +102,7 @@ class TickerDashboardScreen extends ConsumerWidget {
               crossAxisCount: 3,
               mainAxisSpacing: 4,
               crossAxisSpacing: 4,
-              childAspectRatio: 1.5,
+              childAspectRatio: 3,
             ),
             padding: const EdgeInsets.all(12),
             itemCount: symbols.length,

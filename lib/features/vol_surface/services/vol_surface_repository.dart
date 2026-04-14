@@ -28,7 +28,11 @@ class VolSurfaceRepository {
   }
 
   Future<void> delete(VolSnapshot snap) async {
-    await _db.from(_table).delete().eq('obs_date', snap.obsDateStr);
+    await _db
+        .from(_table)
+        .delete()
+        .eq('ticker', snap.ticker)
+        .eq('obs_date', snap.obsDateStr);
   }
 
   Future<void> deleteByTicker(String ticker) async {

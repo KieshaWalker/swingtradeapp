@@ -32,11 +32,11 @@ class KalshiTab extends ConsumerWidget {
         loading: () =>
             const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
-          child: Column(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.wifi_off_outlined,
-                  size: 44, color: AppTheme.neutralColor),
+                  size: 24, color: AppTheme.neutralColor),
               const SizedBox(height: 12),
               Text('$e',
                   style:
@@ -88,7 +88,13 @@ class _EventList extends StatelessWidget {
         return a.compareTo(b);
       });
 
-    return ListView.builder(
+    return GridView.builder(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        mainAxisSpacing: 6,
+        crossAxisSpacing: 6,
+        childAspectRatio: 1.2,
+      ),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       itemCount: categories.fold<int>(0, (sum, cat) => sum + grouped[cat]!.length + 1),
       itemBuilder: (_, globalIdx) {
@@ -104,7 +110,7 @@ class _EventList extends StatelessWidget {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _EventCard(event: items[globalIdx - offset]),
-            );
+                          );
           }
           offset += items.length;
         }

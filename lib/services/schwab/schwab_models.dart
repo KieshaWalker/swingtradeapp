@@ -71,21 +71,72 @@ class SchwabInstrument {
       );
 }
 
+// ── Fundamentals (from fields=fundamental on quotes endpoint) ─────────────────
+// Schwab returns nextEarningsDate as "2025-07-24 00:00:00.000" or "".
+
+class SchwabFundamentals {
+  final DateTime? nextEarningsDate;
+  final double    peRatio;
+  final double    eps;
+  final double    beta;
+  final double    marketCap;       // in dollars
+  final double    dividendYield;   // percent
+  final double    high52;
+  final double    low52;
+  final double    vol10DayAvg;
+  final double    vol3MonthAvg;
+
+  const SchwabFundamentals({
+    this.nextEarningsDate,
+    required this.peRatio,
+    required this.eps,
+    required this.beta,
+    required this.marketCap,
+    required this.dividendYield,
+    required this.high52,
+    required this.low52,
+    required this.vol10DayAvg,
+    required this.vol3MonthAvg,
+  });
+
+  factory SchwabFundamentals.fromJson(Map<String, dynamic> f) {
+    // Schwab format: "2025-07-24 00:00:00.000" — replace space with T to parse
+    DateTime? earningsDate;
+    final raw = f['nextEarningsDate'] as String? ?? '';
+    if (raw.isNotEmpty && raw != '0001-01-01 00:00:00.000') {
+      earningsDate = DateTime.tryParse(raw.replaceFirst(' ', 'T'));
+    }
+    return SchwabFundamentals(
+      nextEarningsDate: earningsDate,
+      peRatio:      (f['peRatio']      as num? ?? 0).toDouble(),
+      eps:          (f['eps']          as num? ?? 0).toDouble(),
+      beta:         (f['beta']         as num? ?? 0).toDouble(),
+      marketCap:    (f['marketCap']    as num? ?? 0).toDouble(),
+      dividendYield:(f['dividendYield']as num? ?? 0).toDouble(),
+      high52:       (f['high52']       as num? ?? 0).toDouble(),
+      low52:        (f['low52']        as num? ?? 0).toDouble(),
+      vol10DayAvg:  (f['vol10DayAvg']  as num? ?? 0).toDouble(),
+      vol3MonthAvg: (f['vol3MonthAvg'] as num? ?? 0).toDouble(),
+    );
+  }
+}
+
 // ── Quote ─────────────────────────────────────────────────────────────────────
 
 class SchwabQuote {
-  final String symbol;
-  final double lastPrice;
-  final double bidPrice;
-  final double askPrice;
-  final double openPrice;
-  final double highPrice;
-  final double lowPrice;
-  final double closePrice;
-  final double netChange;
-  final double netPercentChange;
-  final int totalVolume;
-  final bool realtime;
+  final String              symbol;
+  final double              lastPrice;
+  final double              bidPrice;
+  final double              askPrice;
+  final double              openPrice;
+  final double              highPrice;
+  final double              lowPrice;
+  final double              closePrice;
+  final double              netChange;
+  final double              netPercentChange;
+  final int                 totalVolume;
+  final bool                realtime;
+  final SchwabFundamentals? fundamentals;
 
   const SchwabQuote({
     required this.symbol,
@@ -100,10 +151,15 @@ class SchwabQuote {
     required this.netPercentChange,
     required this.totalVolume,
     required this.realtime,
+    this.fundamentals,
   });
 
+  /// Next earnings date, if Schwab returned it.
+  DateTime? get nextEarningsDate => fundamentals?.nextEarningsDate;
+
   factory SchwabQuote.fromJson(String symbol, Map<String, dynamic> json) {
-    final q = json['quote'] as Map<String, dynamic>? ?? {};
+    final q = json['quote']       as Map<String, dynamic>? ?? {};
+    final f = json['fundamental'] as Map<String, dynamic>?;
     return SchwabQuote(
       symbol:           symbol,
       lastPrice:        (q['lastPrice']         as num? ?? 0).toDouble(),
@@ -117,6 +173,7 @@ class SchwabQuote {
       netPercentChange: (q['netPercentChange']  as num? ?? 0).toDouble(),
       totalVolume:      (q['totalVolume']       as num? ?? 0).toInt(),
       realtime:         json['realtime']        as bool? ?? false,
+      fundamentals:     f != null ? SchwabFundamentals.fromJson(f) : null,
     );
   }
 

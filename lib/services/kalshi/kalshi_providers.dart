@@ -79,7 +79,7 @@ const _macroKeywords = [
 
   // ── Energy & commodities ─────────────────────────────────────────────────
   'oil', 'crude', 'wti', 'brent', 'natural gas', 'gasoline',
-  'gold', 'silver', 'copper', 'wheat', 'corn', 'commodity',
+  'gold', 'silver', 'copper', 'wheat', 'corn', 'commodity', 
 
   // ── Labor market ─────────────────────────────────────────────────────────
   'unemployment', 'jobless', 'payroll', 'nfp', 'non-farm',
@@ -121,7 +121,7 @@ const _macroKeywords = [
   'nasdaq', 'ndx', 'qqq',
   'dow', 'djia', 'dow jones', 'russell', 'iwm',
   'bitcoin', 'btc', 'crypto',
-  'vix', 'volatility', 'stocks', 'equity market',
+  'vix', 'volatility', 'stocks', 'equity market', 
 
   // ── Dollar & forex ───────────────────────────────────────────────────────
   'dollar', 'dxy', 'dollar index', 'euro', 'yen', 'yuan',
@@ -168,8 +168,9 @@ const _macroSeriesTickers = [
   'KXGOLD',         // Gold price
   'KXSILVER',       // Silver price
   'KXNG',           // Natural gas
-  'WTIMIN',         // WTI yearly low
+  'KXWTIMIN',         // WTI yearly low
   'KXSPRLVL',       // Strategic Petroleum Reserve level
+  'KXBRENTMON',    // Brent monthly (nearest contract, not the front-month futures) 
   // ── Equity indices ─────────────────────────────────────────────────────────
   'INXD',           // S&P 500 daily
   'KXINXW',         // S&P 500 weekly range

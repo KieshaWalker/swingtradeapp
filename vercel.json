@@ -2,7 +2,6 @@
   "buildCommand": "bash vercel_build.sh",
   "outputDirectory": "build/web",
   "rewrites": [
-    { "source": "/vol-surface/(.*)", "destination": "/vol-surface/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

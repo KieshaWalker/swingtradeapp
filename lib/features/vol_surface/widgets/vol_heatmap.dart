@@ -152,6 +152,20 @@ class _GridData {
       if (iv > maxIv) maxIv = iv;
     }
 
+    // Use 5th/95th percentile IV bounds so extreme far-OTM IV values
+    // (e.g. 500–1100% on deep OTM strikes) don't compress the ATM color range.
+    final sortedIvs = <double>[];
+    for (final row in grid) {
+      for (final iv in row) {
+        if (iv != null) sortedIvs.add(iv);
+      }
+    }
+    sortedIvs.sort();
+    if (sortedIvs.length >= 20) {
+      minIv = sortedIvs[(sortedIvs.length * 0.05).floor()];
+      maxIv = sortedIvs[(sortedIvs.length * 0.95).floor()];
+    }
+
     return _GridData(
       strikes: strikes,
       dtes: dtes,
@@ -169,7 +183,7 @@ class _HeatmapPainter extends CustomPainter {
 
   static const leftMargin = 52.0;
   static const bottomMargin = 44.0;
-  static const topMargin = 12.0;
+  static const topMargin = 24.0;
   static const rightMargin = 8.0;
   static const legendWidth = 56.0;
 
@@ -206,20 +220,30 @@ class _HeatmapPainter extends CustomPainter {
     }
 
     // ── Spot price vertical line ──
-    if (spotPrice != null &&
-        spotPrice! >= grid.strikes.first &&
-        spotPrice! <= grid.strikes.last) {
-      final t = (spotPrice! - grid.strikes.first) /
-          (grid.strikes.last - grid.strikes.first);
-      final x = leftMargin + t * plotW;
-      canvas.drawLine(
-        Offset(x, topMargin),
-        Offset(x, topMargin + plotH),
-        Paint()
-          ..color = const Color(0xFFfbbf24)
-          ..strokeWidth = 1.5
-          ..strokeCap = StrokeCap.round,
-      );
+    // Position by cell index, not numeric value — strikes are not evenly spaced.
+    if (spotPrice != null) {
+      final strikes = grid.strikes;
+      final sp = spotPrice!;
+      if (sp >= strikes.first && sp <= strikes.last) {
+        final idx = strikes.lastIndexWhere((s) => s <= sp);
+        double x;
+        if (idx < 0) {
+          x = leftMargin;
+        } else if (idx >= strikes.length - 1) {
+          x = leftMargin + plotW;
+        } else {
+          final frac = (sp - strikes[idx]) / (strikes[idx + 1] - strikes[idx]);
+          x = leftMargin + (idx + frac) * cw;
+        }
+        canvas.drawLine(
+          Offset(x, topMargin),
+          Offset(x, topMargin + plotH),
+          Paint()
+            ..color = const Color(0xFFfbbf24)
+            ..strokeWidth = 1.5
+            ..strokeCap = StrokeCap.round,
+        );
+      }
     }
 
     // ── Y axis labels (DTEs) ──
@@ -254,7 +278,10 @@ class _HeatmapPainter extends CustomPainter {
 
     // ── Axis titles ──
     final axisTitleStyle = const TextStyle(
-        color: Color(0xFF6b7280), fontSize: 9, fontFamily: 'monospace');
+        color: Color(0xFFa09fc8),
+        fontSize: 10,
+        fontFamily: 'monospace',
+        fontWeight: FontWeight.w600);
     labelPainter
       ..text = TextSpan(text: 'DTE', style: axisTitleStyle)
       ..layout();
@@ -265,7 +292,7 @@ class _HeatmapPainter extends CustomPainter {
     canvas.restore();
 
     labelPainter
-      ..text = TextSpan(text: 'Strike', style: axisTitleStyle)
+      ..text = TextSpan(text: 'Strike Price', style: axisTitleStyle)
       ..layout();
     labelPainter.paint(
       canvas,
@@ -303,7 +330,19 @@ class _HeatmapPainter extends CustomPainter {
 
     final labelStyle = const TextStyle(
         color: Color(0xFFa09fc8), fontSize: 9, fontFamily: 'monospace');
+    final titleStyle = const TextStyle(
+        color: Color(0xFFa09fc8),
+        fontSize: 10,
+        fontFamily: 'monospace',
+        fontWeight: FontWeight.w600);
     final labelPainter = TextPainter(textDirection: TextDirection.ltr);
+
+    // ── Legend title "IV %" ──
+    labelPainter
+      ..text = TextSpan(text: 'IV %', style: titleStyle)
+      ..layout();
+    labelPainter.paint(
+        canvas, Offset(lx2 + lw / 2 - labelPainter.width / 2, ly - labelPainter.height - 2));
 
     for (final frac in [0.0, 0.5, 1.0]) {
       final iv = grid.minIv + frac * (grid.maxIv - grid.minIv);

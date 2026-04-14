@@ -192,14 +192,16 @@ class _VolSmileChartState extends State<VolSmileChart> {
                       ),
                       titlesData: FlTitlesData(
                         leftTitles: AxisTitles(
+                          axisNameSize: 16,
                           axisNameWidget: const Text('IV %',
                               style: TextStyle(
-                                  color: Color(0xFF6b7280),
-                                  fontSize: 9,
-                                  fontFamily: 'monospace')),
+                                  color: Color(0xFFa09fc8),
+                                  fontSize: 10,
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w600)),
                           sideTitles: SideTitles(
                             showTitles: true,
-                            reservedSize: 42,
+                            reservedSize: 44,
                             getTitlesWidget: (v, _) => Text(
                               '${v.toStringAsFixed(1)}%',
                               style: const TextStyle(
@@ -210,16 +212,18 @@ class _VolSmileChartState extends State<VolSmileChart> {
                           ),
                         ),
                         bottomTitles: AxisTitles(
-                          axisNameWidget: const Text('Strike',
+                          axisNameSize: 16,
+                          axisNameWidget: const Text('Strike Price',
                               style: TextStyle(
-                                  color: Color(0xFF6b7280),
-                                  fontSize: 9,
-                                  fontFamily: 'monospace')),
+                                  color: Color(0xFFa09fc8),
+                                  fontSize: 10,
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w600)),
                           sideTitles: SideTitles(
                             showTitles: true,
                             reservedSize: 28,
                             getTitlesWidget: (v, _) => Text(
-                              v.toInt().toString(),
+                              '\$${v == v.truncateToDouble() ? v.toInt().toString() : v.toStringAsFixed(1)}',
                               style: const TextStyle(
                                   color: Color(0xFF9ca3af),
                                   fontSize: 9,

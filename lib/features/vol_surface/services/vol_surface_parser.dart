@@ -82,20 +82,39 @@ class VolSurfaceParser {
       }
 
       final cols = _splitLine(line);
-      if (cols.length < 26) continue;
+      if (cols.length < 35) continue;
 
-      final strike = _toNum(cols[14]);
+      // Confirmed ThinkorSwim "Stock and Option Quote" column layout:
+      // [0,1] empty  [2] CallVol  [3] CallOI  [4] ProbOTM  [5] ProbITM
+      // [6] Size  [7] Delta  [8] ImplVol(call)  [9] Gamma  [10] Rho
+      // [11] Theta  [12] Vega  [13] Extrinsic  [14] Intrinsic
+      // [15] High  [16] Low  [17] TheoPrice  [18] BID  [19] BX  [20] ASK
+      // [21] AX  [22] Exp  [23] Strike
+      // [24] BID(put)  [25] BX  [26] ASK  [27] AX  [28] PutVol  [29] PutOI
+      // [30] ProbOTM  [31] ProbITM  [32] Size  [33] Delta  [34] ImplVol(put)
+      // [35..43] Gamma Rho Theta Vega Extrinsic Intrinsic High Low TheoPrice
+      final strike = _toNum(cols[23]);
       if (strike == null) continue;
 
       final callIv = _normIv(_toNum(cols[8]));
-      final putIv = _normIv(_toNum(cols[25]));
+      final putIv = _normIv(_toNum(cols[34]));
       if (callIv == null && putIv == null) continue;
+
+      // Volume and Open Interest
+      final callVolume = _toInt(cols[2]);
+      final callOI     = _toInt(cols[3]);
+      final putVolume  = _toInt(cols[28]);
+      final putOI      = _toInt(cols[29]);
 
       points.add(VolPoint(
         strike: strike,
         dte: currentDte,
         callIv: callIv,
         putIv: putIv,
+        callVolume: callVolume,
+        putVolume: putVolume,
+        callOI: callOI,
+        putOI: putOI,
       ));
     }
 
@@ -130,6 +149,13 @@ class VolSurfaceParser {
     }
     cols.add(cur.toString().trim());
     return cols;
+  }
+
+  static int? _toInt(String? s) {
+    final n = _toNum(s);
+    if (n == null) return null;
+    final i = n.toInt();
+    return i > 0 ? i : null;
   }
 
   static double? _toNum(String? s) {

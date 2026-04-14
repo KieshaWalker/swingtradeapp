@@ -67,10 +67,15 @@ class JournalScreen extends ConsumerWidget {
           }
           return RefreshIndicator(
             onRefresh: () => ref.refresh(journalProvider.future),
-            child: ListView.separated(
+            child: GridView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: entries.length,
-              separatorBuilder: (context, _) => const SizedBox(height: 10),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                mainAxisSpacing: 5,
+                crossAxisSpacing: 5,
+                childAspectRatio: 2,
+              ),
               itemBuilder: (context, i) => _JournalCard(entry: entries[i], ref: ref),
             ),
           );

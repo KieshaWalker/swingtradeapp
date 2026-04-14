@@ -10,6 +10,7 @@ import '../services/vol_surface_parser.dart';
 import '../widgets/vol_heatmap.dart';
 import '../widgets/vol_smile_chart.dart';
 import '../widgets/vol_surface_guide.dart';
+import '../widgets/vol_surface_interpretation.dart';
 
 // ── IV mode options ────────────────────────────────────────────────────────────
 const _ivModes = [
@@ -705,6 +706,14 @@ class _MainPanel extends StatelessWidget {
         ivMode: ivMode,
         loading: loading,
       )),
+      if (activeSnap != null)
+        SizedBox(
+          height: 220,
+          child: VolSurfaceInterpretation(
+            snap: activeSnap!,
+            ivMode: ivMode,
+          ),
+        ),
     ]);
   }
 }
@@ -735,6 +744,8 @@ class _ControlsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final selectedTicker = baseSnap?.ticker ?? activeSnap?.ticker;
+
     return AnimatedBuilder(
       animation: tabs,
       builder: (context2, child) => Container(
@@ -770,21 +781,27 @@ class _ControlsBar extends StatelessWidget {
             // Snapshot selectors for diff mode
             if (tabs.index == 2 && snaps.isNotEmpty) ...[
               _SnapSelect(
-                label: 'Base',
-                snaps: snaps,
+                 label: 'Base',
+                snaps: selectedTicker != null
+                  ? snaps.where((s) => s.ticker == selectedTicker).toList()
+                  : snaps,
                 selected: baseSnap,
                 onChanged: onBaseSnapChanged,
               ),
               _SnapSelect(
                 label: 'Compare',
-                snaps: snaps,
+                snaps: selectedTicker != null
+                  ? snaps.where((s) => s.ticker == selectedTicker).toList()
+                  : snaps,
                 selected: activeSnap,
                 onChanged: onActiveSnapChanged,
               ),
             ] else if (tabs.index != 2 && snaps.isNotEmpty)
               _SnapSelect(
                 label: 'Date',
-                snaps: snaps,
+                snaps: activeSnap != null
+                    ? snaps.where((s) => s.ticker == activeSnap!.ticker).toList()
+                    : snaps,
                 selected: activeSnap,
                 onChanged: onActiveSnapChanged,
               ),
@@ -880,7 +897,13 @@ class _SnapSelect extends StatelessWidget {
               color: Color(0xFF6b7280),
               fontFamily: 'monospace')),
       DropdownButton<VolSnapshot>(
-        value: snaps.contains(selected) ? selected : null,
+        value: selected == null
+            ? null
+            : snaps
+                .where((s) =>
+                    s.ticker == selected!.ticker &&
+                    s.obsDateStr == selected!.obsDateStr)
+                .firstOrNull,
         hint: const Text('—',
             style: TextStyle(
                 color: Color(0xFF6b7280),
@@ -1210,9 +1233,17 @@ class _NarrowLayout extends StatelessWidget {
             ivMode: ivMode,
             loading: loading,
           )),
+          if (activeSnap != null)
+            SizedBox(
+              height: 220,
+              child: VolSurfaceInterpretation(
+                snap: activeSnap!,
+                ivMode: ivMode,
+              ),
+            ),
         ]),
         Positioned(
-          bottom: 16,
+          bottom: activeSnap != null ? 236 : 16,
           right: 16,
           child: FloatingActionButton.extended(
             onPressed: () => _showInputSheet(context),

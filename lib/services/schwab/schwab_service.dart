@@ -91,6 +91,29 @@ class SchwabService {
     }
   }
 
+  // ── Earnings date ────────────────────────────────────────────────────────────
+
+  /// Returns the next earnings date for [symbol] from Schwab fundamentals,
+  /// or null if unavailable. Uses the same quotes endpoint (fields=fundamental)
+  /// — no extra network call or edge function needed.
+  Future<DateTime?> getEarningsDate(String symbol) async {
+    try {
+      final res = await _fn.invoke(
+        'get-schwab-quotes',
+        body: {'symbols': [symbol]},
+      );
+      if (res.status != 200) return null;
+      final data = res.data as Map<String, dynamic>?;
+      if (data == null || data.containsKey('error')) return null;
+      final entry = data[symbol] as Map<String, dynamic>?;
+      if (entry == null) return null;
+      return SchwabQuote.fromJson(symbol, entry).nextEarningsDate;
+    } catch (e) {
+      debugPrint('SchwabService.getEarningsDate error: $e');
+      return null;
+    }
+  }
+
   // ── Economy pulse batch (replaces FMP getEconomyPulse quotes) ────────────────
 
   // Schwab-native symbols:

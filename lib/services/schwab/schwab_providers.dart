@@ -42,6 +42,16 @@ final schwabOptionsChainProvider =
       );
 });
 
+// ── Earnings date provider ────────────────────────────────────────────────────
+// Returns the next earnings date for a symbol from Schwab fundamentals.
+// null = no earnings date available (index ETF, no data, etc.)
+
+final schwabEarningsDateProvider =
+    FutureProvider.family<DateTime?, String>((ref, symbol) {
+  if (symbol.isEmpty) return Future.value(null);
+  return ref.watch(schwabServiceProvider).getEarningsDate(symbol);
+});
+
 class OptionsChainParams {
   final String  symbol;
   final String  contractType;
