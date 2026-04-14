@@ -152,14 +152,10 @@ class ApiTileLoading extends StatelessWidget {
 ({String value, String date})? blsLatest(BlsResponse resp, String seriesId) {
   final series = resp.series.where((s) => s.seriesId == seriesId).firstOrNull;
   if (series == null) return null;
+  // Walk the series in order; skip dash values (stored as 0.0 with empty year).
   for (final d in series.data) {
-    if (d.value != 0.0 || d.year.isNotEmpty) {
-      // Filter out dash values (stored as 0.0 but originally "-")
-      final raw = series.data
-          .where((x) => x.year.isNotEmpty)
-          .firstOrNull;
-      if (raw == null) return null;
-      return (value: raw.value.toString(), date: '${raw.periodName} ${raw.year}');
+    if (d.value != 0.0 && d.year.isNotEmpty) {
+      return (value: d.value.toString(), date: '${d.periodName} ${d.year}');
     }
   }
   return null;

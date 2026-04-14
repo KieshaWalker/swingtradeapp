@@ -79,9 +79,8 @@ class GexChart extends StatelessWidget {
             SizedBox(
               height: 180,
               child: _GexBarChart(
-                strikes:         strikes,
-                underlyingPrice: analysis.currentIv, // used for formatting only
-                maxGexStrike:    analysis.maxGexStrike,
+                strikes:      strikes,
+                maxGexStrike: analysis.maxGexStrike,
               ),
             ),
           ],
@@ -120,12 +119,10 @@ class GexChart extends StatelessWidget {
 
 class _GexBarChart extends StatelessWidget {
   final List<GexStrike> strikes;
-  final double underlyingPrice;
   final double? maxGexStrike;
 
   const _GexBarChart({
     required this.strikes,
-    required this.underlyingPrice,
     required this.maxGexStrike,
   });
 

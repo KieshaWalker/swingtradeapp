@@ -13,13 +13,29 @@ import '../models/vol_surface_models.dart';
 enum _Term { contango, flat, backwardation }
 enum _Skew { putBid, symmetric, callBid }
 enum _GammaRegime { positive, negative, neutral }
+enum _GexSlope    { rising, flat, falling }
 
 // ── Gamma wall data ────────────────────────────────────────────────────────────
 // Dealers are assumed net-short options (they sell to retail/institutions).
 // Large call OI → dealers long delta hedge → price ceiling (call wall).
 // Large put OI → dealers short delta hedge → price floor (put wall).
-// Net GEX = callOI − putOI. Positive net = dealers absorb price moves (stable).
-// Negative net = dealers amplify price moves (unstable / trending).
+// Net GEX = callOI − putOI. Positive net = dealers absorb moves. Negative = amplify.
+//
+// GEX slope: direction of net GEX profile as price rises.
+//   Rising  → more positive gamma ahead (stable, walls sticky)
+//   Falling → GEX declining toward zero  (Danger Zone if flip is close)
+//   Flat    → no strong directional bias in OI above spot
+//
+// IV/GEX correlation: in negative gamma regimes, spot ↓ typically causes IV ↑.
+//   If that relationship breaks (neg gamma + suppressed IV), a regime shift may
+//   be occurring. Computed from current atmPct + regime.
+//
+// Liquidity density proxy: bid/ask SIZE is not in the TOS static CSV export, so
+//   we cannot measure book depth directly. Instead we compute the OI concentration
+//   ratio at the nearest put wall vs. the surrounding ±5% band. A ratio < 0.5
+//   means the wall is thinly supported relative to the surrounding strikes — a
+//   proxy signal for "dealer preparing for washout." Real-time order book data
+//   would give a more precise signal.
 
 class _WallStrike {
   final double strike;
@@ -30,10 +46,14 @@ class _WallStrike {
 }
 
 class _GammaData {
-  final List<_WallStrike> callWalls; // top strikes by call OI, above spot
-  final List<_WallStrike> putWalls;  // top strikes by put OI,  below spot
-  final double?           gexFlip;   // approx price where net GEX → 0
-  final _GammaRegime      regime;    // net gamma sign at spot
+  final List<_WallStrike> callWalls;       // top 3 by call OI above spot
+  final List<_WallStrike> putWalls;        // top 3 by put OI  below spot
+  final double?           gexFlip;         // price where cumulative net GEX → 0
+  final double?           gexFlipDistPct;  // |flip − spot| / spot × 100
+  final _GammaRegime      regime;
+  final _GexSlope         gexSlope;        // GEX direction as price moves up
+  final bool              dangerZone;      // pos-gamma but flip within 4% of spot
+  final double?           wallOiRatio;     // nearest put wall OI / avg nearby OI
   final int               totalCallOI;
   final int               totalPutOI;
 
@@ -41,14 +61,19 @@ class _GammaData {
     required this.callWalls,
     required this.putWalls,
     required this.gexFlip,
+    required this.gexFlipDistPct,
     required this.regime,
+    required this.gexSlope,
+    required this.dangerZone,
+    required this.wallOiRatio,
     required this.totalCallOI,
     required this.totalPutOI,
   });
 
   static const _empty = _GammaData(
-    callWalls: [], putWalls: [], gexFlip: null,
-    regime: _GammaRegime.neutral, totalCallOI: 0, totalPutOI: 0,
+    callWalls: [], putWalls: [], gexFlip: null, gexFlipDistPct: null,
+    regime: _GammaRegime.neutral, gexSlope: _GexSlope.flat,
+    dangerZone: false, wallOiRatio: null, totalCallOI: 0, totalPutOI: 0,
   );
 
   static _GammaData from(VolSnapshot snap) {
@@ -78,20 +103,17 @@ class _GammaData {
     final above = spot == null ? all : all.where((w) => w.strike >= spot).toList();
     final below = spot == null ? all : all.where((w) => w.strike <  spot).toList();
 
-    // Top 3 call walls: highest call OI above spot (resistance)
-    final callWalls = [...above]
-      ..sort((a, b) => b.callOI.compareTo(a.callOI));
-    final topCalls = callWalls.take(3).toList()
-      ..sort((a, b) => a.strike.compareTo(b.strike)); // re-sort asc by strike
+    // Top 3 call walls: highest call OI above spot
+    final topCalls = ([...above]..sort((a, b) => b.callOI.compareTo(a.callOI)))
+        .take(3).toList()
+        ..sort((a, b) => a.strike.compareTo(b.strike)); // ascending by strike
 
-    // Top 3 put walls: highest put OI below spot (support)
-    final putWalls = [...below]
-      ..sort((a, b) => b.putOI.compareTo(a.putOI));
-    final topPuts = putWalls.take(3).toList()
-      ..sort((a, b) => b.strike.compareTo(a.strike)); // re-sort desc (nearest first)
+    // Top 3 put walls: highest put OI below spot
+    final topPuts = ([...below]..sort((a, b) => b.putOI.compareTo(a.putOI)))
+        .take(3).toList()
+        ..sort((a, b) => b.strike.compareTo(a.strike)); // descending (nearest first)
 
     // ── Net GEX regime at spot ─────────────────────────────────────────────
-    // Use the single strike nearest to spot to determine current regime.
     _GammaRegime regime = _GammaRegime.neutral;
     if (spot != null && all.isNotEmpty) {
       final nearest = all.reduce((a, b) =>
@@ -105,32 +127,87 @@ class _GammaData {
     }
 
     // ── GEX flip price ─────────────────────────────────────────────────────
-    // Walk strikes from near-spot outward; find first transition where
-    // cumulative net GEX sign flips relative to at-spot net GEX.
+    // Walk outward from spot; find the first strike where cumulative GEX sign
+    // flips from the at-spot sign.
     double? flip;
     if (spot != null && all.length >= 2) {
-      // Build cumulative GEX profile from closest to farthest strike
       final sortedByDist = [...all]
         ..sort((a, b) => (a.strike - spot).abs().compareTo((b.strike - spot).abs()));
-      int cumGex = 0;
-      int? firstSign;
+      int cumGex  = 0;
+      int? firstSign; // only set on first non-zero cumGex to avoid false flip at 0
       for (final w in sortedByDist) {
         cumGex += w.netGex;
-        firstSign ??= cumGex.sign;
-        if (cumGex.sign != 0 && cumGex.sign != firstSign) {
+        // Skip zero — setting firstSign=0 would trigger a false flip on the next
+        // non-zero step. We want the sign of the first non-zero cumulative value.
+        if (cumGex.sign != 0) firstSign ??= cumGex.sign;
+        if (firstSign != null && cumGex.sign != 0 && cumGex.sign != firstSign) {
           flip = w.strike;
           break;
         }
       }
     }
+    final flipDistPct = (spot != null && spot > 0 && flip != null)
+        ? ((flip - spot).abs() / spot * 100)
+        : null;
+
+    // ── GEX slope ──────────────────────────────────────────────────────────
+    // Compare total net GEX in the 0–3% band above spot to the 3–6% band.
+    // Falling: GEX declining as price rises → approaching zero/flip.
+    // Rising:  more positive gamma ahead    → walls are sticky, moves absorbed.
+    _GexSlope gexSlope = _GexSlope.flat;
+    if (spot != null && above.length >= 2) {
+      final nearGex = above
+          .where((w) => w.strike <= spot * 1.03)
+          .fold(0, (s, w) => s + w.netGex);
+      final farGex = above
+          .where((w) => w.strike > spot * 1.03 && w.strike <= spot * 1.06)
+          .fold(0, (s, w) => s + w.netGex);
+      final ratio = (nearGex == 0) ? 1.0 : farGex / nearGex;
+      if (ratio < 0.70) {
+        gexSlope = _GexSlope.falling;
+      } else if (ratio > 1.30) {
+        gexSlope = _GexSlope.rising;
+      }
+    }
+
+    // ── Danger Zone ────────────────────────────────────────────────────────
+    // Positive gamma but GEX flip is within 4% of spot — one move from flipping.
+    final dangerZone = regime == _GammaRegime.positive &&
+        flipDistPct != null &&
+        flipDistPct < 4.0;
+
+    // ── Liquidity density proxy (OI concentration at nearest put wall) ─────
+    // Real bid/ask SIZE is not available in TOS static CSV exports.
+    // Proxy: OI at the nearest put wall vs. average OI of strikes within ±5%
+    // of the wall itself (not of spot). This avoids a scale mismatch when the
+    // nearest put wall is far from spot.
+    // Ratio < 0.5 → wall is thinly supported vs neighbours = potential washout.
+    // Ratio > 2.0 → wall is heavily defended = strong support.
+    double? wallOiRatio;
+    if (spot != null && topPuts.isNotEmpty) {
+      final nearWall = topPuts.first; // nearest put wall (sorted desc → first = nearest)
+      final wallBand = nearWall.strike * 0.05;
+      final neighborStrikes = all.where((w) =>
+          (w.strike - nearWall.strike).abs() <= wallBand &&
+          w.strike != nearWall.strike).toList();
+      if (neighborStrikes.isNotEmpty) {
+        final avgNeighborOi = neighborStrikes.fold(0, (s, w) => s + w.putOI) /
+            neighborStrikes.length;
+        if (avgNeighborOi > 0) wallOiRatio = nearWall.putOI / avgNeighborOi;
+      }
+    }
 
     return _GammaData(
-      callWalls:    topCalls,
-      putWalls:     topPuts,
-      gexFlip:      flip,
-      regime:       regime,
-      totalCallOI:  totalC,
-      totalPutOI:   totalP,
+      callWalls:      topCalls,
+      putWalls:       topPuts,
+      gexFlip:        flip,
+      gexFlipDistPct: flipDistPct,
+      regime:         regime,
+      gexSlope:       gexSlope,
+      dangerZone:     dangerZone,
+      wallOiRatio:    wallOiRatio,
+      totalCallOI:    totalC,
+      totalPutOI:     totalP,
     );
   }
 }
@@ -427,7 +504,7 @@ class VolSurfaceInterpretation extends StatelessWidget {
                   _IvCard(a: a),
                   _TermCard(a: a),
                   _SkewCard(a: a),
-                  _WallsCard(snap: snap),
+                  _WallsCard(snap: snap, a: a),
                   _FlowCard(snap: snap),
                   _ReadsCard(a: a),
                 ],
@@ -989,13 +1066,190 @@ class _FlowCard extends StatelessWidget {
 
 // ── Gamma walls card ──────────────────────────────────────────────────────────
 
-class _WallsCard extends StatelessWidget {
-  final VolSnapshot snap;
-  const _WallsCard({required this.snap});
+// ── Gamma strategy guide bottom sheet ─────────────────────────────────────────
+
+class _GammaStrategySheet extends StatelessWidget {
+  final _GammaRegime regime;
+  const _GammaStrategySheet({required this.regime});
+
+  static const _longGamma = [
+    ('PRIMARY OBJECTIVE', 'Harvest Theta',
+        'This is the time to maximize time-decay income while dealer hedging dampens price swings.'),
+    ('STRATEGY SELECTION', 'Net-Short Premium',
+        'Iron Condors, Strangles, Credit Spreads. The market is "pinned" to heavy strikes — collect the premium.'),
+    ('RISK MANAGEMENT', 'Standard Deviation',
+        'Price action is near-normally distributed. 2σ/3σ boundaries are highly reliable for stop placement.'),
+    ('EXECUTION', 'Passive Liquidity',
+        'Sit on the BID or ASK and wait for fills. Spreads are tight; slippage is minimal. No need to chase.'),
+    ('THE TRAP ⚠', 'Complacency',
+        'Long Gamma environments precede flips. Track distance to the GEX flip point daily and use a "circuit breaker" as spot approaches it. Increase sizing on mean-reversion trades — but cut immediately if the flip triggers.'),
+  ];
+
+  static const _shortGamma = [
+    ('PRIMARY OBJECTIVE', 'Capture Convexity',
+        'You want positions that gain value faster as the move accelerates — dealer-driven waterfalls or squeezes.'),
+    ('STRATEGY SELECTION', 'Net-Long Premium / Trend Follow',
+        'Long Straddles, Strangles, Debit Spreads. Long Gamma positions benefit from the dealer feedback loop amplifying the move.'),
+    ('RISK MANAGEMENT', 'Fat Tail Models',
+        'Standard deviation models fail here. Switch to Expected Shortfall (ES) or Monte Carlo with fat-tail assumptions — moves are not normally distributed.'),
+    ('EXECUTION', 'Aggressive Liquidity',
+        'Hit the tape immediately. Do not work an order — in a Short Gamma move, the price you see now is likely the best you will get.'),
+    ('THE TRAP ⚠', 'Vanna/Charm Reversals',
+        'Volatility spikes can over-price options. If IV hits a ceiling and starts to mean-revert, a volatility crush can kill a winning long-premium trade. Watch for IV stalling while the move continues.'),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    final g = _GammaData.from(snap);
+    final isShort = regime == _GammaRegime.negative;
+
+    Widget buildSection(String tag, String title, String body, bool active) {
+      final color = active
+          ? (isShort ? const Color(0xFFf87171) : const Color(0xFF4ade80))
+          : const Color(0xFF374151);
+      final textColor = active ? Colors.white : const Color(0xFF6b7280);
+      return Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFF111827) : const Color(0xFF0d1117),
+          border: Border.all(color: color, width: active ? 1 : 0.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(tag,
+                style: TextStyle(
+                    color: color,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    fontFamily: 'monospace')),
+            const SizedBox(height: 3),
+            Text(title,
+                style: TextStyle(
+                    color: active ? Colors.white : const Color(0xFF9ca3af),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace')),
+            const SizedBox(height: 5),
+            Text(body,
+                style: TextStyle(
+                    color: textColor,
+                    fontSize: 12,
+                    height: 1.5,
+                    fontFamily: 'monospace')),
+          ],
+        ),
+      );
+    }
+
+    Widget buildGuide(String heading, Color headColor, List<(String, String, String)> rows, bool active) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: headColor.withValues(alpha: 0.12),
+              border: Border.all(color: headColor.withValues(alpha: 0.4)),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(heading,
+                style: TextStyle(
+                    color: headColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                    fontFamily: 'monospace')),
+          ),
+          const SizedBox(height: 10),
+          for (final (tag, title, body) in rows)
+            buildSection(tag, title, body, active),
+        ],
+      );
+    }
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (_, ctrl) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0a0e1a),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          border: Border(top: BorderSide(color: Color(0xFF1f2937))),
+        ),
+        child: Column(
+          children: [
+            // Handle
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFF374151),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Title
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+              child: Row(children: [
+                const Text('GAMMA REGIME PLAYBOOK',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                        fontFamily: 'monospace')),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: const Icon(Icons.close, color: Color(0xFF6b7280), size: 20),
+                ),
+              ]),
+            ),
+            // Content
+            Expanded(
+              child: ListView(
+                controller: ctrl,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                children: [
+                  buildGuide(
+                    '1. LONG GAMMA  (The "Cushion" Regime)',
+                    const Color(0xFF4ade80),
+                    _longGamma,
+                    !isShort,
+                  ),
+                  const SizedBox(height: 18),
+                  buildGuide(
+                    '2. SHORT GAMMA  (The "Fuel" Regime)',
+                    const Color(0xFFf87171),
+                    _shortGamma,
+                    isShort,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Gamma walls card ──────────────────────────────────────────────────────────
+
+class _WallsCard extends StatelessWidget {
+  final VolSnapshot snap;
+  final _A          a;    // needed for IV/GEX correlation signal
+  const _WallsCard({required this.snap, required this.a});
+
+  @override
+  Widget build(BuildContext context) {
+    final g    = _GammaData.from(snap);
     final spot = snap.spotPrice;
 
     if (g.callWalls.isEmpty && g.putWalls.isEmpty) {
@@ -1018,9 +1272,11 @@ class _WallsCard extends StatelessWidget {
 
     final (regimeLabel, regimeColor, regimeSub) = switch (g.regime) {
       _GammaRegime.positive => (
-          'POS GAMMA',
-          const Color(0xFF4ade80),
-          'Dealers absorb moves — expect mean-reversion near walls',
+          g.dangerZone ? 'POS GAMMA ⚡ DANGER ZONE' : 'POS GAMMA',
+          g.dangerZone ? const Color(0xFFfbbf24) : const Color(0xFF4ade80),
+          g.dangerZone
+              ? 'GEX flip within ${g.gexFlipDistPct!.toStringAsFixed(1)}% — one move from negative gamma'
+              : 'Dealers absorb moves — mean-reversion likely near walls',
         ),
       _GammaRegime.negative => (
           'NEG GAMMA',
@@ -1034,6 +1290,55 @@ class _WallsCard extends StatelessWidget {
         ),
     };
 
+    // ── GEX slope ──────────────────────────────────────────────────────────
+    final (slopeIcon, slopeColor, slopeLabel) = switch (g.gexSlope) {
+      _GexSlope.rising  => ('↗', const Color(0xFF4ade80), 'Rising — more gamma ahead'),
+      _GexSlope.flat    => ('→', const Color(0xFF9ca3af), 'Flat — gamma stable as price moves'),
+      _GexSlope.falling => ('↘', const Color(0xFFf97316), 'Falling — GEX declining toward flip'),
+    };
+
+    // ── IV / GEX correlation signal ────────────────────────────────────────
+    // Single-snapshot heuristic: classify the current IV level vs gamma regime.
+    // A true price/IV time-series correlation requires multiple snapshots.
+    final (ivGexLabel, ivGexColor, ivGexDetail) = switch ((g.regime, a.atmPct)) {
+      (_GammaRegime.negative, final p) when p > 0.65 => (
+          'CLASSIC SHORT GAMMA',
+          const Color(0xFFf87171),
+          'Neg gamma + elevated IV — inverse corr in effect (spot ↓ = IV ↑)',
+        ),
+      (_GammaRegime.negative, final p) when p < 0.30 => (
+          'REGIME SHIFT SIGNAL',
+          const Color(0xFFfbbf24),
+          'Neg gamma but IV suppressed — inverse corr may be breaking',
+        ),
+      (_GammaRegime.negative, _) => (
+          'SHORT GAMMA ENV',
+          const Color(0xFFf97316),
+          'Directional risk elevated — monitor for IV/spot correlation',
+        ),
+      (_GammaRegime.positive, final p) when p > 0.70 => (
+          'EVENT OVER POS GAMMA',
+          const Color(0xFFfbbf24),
+          'High IV despite positive gamma — event premium suppressing dampening',
+        ),
+      _ => (
+          'STABLE GAMMA',
+          const Color(0xFF4ade80),
+          'Positive gamma with moderate IV — price/IV less correlated',
+        ),
+    };
+
+    // ── Liquidity density proxy ────────────────────────────────────────────
+    // OI concentration at nearest put wall vs. avg OI in ±5% of spot.
+    // Proxy only — real bid/ask SIZE is not in TOS static CSV exports.
+    final (liqLabel, liqColor, liqDetail) = g.wallOiRatio == null
+        ? ('N/A', const Color(0xFF4b5563), '')
+        : g.wallOiRatio! < 0.50
+            ? ('THIN WALL',    const Color(0xFFf87171), 'Low OI at put wall vs nearby — washout risk')
+            : g.wallOiRatio! > 2.0
+                ? ('SOLID WALL', const Color(0xFF4ade80), 'High OI concentration — support well-defended')
+                : ('MODERATE',  const Color(0xFF9ca3af), 'Average OI density at put wall');
+
     String fmtK(int n) {
       if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
       if (n >= 1000)    return '${(n / 1000).toStringAsFixed(0)}K';
@@ -1044,37 +1349,88 @@ class _WallsCard extends StatelessWidget {
         '\$${s == s.truncateToDouble() ? s.toInt() : s.toStringAsFixed(1)}';
 
     return _Card(
-      width: 220,
+      width: 248,
       label: 'GAMMA WALLS',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Regime chip
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: regimeColor.withValues(alpha: 0.12),
-              border: Border.all(color: regimeColor.withValues(alpha: 0.40)),
-              borderRadius: BorderRadius.circular(4),
+          // ── Regime chip + playbook button ────────────────────────────────
+          Row(children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: regimeColor.withValues(alpha: 0.12),
+                  border: Border.all(color: regimeColor.withValues(alpha: 0.40)),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(regimeLabel,
+                    style: TextStyle(
+                        color: regimeColor,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                        fontFamily: 'monospace')),
+              ),
             ),
-            child: Text(regimeLabel,
-                style: TextStyle(
-                    color: regimeColor,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
-                    fontFamily: 'monospace')),
-          ),
-          const SizedBox(height: 4),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => _GammaStrategySheet(regime: g.regime),
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1f2937),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFF374151)),
+                ),
+                child: const Text('?',
+                    style: TextStyle(
+                        color: Color(0xFF9ca3af),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'monospace')),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 3),
           Text(regimeSub,
-              style: const TextStyle(
-                  color: Color(0xFF6b7280),
+              style: TextStyle(
+                  color: g.dangerZone
+                      ? const Color(0xFFfbbf24)
+                      : const Color(0xFF6b7280),
                   fontSize: 8,
                   height: 1.35,
                   fontFamily: 'monospace')),
-          const SizedBox(height: 8),
+          const SizedBox(height: 7),
 
-          // Call walls (resistance above spot)
+          // ── GEX slope ────────────────────────────────────────────────────
+          Row(children: [
+            const Text('GAMMA SLOPE  ',
+                style: TextStyle(
+                    color: Color(0xFF4b5563),
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.9,
+                    fontFamily: 'monospace')),
+            Text('$slopeIcon ',
+                style: TextStyle(color: slopeColor, fontSize: 10,
+                    fontFamily: 'monospace')),
+          ]),
+          const SizedBox(height: 2),
+          Text(slopeLabel,
+              style: TextStyle(
+                  color: slopeColor,
+                  fontSize: 8,
+                  height: 1.3,
+                  fontFamily: 'monospace')),
+          const SizedBox(height: 7),
+
+          // ── Call walls ───────────────────────────────────────────────────
           if (g.callWalls.isNotEmpty) ...[
             const Text('CALL WALLS  (resistance)',
                 style: TextStyle(
@@ -1114,7 +1470,7 @@ class _WallsCard extends StatelessWidget {
             const SizedBox(height: 6),
           ],
 
-          // Put walls (support below spot)
+          // ── Put walls ────────────────────────────────────────────────────
           if (g.putWalls.isNotEmpty) ...[
             const Text('PUT WALLS  (support)',
                 style: TextStyle(
@@ -1151,10 +1507,10 @@ class _WallsCard extends StatelessWidget {
                           fontFamily: 'monospace')),
                 ]),
               ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 7),
           ],
 
-          // GEX flip
+          // ── GEX flip ─────────────────────────────────────────────────────
           if (g.gexFlip != null) ...[
             Row(children: [
               const Text('GEX flip  ',
@@ -1168,11 +1524,89 @@ class _WallsCard extends StatelessWidget {
                       fontSize: 9,
                       fontWeight: FontWeight.w600,
                       fontFamily: 'monospace')),
+              if (g.gexFlipDistPct != null) ...[
+                const Text('  ',
+                    style: TextStyle(fontSize: 8)),
+                Text('(${g.gexFlipDistPct!.toStringAsFixed(1)}% away)',
+                    style: const TextStyle(
+                        color: Color(0xFF6b7280),
+                        fontSize: 8,
+                        fontFamily: 'monospace')),
+              ],
             ]),
-            const Text('Price where dealer hedging flips',
+            const SizedBox(height: 7),
+          ],
+
+          // ── IV / GEX correlation ──────────────────────────────────────────
+          const Text('IV / GEX SIGNAL',
+              style: TextStyle(
+                  color: Color(0xFF4b5563),
+                  fontSize: 8,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.9,
+                  fontFamily: 'monospace')),
+          const SizedBox(height: 3),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+            decoration: BoxDecoration(
+              color: ivGexColor.withValues(alpha: 0.10),
+              border: Border.all(color: ivGexColor.withValues(alpha: 0.35)),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Text(ivGexLabel,
                 style: TextStyle(
-                    color: Color(0xFF4b5563),
+                    color: ivGexColor,
                     fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                    fontFamily: 'monospace')),
+          ),
+          const SizedBox(height: 3),
+          Text(ivGexDetail,
+              style: const TextStyle(
+                  color: Color(0xFF6b7280),
+                  fontSize: 8,
+                  height: 1.35,
+                  fontFamily: 'monospace')),
+          const SizedBox(height: 7),
+
+          // ── Liquidity density proxy ───────────────────────────────────────
+          if (g.wallOiRatio != null) ...[
+            Row(children: [
+              const Text('WALL DENSITY  ',
+                  style: TextStyle(
+                      color: Color(0xFF4b5563),
+                      fontSize: 8,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.9,
+                      fontFamily: 'monospace')),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: liqColor.withValues(alpha: 0.10),
+                  border: Border.all(color: liqColor.withValues(alpha: 0.35)),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: Text(liqLabel,
+                    style: TextStyle(
+                        color: liqColor,
+                        fontSize: 7,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                        fontFamily: 'monospace')),
+              ),
+            ]),
+            const SizedBox(height: 2),
+            Text(liqDetail,
+                style: const TextStyle(
+                    color: Color(0xFF6b7280),
+                    fontSize: 8,
+                    fontFamily: 'monospace')),
+            const SizedBox(height: 2),
+            Text('OI ratio: ${g.wallOiRatio!.toStringAsFixed(2)}× avg  (bid/ask size not in CSV)',
+                style: const TextStyle(
+                    color: Color(0xFF374151),
+                    fontSize: 7,
                     fontFamily: 'monospace')),
           ],
         ],

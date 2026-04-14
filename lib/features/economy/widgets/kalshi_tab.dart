@@ -32,7 +32,7 @@ class KalshiTab extends ConsumerWidget {
         loading: () =>
             const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
-          child: Row(
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.wifi_off_outlined,

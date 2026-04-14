@@ -139,7 +139,7 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
                     onSelectSnap: (s) => setState(() => _activeSnap = s),
                     onDeleteSnap: (s) async {
                       await ref.read(volSurfaceProvider.notifier).delete(s);
-                      if (_activeSnap?.obsDateStr == s.obsDateStr) {
+                      if (_activeSnap?.ticker == s.ticker && _activeSnap?.obsDateStr == s.obsDateStr) {
                         setState(() => _activeSnap = null);
                       }
                     },
@@ -171,7 +171,7 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
                   onSelectSnap: (s) => setState(() => _activeSnap = s),
                   onDeleteSnap: (s) async {
                     await ref.read(volSurfaceProvider.notifier).delete(s);
-                    if (_activeSnap?.obsDateStr == s.obsDateStr) {
+                    if (_activeSnap?.ticker == s.ticker && _activeSnap?.obsDateStr == s.obsDateStr) {
                       setState(() => _activeSnap = null);
                     }
                   },

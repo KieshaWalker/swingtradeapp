@@ -513,7 +513,8 @@ class _DecisionCard extends StatelessWidget {
       Recommendation.avoid => Icons.thumb_down_rounded,
     };
 
-    final isCall = c.symbol.contains('C');
+    final occMatch = RegExp(r'\d{6}([CP])\d').firstMatch(c.symbol);
+    final isCall = occMatch?.group(1) == 'C';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),

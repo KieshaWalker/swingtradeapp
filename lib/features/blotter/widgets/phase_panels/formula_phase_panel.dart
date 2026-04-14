@@ -741,7 +741,7 @@ class _FormulaSection extends StatelessWidget {
             icon:   Icons.bolt_rounded,
             label:  'Unusual Activity',
             value:  'Vol/OI ${r.volOiRatio.toStringAsFixed(2)}',
-            detail: 'Elevated flow — potential smart money positioning',
+            detail: 'Elevated flow vs open interest — unusual activity',
             color:  AppTheme.profitColor,
           ),
         // Entry cost

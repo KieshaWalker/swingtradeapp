@@ -145,6 +145,8 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
       fv:         fv,
       whatIf:     whatIf,
       tradeEs95:  deltaEs + gammaEs,
+      deltaEs:    deltaEs,
+      gammaEs:    gammaEs,
       ivAnalysis: ivAnalysis,
     );
     _notifyIfChanged(result);
@@ -175,6 +177,8 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     required FairValueResult fv,
     required WhatIfResult    whatIf,
     required double          tradeEs95,
+    required double          deltaEs,
+    required double          gammaEs,
     IvAnalysis?              ivAnalysis,
   }) {
     final edgeBps = fv.edgeBps;
@@ -201,7 +205,7 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
       'SABR vol: ${(fv.sabrVol * 100).toStringAsFixed(1)}%  '
           '(market IV: ${(fv.impliedVol * 100).toStringAsFixed(1)}%)',
       'ES₉₅ this trade: \$${tradeEs95.toStringAsFixed(0)}  '
-          '(Δ \$${(tradeEs95 - (0.5 * (whatIf.es95Impact - tradeEs95).abs())).toStringAsFixed(0)} + Γ)',
+          '(Δ \$${deltaEs.toStringAsFixed(0)} + Γ \$${gammaEs.toStringAsFixed(0)})',
       if (fv.vanna != null)
         'Vanna ${fv.vanna!.toStringAsFixed(4)} · '
         'Charm ${fv.charm?.toStringAsFixed(4) ?? '—'} · '

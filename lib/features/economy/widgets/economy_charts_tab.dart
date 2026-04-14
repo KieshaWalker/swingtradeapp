@@ -61,6 +61,9 @@ class EconomyChartsTab extends ConsumerWidget {
         ref.invalidate(economyQuoteHistoryProvider('SPY'));
         ref.invalidate(economyQuoteHistoryProvider('QQQ'));
         ref.invalidate(economyQuoteHistoryProvider('VIXY'));
+        // Invalidate all indicator and treasury history so charts reflect new data
+        ref.invalidate(economyIndicatorHistoryProvider);
+        ref.invalidate(economyTreasuryHistoryProvider);
       });
     });
 

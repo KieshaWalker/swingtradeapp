@@ -67,10 +67,10 @@ class IvAnalyticsService {
     List<IvSnapshot> history, {  // sorted ascending by date
     double? riskFreeRate,         // pass live FRED DFF value; falls back to default
   }) {
-    final r = (riskFreeRate ?? _defaultRiskFreeRate) / 100; // convert % to decimal if needed
-    // Guard: if caller already passed a decimal (e.g. 0.0433) keep it; if they
-    // passed a percentage (e.g. 4.33) normalise it.
-    final rDecimal = r > 0.5 ? r / 100 : r;
+    // Normalise rate: FRED passes percentage (e.g. 4.33); default is already decimal (0.0433).
+    // Threshold 0.5 safely separates the two forms (no realistic risk-free rate is 50%+).
+    final rawRate  = riskFreeRate ?? _defaultRiskFreeRate;
+    final rDecimal = rawRate > 0.5 ? rawRate / 100 : rawRate;
     final spot  = chain.underlyingPrice;
     final atmIv = chain.volatility; // chain-level ATM IV from Schwab
 

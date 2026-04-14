@@ -32,9 +32,12 @@ class VolPoint {
       case 'avg':
         if (callIv != null && putIv != null) return (callIv! + putIv!) / 2;
         return callIv ?? putIv;
-      default: // otm
-        if (spot == null || strike >= spot) return callIv;
-        return putIv;
+      default: // otm — use call for strike > spot, put for strike < spot, avg at ATM
+        if (spot == null || strike > spot) return callIv;
+        if (strike < spot) return putIv;
+        // ATM: prefer average, fall back to either side
+        if (callIv != null && putIv != null) return (callIv! + putIv!) / 2;
+        return callIv ?? putIv;
     }
   }
 

@@ -119,7 +119,8 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
           // Auto-ingest IV snapshot silently on every successful chain load
           autoIngestIv(chain);
 
-          // Auto-select the expiration closest to 30 DTE on first load only
+          // Auto-select the expiration closest to 30 DTE on first load only.
+          // Use addPostFrameCallback so setState isn't called during build.
           if (!_hasAutoSelected) {
             _hasAutoSelected = true;
             int bestIdx = 0;
@@ -128,7 +129,9 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
               final dist = (chain.expirations[i].dte - 30).abs();
               if (dist < bestDist) { bestDist = dist; bestIdx = i; }
             }
-            _selectedExp = bestIdx;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _selectedExp = bestIdx);
+            });
           }
 
           final exp = chain.expirations[_selectedExp];
@@ -400,7 +403,8 @@ class _ContractRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final score   = OptionScoringEngine.score(contract, underlyingPrice);
-    final isAtm   = (contract.strikePrice - underlyingPrice).abs() < 1.0;
+    final isAtm   = underlyingPrice > 0 &&
+        (contract.strikePrice - underlyingPrice).abs() / underlyingPrice < 0.01;
     final isItm   = contract.inTheMoney;
     final accent  = isCall ? AppTheme.profitColor : AppTheme.lossColor;
 

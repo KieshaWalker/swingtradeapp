@@ -28,7 +28,10 @@ class OptionScoreSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final score   = OptionScoringEngine.score(contract, underlyingPrice);
-    final isCall  = contract.symbol.contains('C');
+    // OCC format: UNDERLYING + YYMMDD + C/P + STRIKE — use regex, not contains('C'),
+    // which misidentifies puts on tickers like C (Citigroup), CRM, CVX.
+    final occMatch = RegExp(r'\d{6}([CP])\d').firstMatch(contract.symbol);
+    final isCall  = occMatch?.group(1) == 'C';
     final color   = isCall ? AppTheme.profitColor : AppTheme.lossColor;
     final ivAsync = ref.watch(ivAnalysisProvider(symbol));
     final greeks  = IvAnalyticsService.contractGreeks(contract, underlyingPrice);

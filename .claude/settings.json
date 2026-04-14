@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Read(//opt/**)"
+      "Read(//opt/**)",
+      "Bash(dart --version)",
+      "Bash(flutter --version)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('generatorVersion',''\\)\\)\")"
     ]
   }
 }
