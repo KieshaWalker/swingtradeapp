@@ -163,14 +163,19 @@ const _macroSeriesTickers = [
   'KXDOTPLOT',      // Fed dot plot
   'KXFEDRATEMIN',   // How low will the Fed rate go
   'RATECUTCOUNT',   // Number of rate cuts
+  'kxtnotew',       // 10-year Treasury note yield
   // ── Commodities ────────────────────────────────────────────────────────────
   'KXWTI',          // WTI crude oil price
   'KXGOLD',         // Gold price
   'KXSILVER',       // Silver price
   'KXNG',           // Natural gas
   'KXWTIMIN',         // WTI yearly low
+  'KXWTIMAX',         // WTI yearly high
+  'kxwtiminm' // wit low monthly (nearest contract)
+  'kxwtiw' // friday wti (nearest contract)
   'KXSPRLVL',       // Strategic Petroleum Reserve level
   'KXBRENTMON',    // Brent monthly (nearest contract, not the front-month futures) 
+
   // ── Equity indices ─────────────────────────────────────────────────────────
   'INXD',           // S&P 500 daily
   'KXINXW',         // S&P 500 weekly range
@@ -180,6 +185,8 @@ const _macroSeriesTickers = [
   'KXRUSSELL',      // Russell 2000
   // ── Crypto ─────────────────────────────────────────────────────────────────
   'KXBTC',          // Bitcoin range
+  'KXBTCMAXMON', // Bitcoin max monthly price (nearest contract) 
+  'KXBTCMINMON', // Bitcoin min monthly price (nearest contract) 
 ];
 
 // ── Events (with nested markets) ──────────────────────────────────────────────
