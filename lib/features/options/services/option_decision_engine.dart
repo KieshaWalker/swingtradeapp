@@ -95,7 +95,10 @@ class OptionDecisionEngine {
     double               underlyingPrice,
     OptionDecisionInput  input,
   ) {
-    final isCall = contract.symbol.contains('C');
+    // OCC symbol format: UNDERLYING + YYMMDD + C/P + STRIKE (e.g. ORCL260117C00155000)
+    // symbol.contains('C') is ambiguous for tickers like C, CRM, CVX — use regex instead.
+    final occMatch = RegExp(r'\d{6}([CP])\d').firstMatch(contract.symbol);
+    final isCall = occMatch?.group(1) == 'C';
     final score  = OptionScoringEngine.score(contract, underlyingPrice);
     final c      = input.contracts;
 
@@ -124,8 +127,11 @@ class OptionDecisionEngine {
     final totalThetaDrag = dailyThetaDrag * contract.daysToExpiration;
 
     // ── Pricing edge (cheap vs expensive vs fair) ─────────────────────────────
-    final pricingEdge = contract.theoreticalOptionValue - contract.midpoint;
-    final isCheap     = pricingEdge > 0.05;
+    // Threshold is relative to premium: 2% of midpoint, min $0.05.
+    // A $0.05 edge on a $10 option is noise; on a $0.50 option it's 10%.
+    final pricingEdge      = contract.theoreticalOptionValue - contract.midpoint;
+    final edgeThreshold    = (contract.midpoint * 0.02).clamp(0.05, double.infinity);
+    final isCheap          = pricingEdge > edgeThreshold;
 
     // ── Volume / OI ratio ─────────────────────────────────────────────────────
     final volOiRatio =
@@ -170,9 +176,19 @@ class OptionDecisionEngine {
     }
 
     // Break-even
-    reasons.add(
-        'Break-even at \$${breakEvenPrice.toStringAsFixed(2)} '
-        '(${breakEvenMovePct.toStringAsFixed(1)}% move needed)');
+    final targetMovePct = underlyingPrice == 0
+        ? 0.0
+        : (input.priceTarget - underlyingPrice).abs() / underlyingPrice * 100;
+    if (breakEvenMovePct > targetMovePct && targetMovePct > 0) {
+      warnings.add(
+          'Break-even requires ${breakEvenMovePct.toStringAsFixed(1)}% move '
+          'but target is only ${targetMovePct.toStringAsFixed(1)}% away — '
+          'option expires worthless at target');
+    } else {
+      reasons.add(
+          'Break-even at \$${breakEvenPrice.toStringAsFixed(2)} '
+          '(${breakEvenMovePct.toStringAsFixed(1)}% move needed)');
+    }
 
     // Pricing edge
     if (isCheap) {
@@ -196,7 +212,7 @@ class OptionDecisionEngine {
     // Unusual activity
     if (unusualActivity) {
       reasons.add(
-          'Unusual activity: vol/OI ratio ${volOiRatio.toStringAsFixed(2)} — smart money flow');
+          'Unusual activity: vol/OI ratio ${volOiRatio.toStringAsFixed(2)} — elevated flow vs open interest');
     }
 
     // Vega

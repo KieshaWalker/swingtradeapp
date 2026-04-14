@@ -66,38 +66,44 @@ class OptionScoringEngine {
     }
 
     // ── 2. DTE zone (0–20) ──────────────────────────────────────────────────
-    // Sweet spot: 21–45 DTE. Linear decay outside. 0 DTE = danger zone.
+    // Sweet spot: 21–45 DTE scores 20. Linear ramp 1–20 DTE → 0..20.
+    // 46–90 DTE: smooth decay 20→10. 91–180 DTE: 10→0. Beyond 180 = 0.
     final dte = contract.daysToExpiration;
     final int dteScore;
-    if (dte == 0) {
+    if (dte <= 0) {
       dteScore = 0;
       flags.add('Expiring today');
     } else if (dte <= 7) {
-      dteScore = (20 * dte / 7).round();
+      dteScore = (20.0 * dte / 7).round();
       flags.add('DTE < 7 — pin risk');
     } else if (dte <= 21) {
-      dteScore = (10 + 10 * (dte - 7) / 14).round();
+      dteScore = (10.0 + 10.0 * (dte - 7) / 14).round();
     } else if (dte <= 45) {
       dteScore = 20;
     } else if (dte <= 90) {
-      dteScore = (20 * (1 - (dte - 45) / 90)).clamp(0, 20).round();
+      // Decays 20 → 10 over 45 days (not 0 — 90-DTE swings still viable)
+      dteScore = (20.0 - (dte - 45) / 45.0 * 10).round();
     } else {
-      dteScore = 0;
-      flags.add('DTE > 90 — too far out');
+      // Decays 10 → 0 over the next 90 days; clamp at 0 beyond 180 DTE
+      dteScore = (10.0 - (dte - 90) / 90.0 * 10).clamp(0.0, 10.0).round();
+      if (dte > 180) flags.add('DTE > 180 — very long-dated');
     }
 
     // ── 3. Bid/Ask spread quality (0–15) ────────────────────────────────────
-    // Spread % of midpoint. > 20% = too costly.
+    // Spread % of midpoint. Monotone: 0% → 15pts, 20% → 8pts, 100% → 0pts.
+    // Two-segment linear curve that is continuous at the 20% boundary.
     final spreadPct = contract.spreadPct;
     final int spreadScore;
     if (spreadPct >= 1.0) {
       spreadScore = 0;
       flags.add('No real market');
     } else if (spreadPct > 0.20) {
-      spreadScore = (15 * (1 - (spreadPct - 0.20) / 0.80)).clamp(0, 8).round();
+      // Wide region: 8 → 0 as spreadPct goes 20% → 100%
+      spreadScore = (8.0 * (1 - (spreadPct - 0.20) / 0.80)).clamp(0, 8).round();
       flags.add('Wide spread');
     } else {
-      spreadScore = (15 * (1 - spreadPct / 0.20)).clamp(0, 15).round();
+      // Tight region: 15 → 8 as spreadPct goes 0% → 20%
+      spreadScore = (8.0 + 7.0 * (1 - spreadPct / 0.20)).clamp(0, 15).round();
     }
 
     // ── 4. Implied Volatility (0–20) ─────────────────────────────────────────
