@@ -29,6 +29,9 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme.dart';
 import '../../../../services/fmp/fmp_models.dart';
 import '../../../../services/fmp/fmp_providers.dart';
+import '../../../../services/fred/fred_providers.dart';
+import '../../../../services/iv/realized_vol_models.dart';
+import '../../../../services/iv/realized_vol_providers.dart';
 import '../../../vol_surface/models/vol_surface_models.dart';
 import '../../../vol_surface/providers/vol_surface_provider.dart';
 import '../../../vol_surface/widgets/vol_heatmap.dart';
@@ -173,6 +176,11 @@ PhaseResult _toPhaseResult({
   required double            strike,
   required double?           spot,
   FmpEarningsDate?           earnings,
+  RealizedVolResult?         rvResult,
+  double?                    vixNow,
+  double?                    vxvNow,
+  double?                    vega,
+  double?                    prevPutCallRatio,
 }) {
   final signals  = <String>[];
   final warnings = <String>[];
@@ -309,30 +317,160 @@ PhaseResult _toPhaseResult({
     signals.add('Calendar cycle: $calSpread');
   }
 
+  // ── 7. IV / Realized Vol spread ────────────────────────────────────────────
+  bool ivBelowRv = false;
+  if (rvResult != null &&
+      rvResult.rating != RealizedVolRating.noData &&
+      a.cellIv != null) {
+    final iv   = a.cellIv!;         // decimal (e.g. 0.28)
+    final rv   = rvResult.rv20d;    // decimal (e.g. 0.32)
+    final diff = ((iv - rv) * 100); // percentage points
+    final ivPct = (iv * 100).toStringAsFixed(1);
+    final rvPct = (rv * 100).toStringAsFixed(1);
+
+    if (iv < rv * 0.90) {
+      // IV is materially below RV — selling premium is undercompensated
+      ivBelowRv = true;
+      warnings.add(
+          'IV/RV Spread: surface IV $ivPct% < 20d RV $rvPct% '
+          '(${diff.toStringAsFixed(1)}pp gap). '
+          'IV is underpricing the actual moves being realized. '
+          'Selling premium here is like selling fire insurance below actuarial cost. '
+          'Buying premium may offer structural edge.');
+    } else if (iv > rv * 1.30) {
+      signals.add(
+          'IV/RV spread: surface IV $ivPct% — ${diff.abs().toStringAsFixed(1)}pp '
+          'above 20d RV $rvPct%. IV is expensive vs realized moves. '
+          'Premium sellers are collecting above actuarial cost.');
+    } else {
+      signals.add(
+          'IV/RV spread: surface IV $ivPct% vs 20d RV $rvPct% — '
+          'fairly priced (${diff.toStringAsFixed(1)}pp gap).');
+    }
+    if (rvResult.rv20dPercentile != null) {
+      signals.add('Realized vol percentile: ${rvResult.rv20dPercentile!.toStringAsFixed(0)}th — ${rvResult.rating.label}. ${rvResult.rating.description}');
+    }
+  }
+
+  // ── 8. Skew slope trend (steepening put skew = pre-hedge signal) ───────────
+  bool skewSteepening = false;
+  if (prevPutCallRatio != null) {
+    final delta = a.putCallRatio - prevPutCallRatio;
+    if (delta > 0.08) {
+      skewSteepening = true;
+      warnings.add(
+          'Skew steepening: put/call IV ratio rising '
+          '(${prevPutCallRatio.toStringAsFixed(2)} → ${a.putCallRatio.toStringAsFixed(2)}). '
+          'OTM puts are gaining a premium faster than calls — '
+          'institutions are pre-hedging. Historically precedes falling GEX events. '
+          'Call buyers face unfavorable skew drift.');
+    } else if (delta < -0.08) {
+      signals.add(
+          'Skew flattening: put/call IV ratio falling '
+          '(${prevPutCallRatio.toStringAsFixed(2)} → ${a.putCallRatio.toStringAsFixed(2)}). '
+          'Hedging demand unwinding — risk appetite returning.');
+    }
+  }
+
+  // ── 9. Crush-adjusted edge (earnings window) ───────────────────────────────
+  // Crush impact (1 contract) ≈ termSlope × 100 pp IV crush × vega × 100 shares
+  bool crushEdgeNegative = false;
+  if (vega != null && vega != 0 && a.termShape == _TermShape.backwardation) {
+    final expectedCrushPct = (a.termSlope * 100).clamp(0.0, 40.0); // pp of IV
+    final crushDollars      = expectedCrushPct * vega * 100;        // $ per contract
+    final crushStr          = '\$${crushDollars.toStringAsFixed(0)}';
+    if (crushDollars > 50) {
+      crushEdgeNegative = true;
+      warnings.add(
+          'Crush-adjusted edge: backwardation of '
+          '${expectedCrushPct.toStringAsFixed(1)}pp × vega '
+          '→ ~$crushStr IV crush drag per contract. '
+          'Any long-premium edge must exceed this to be profitable '
+          'after the event resolves. Verify your theoretical edge '
+          'covers the crush before entering.');
+    } else if (crushDollars > 0) {
+      signals.add(
+          'Crush-adjusted drag: ~$crushStr per contract from '
+          '${expectedCrushPct.toStringAsFixed(1)}pp expected IV crush.');
+    }
+  }
+
+  // ── 10. VIX / VXV term structure ─────────────────────────────────────────
+  // VIX = 30-day implied; VXV = 90-day implied.
+  // VIX/VXV > 1.0 → near-term fear spike (inverted vol curve = Panic Mode).
+  // VIX/VXV < 0.85 → complacency (near-term vol cheap vs. forward vol).
+  bool vixVxvPanic = false;
+  if (vixNow != null && vxvNow != null && vxvNow > 0) {
+    final ratio    = vixNow / vxvNow;
+    final ratioStr = ratio.toStringAsFixed(2);
+    if (ratio > 1.10) {
+      vixVxvPanic = true;
+      warnings.add(
+          'VIX/VXV ratio $ratioStr — Panic Mode: near-term implied vol '
+          '(VIX ${vixNow.toStringAsFixed(1)}) > 90-day vol '
+          '(VXV ${vxvNow.toStringAsFixed(1)}). '
+          'Vol curve is inverted — the market is pricing an imminent shock, '
+          'not a slow build. Near-term premium is at maximum richness; '
+          'buying short-dated options here means paying crisis pricing.');
+    } else if (ratio > 1.00) {
+      warnings.add(
+          'VIX/VXV ratio $ratioStr — mild inversion: near-term vol '
+          'slightly elevated vs 90-day. Event risk present in front month.');
+    } else if (ratio < 0.85) {
+      signals.add(
+          'VIX/VXV ratio $ratioStr — Complacency signal: near-term vol '
+          'unusually cheap vs 90-day. Front-month options are under-pricing '
+          'short-term risk; consider calendar spreads (buy near, sell far).');
+    } else {
+      signals.add(
+          'VIX/VXV ratio $ratioStr — normal term structure '
+          '(VIX ${vixNow.toStringAsFixed(1)} / VXV ${vxvNow.toStringAsFixed(1)}). '
+          'No structural vol curve distortion.');
+    }
+  }
+
   // ── Pass / Warn / Fail ─────────────────────────────────────────────────────
-  final bool ivCrush  = a.termShape == _TermShape.backwardation && a.termSlope > 0.05;
-  final bool ivHighBuy = a.cellPct > 0.90;
-  final bool earningsFail = earningsInWindow && a.termShape == _TermShape.backwardation;
+  final bool ivCrush       = a.termShape == _TermShape.backwardation && a.termSlope > 0.05;
+  final bool ivHighBuy     = a.cellPct > 0.90;
+  final bool earningsFail  = earningsInWindow && a.termShape == _TermShape.backwardation;
+
+  // Hard fails include panic-mode VIX term structure + extreme IV crush trap
+  final bool hardFail = ivCrush || ivHighBuy || earningsFail ||
+      (vixVxvPanic && ivHighBuy);
+
+  // Soft warns include any new structural signal
+  final bool softWarn = warnings.isNotEmpty ||
+      earningsInWindow ||
+      a.cellPct > 0.60 ||
+      a.termShape == _TermShape.backwardation ||
+      ivBelowRv ||       // selling cheap insurance
+      skewSteepening ||  // pre-hedge flow building
+      crushEdgeNegative || // crush exceeds edge
+      vixVxvPanic;         // near-term vol curve inverted
 
   final PhaseStatus status;
   final String headline;
 
-  if (ivCrush || ivHighBuy || earningsFail) {
+  if (hardFail) {
     status = PhaseStatus.fail;
     if (earningsFail) {
-      headline = 'Fail — earnings in window + backwardation ($slopePct%) → IV crush';
+      headline = 'Fail — earnings + backwardation ($slopePct%) → IV crush trap';
     } else if (ivCrush) {
       headline = 'Fail — backwardation $slopePct% → IV crush setup';
     } else {
       headline = 'Fail — IV at ${(a.cellPct * 100).toStringAsFixed(0)}th pct; extreme premium';
     }
-  } else if (warnings.isNotEmpty || earningsInWindow || a.cellPct > 0.60 || a.termShape == _TermShape.backwardation) {
+  } else if (softWarn) {
     status = PhaseStatus.warn;
     final parts = <String>[];
     if (a.cellPct > 0.60) parts.add('${(a.cellPct * 100).toStringAsFixed(0)}th pct IV');
-    if (a.termShape == _TermShape.backwardation) parts.add('mild backwardation');
+    if (a.termShape == _TermShape.backwardation) parts.add('backwardation');
     if (earningsInWindow) parts.add('earnings in window');
     if (!skewAligned) parts.add('adverse skew');
+    if (ivBelowRv) parts.add('IV < RV');
+    if (skewSteepening) parts.add('skew steepening');
+    if (crushEdgeNegative) parts.add('crush drag');
+    if (vixVxvPanic) parts.add('VIX/VXV panic');
     headline = 'Warn — ${parts.join(' · ')}';
   } else {
     status = PhaseStatus.pass;
@@ -361,6 +499,7 @@ class VolSurfacePhasePanel extends ConsumerStatefulWidget {
   final double  strike;
   final int     daysToExpiry;
   final bool    isCall;
+  final double? vega;   // from contract — used for crush-adjusted edge
   final void Function(PhaseResult) onResult;
 
   const VolSurfacePhasePanel({
@@ -370,6 +509,7 @@ class VolSurfacePhasePanel extends ConsumerStatefulWidget {
     required this.daysToExpiry,
     required this.isCall,
     required this.onResult,
+    this.vega,
   });
 
   @override
@@ -394,6 +534,16 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
   Widget build(BuildContext context) {
     final snapsAsync    = ref.watch(volSurfaceProvider);
     final earningsAsync = ref.watch(tickerNextEarningsProvider(widget.ticker));
+    final rvAsync       = ref.watch(realizedVolProvider(widget.ticker));
+    final vixAsync      = ref.watch(fredVixProvider);
+    final vxvAsync      = ref.watch(fredSeriesProvider('VXVCLS'));
+
+    // Extract latest VIX and VXV values from FRED series
+    final vixObs = vixAsync.valueOrNull?.observations ?? [];
+    final vxvObs = vxvAsync.valueOrNull?.observations ?? [];
+    final vixNow = vixObs.isNotEmpty ? vixObs.last.value : null;
+    final vxvNow = vxvObs.isNotEmpty ? vxvObs.last.value : null;
+    final rvResult = rvAsync.valueOrNull;
 
     return snapsAsync.when(
       loading: () {
@@ -435,6 +585,18 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
         filtered.sort((a, b) => b.obsDate.compareTo(a.obsDate));
         final snap = filtered.first;
 
+        // Skew trend: compare latest put/call ratio to the previous snapshot
+        double? prevPutCallRatio;
+        if (filtered.length >= 2) {
+          final prevAnalysis = _analyzeSnap(
+            snap:   filtered[1],
+            strike: widget.strike,
+            dte:    widget.daysToExpiry,
+            isCall: widget.isCall,
+          );
+          prevPutCallRatio = prevAnalysis.putCallRatio;
+        }
+
         final analysis = _analyzeSnap(
           snap:   snap,
           strike: widget.strike,
@@ -442,12 +604,17 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
           isCall: widget.isCall,
         );
         final result = _toPhaseResult(
-          a:        analysis,
-          isCall:   widget.isCall,
-          dte:      widget.daysToExpiry,
-          strike:   widget.strike,
-          spot:     snap.spotPrice,
-          earnings: earningsAsync.valueOrNull,
+          a:                analysis,
+          isCall:           widget.isCall,
+          dte:              widget.daysToExpiry,
+          strike:           widget.strike,
+          spot:             snap.spotPrice,
+          earnings:         earningsAsync.valueOrNull,
+          rvResult:         rvResult,
+          vixNow:           vixNow,
+          vxvNow:           vxvNow,
+          vega:             widget.vega,
+          prevPutCallRatio: prevPutCallRatio,
         );
         _notifyIfChanged(result);
 

@@ -306,6 +306,7 @@ class _FivePhaseBlotterScreenState
                   child: EconomicPhasePanel(
                     ticker:       _ticker,
                     contractType: _contractType,
+                    dte:          _dte,
                     onResult:     (r) => _notifyResult(1, r, autoExpand: true),
                   ),
                 ),
@@ -366,6 +367,7 @@ class _FivePhaseBlotterScreenState
                     strike:       _strike!,
                     daysToExpiry: _dte ?? 30,
                     isCall:       _contractType == ContractType.call,
+                    vega:         vega != 0 ? vega : null,
                     onResult:     (r) => _notifyResult(4, r, autoExpand: true),
                   ),
                 ),

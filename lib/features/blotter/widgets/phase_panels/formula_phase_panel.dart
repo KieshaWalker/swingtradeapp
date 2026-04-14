@@ -26,6 +26,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme.dart';
+import '../../../../services/iv/iv_providers.dart';
 import '../../../../services/schwab/schwab_models.dart';
 import '../../../../services/schwab/schwab_providers.dart';
 import '../../../options/services/option_decision_engine.dart';
@@ -76,7 +77,9 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
       contractType: isCall ? 'CALL' : 'PUT',
       strikeCount:  20,
     );
-    final chainAsync = ref.watch(schwabOptionsChainProvider(params));
+    final chainAsync  = ref.watch(schwabOptionsChainProvider(params));
+    final ivAsync     = ref.watch(ivAnalysisProvider(widget.ticker));
+    final ivAnalysis  = ivAsync.valueOrNull;
 
     if (chainAsync.isLoading) return const _LoadingSkeleton();
     if (chainAsync.hasError) {
@@ -107,7 +110,8 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
     }
 
     // Score and analyze
-    final score = OptionScoringEngine.score(contract, chain.underlyingPrice);
+    final score = OptionScoringEngine.score(
+      contract, chain.underlyingPrice, ivAnalysis: ivAnalysis);
 
     OptionDecisionResult? decisionResult;
     if (widget.priceTarget != null && widget.priceTarget! > 0) {
@@ -120,6 +124,7 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
           maxBudget:   widget.maxBudget,
           contracts:   1,
         ),
+        ivAnalysis: ivAnalysis,
       );
     }
 
@@ -533,6 +538,7 @@ class _ComponentTable extends StatelessWidget {
   final OptionScore          score;
   final SchwabOptionContract contract;
   final double               underlying;
+
   const _ComponentTable({
     required this.score,
     required this.contract,
@@ -573,13 +579,6 @@ class _ComponentTable extends StatelessWidget {
         score:      score.ivScore,
         maxScore:   20,
         detail:     _ivDetail(contract.impliedVolatility, score.ivScore),
-      ),
-      _ComponentData(
-        icon:       Icons.people_outline_rounded,
-        label:      'Open Interest',
-        score:      score.oiScore,
-        maxScore:   10,
-        detail:     _oiDetail(contract.openInterest, score.oiScore),
       ),
       _ComponentData(
         icon:       Icons.center_focus_strong_outlined,
@@ -1152,7 +1151,6 @@ List<(String, int, int)> _sortedComponents(OptionScore score) {
     ('DTE Zone',      score.dteScore,   20),
     ('Spread',        score.spreadScore, 15),
     ('IV',            score.ivScore,     20),
-    ('Open Interest', score.oiScore,     10),
     ('Moneyness',     score.moneynessScore, 15),
   ];
   components.sort((a, b) => (b.$2 / b.$3).compareTo(a.$2 / a.$3));

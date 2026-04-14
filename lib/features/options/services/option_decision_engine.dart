@@ -2,6 +2,7 @@
 // features/options/services/option_decision_engine.dart
 // Pure Dart. Takes a contract + user inputs, returns full decision analysis.
 // =============================================================================
+import '../../../services/iv/iv_models.dart';
 import '../../../services/schwab/schwab_models.dart';
 import 'option_scoring_engine.dart';
 
@@ -93,13 +94,15 @@ class OptionDecisionEngine {
   static OptionDecisionResult analyze(
     SchwabOptionContract contract,
     double               underlyingPrice,
-    OptionDecisionInput  input,
-  ) {
+    OptionDecisionInput  input, {
+    IvAnalysis? ivAnalysis,
+  }) {
     // OCC symbol format: UNDERLYING + YYMMDD + C/P + STRIKE (e.g. ORCL260117C00155000)
     // symbol.contains('C') is ambiguous for tickers like C, CRM, CVX — use regex instead.
     final occMatch = RegExp(r'\d{6}([CP])\d').firstMatch(contract.symbol);
     final isCall = occMatch?.group(1) == 'C';
-    final score  = OptionScoringEngine.score(contract, underlyingPrice);
+    final score  = OptionScoringEngine.score(contract, underlyingPrice,
+        ivAnalysis: ivAnalysis);
     final c      = input.contracts;
 
     // ── Cost ──────────────────────────────────────────────────────────────────
@@ -276,6 +279,7 @@ class OptionDecisionEngine {
   static List<OptionDecisionResult> rankAll({
     required SchwabOptionsChain chain,
     required OptionDecisionInput input,
+    IvAnalysis? ivAnalysis,
     int topN = 5,
   }) {
     final isCallDirection = input.direction == TradeDirection.bullish;
@@ -285,7 +289,7 @@ class OptionDecisionEngine {
       final contracts = isCallDirection ? exp.calls : exp.puts;
       for (final c in contracts) {
         if (c.ask == 0 && c.bid == 0) continue; // skip illiquid
-        results.add(analyze(c, chain.underlyingPrice, input));
+        results.add(analyze(c, chain.underlyingPrice, input, ivAnalysis: ivAnalysis));
       }
     }
 

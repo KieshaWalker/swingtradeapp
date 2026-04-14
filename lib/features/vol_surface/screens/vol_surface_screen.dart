@@ -114,6 +114,11 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
         title: const Text('Vol Surface'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh_rounded, size: 20),
+            tooltip: 'Refresh datasets',
+            onPressed: () => ref.invalidate(volSurfaceProvider),
+          ),
+          IconButton(
             icon: const Icon(Icons.help_outline_rounded, size: 20),
             tooltip: 'How to read this',
             onPressed: () => showVolSurfaceGuide(context, _tabs.index),

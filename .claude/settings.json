@@ -4,7 +4,11 @@
       "Read(//opt/**)",
       "Bash(dart --version)",
       "Bash(flutter --version)",
-      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('generatorVersion',''\\)\\)\")"
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('generatorVersion',''\\)\\)\")",
+      "Bash(find /Users/k/trading/apps/swing_options_trader/lib -type f -name \"*.dart\" -exec grep -l \"class SchwabOptionContract\" {} \\\\;)",
+      "Bash(find /Users/k/trading/apps/swing_options_trader/lib -type f -name \"*.dart\" -exec grep -l \"fl_chart\\\\|BarChart\\\\|LineChart\" {} \\\\;)",
+      "Bash(grep -h \"^create table\" /Users/k/trading/apps/swing_options_trader/supabase/migrations/*.sql)",
+      "Bash(grep -n \"from\\(\" /Users/k/trading/apps/swing_options_trader/lib/features/*/providers/*.dart)"
     ]
   }
 }

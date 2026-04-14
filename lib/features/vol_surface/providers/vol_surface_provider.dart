@@ -3,7 +3,7 @@
 // =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../services/schwab/schwab_models.dart';
+import '../../../services/schwab/schwab_service.dart';
 import '../models/vol_surface_models.dart';
 import '../services/vol_surface_parser.dart';
 import '../services/vol_surface_repository.dart';
@@ -39,11 +39,18 @@ final volSurfaceProvider =
 );
 
 /// Called from OptionsChainScreen once per chain load to silently persist a
-/// vol surface snapshot. Mirrors autoIngestIv — errors are swallowed so they
-/// never disrupt the options chain UI. The upsert key is (user_id, ticker,
-/// obs_date) so repeated views on the same day overwrite with the latest data.
-Future<void> autoIngestVolSurface(SchwabOptionsChain chain) async {
+/// full vol surface snapshot. Fetches its own wide chain (strikeCount: 150)
+/// independently of the screen's display chain so the vol surface always has
+/// complete strike coverage across all expirations — not just the ±10 ATM
+/// strikes the screen shows. Errors are swallowed to never disrupt the UI.
+Future<void> autoIngestVolSurface(String symbol) async {
   try {
+    final chain = await SchwabService().getOptionsChain(
+      symbol,
+      contractType: 'ALL',
+      strikeCount:  150, // wide enough to capture all listed strikes
+    );
+    if (chain == null || chain.expirations.isEmpty) return;
     final snap = VolSurfaceParser.fromChain(chain);
     if (snap.points.isEmpty) return;
     await VolSurfaceRepository(Supabase.instance.client).save(snap);

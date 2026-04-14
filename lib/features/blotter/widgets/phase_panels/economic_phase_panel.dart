@@ -3,10 +3,23 @@
 // =============================================================================
 // Phase 1 of 5 — Economic Gate
 //
-// Answers three questions before the trade is evaluated further:
-//   1. VIX level   → are options cheap or expensive? (buy vs sell premium)
-//   2. Macro regime → does the broad market support calls or puts?
-//   3. Sector overlay → does the ticker's underlying economy confirm or fight?
+// Weighted macro scoring (Lead/Coincident/Lagging):
+//   Monetary   40%  Fed stance + yield curve (2s10s)
+//   Volatility 30%  VIX level
+//   Liquidity  20%  Fed trajectory proxy (cutting/holding/hiking)
+//   Real Economy 10% Unemployment direction
+//
+// Hard overrides (fire regardless of weighted score):
+//   • VIX > 30                       → minimum WARN; size reduction mandate
+//   • Yield spread < −0.50           → WARN floor for net-long delta
+//   • Fed hawkish + inverted curve
+//     + isCall + DTE > 30            → FAIL (Fed Rule)
+//
+// Quadrant model (Growth × Inflation):
+//   Goldilocks         80–100  Growth↑ Inflation↓ — all strategies PASS
+//   Reflation          60–80   Growth↑ Inflation↑ — WARN tech/duration longs
+//   Deflationary Bust  20–40   Growth↓ Inflation↓ — FAIL longs; PASS puts
+//   Stagflation         0–20   Growth↓ Inflation↑ — STRICT FAIL
 //
 // Providers consumed (all already cached — no wasted network calls):
 //   macroScoreProvider      — composite regime score + sub-components
@@ -72,6 +85,79 @@ _Sector _classifyTicker(String ticker) {
   return _Sector.other;
 }
 
+// ── Macro quadrant ────────────────────────────────────────────────────────────
+
+enum _EcoQuadrant {
+  goldilocks,
+  reflation,
+  deflationaryBust,
+  stagflation,
+  neutral,
+}
+
+extension _EcoQuadrantX on _EcoQuadrant {
+  String get label => switch (this) {
+    _EcoQuadrant.goldilocks       => 'Goldilocks',
+    _EcoQuadrant.reflation        => 'Reflation',
+    _EcoQuadrant.deflationaryBust => 'Deflationary Bust',
+    _EcoQuadrant.stagflation      => 'Stagflation',
+    _EcoQuadrant.neutral          => 'Neutral',
+  };
+
+  String get guidance => switch (this) {
+    _EcoQuadrant.goldilocks       =>
+        'Growth↑ Inflation↓ — all strategies open (80–100)',
+    _EcoQuadrant.reflation        =>
+        'Growth↑ Inflation↑ — WARN tech/duration longs; Energy/Financials OK (60–80)',
+    _EcoQuadrant.deflationaryBust =>
+        'Growth↓ Inflation↓ — FAIL directional longs; puts/hedges PASS (20–40)',
+    _EcoQuadrant.stagflation      =>
+        'Growth↓ Inflation↑ — STRICT FAIL all longs; cash preferred (0–20)',
+    _EcoQuadrant.neutral          =>
+        'Mixed signals — no strong macro edge',
+  };
+
+  Color get color => switch (this) {
+    _EcoQuadrant.goldilocks       => AppTheme.profitColor,
+    _EcoQuadrant.reflation        => const Color(0xFF60A5FA),
+    _EcoQuadrant.deflationaryBust => const Color(0xFFF97316),
+    _EcoQuadrant.stagflation      => AppTheme.lossColor,
+    _EcoQuadrant.neutral          => AppTheme.neutralColor,
+  };
+}
+
+// ── Weighted gate score ────────────────────────────────────────────────────────
+
+class _GateScore {
+  final int           total;           // 0–100 weighted composite
+  final int           monetaryScore;   // 0–100 (40% weight)
+  final int           volScore;        // 0–100 (30% weight)
+  final int           liquidScore;     // 0–100 (20% weight)
+  final int           realScore;       // 0–100 (10% weight)
+  final _EcoQuadrant  quadrant;
+  final bool          fedRule;         // hard FAIL: hawkish + inverted + long > 30d
+  final bool          vixCrisis;       // VIX > 30 — size reduction mandate
+  final bool          deeplyInverted;  // yield < −0.50
+  final bool          contradiction;   // direction vs regime mismatch
+  final bool          oilBearish;
+  final List<String>  hardFlags;
+
+  const _GateScore({
+    required this.total,
+    required this.monetaryScore,
+    required this.volScore,
+    required this.liquidScore,
+    required this.realScore,
+    required this.quadrant,
+    required this.fedRule,
+    required this.vixCrisis,
+    required this.deeplyInverted,
+    required this.contradiction,
+    required this.oilBearish,
+    required this.hardFlags,
+  });
+}
+
 // ── Computed data holder ──────────────────────────────────────────────────────
 
 class _EcoData {
@@ -118,6 +204,7 @@ class _EcoData {
 class EconomicPhasePanel extends ConsumerStatefulWidget {
   final String       ticker;
   final ContractType contractType;
+  final int?         dte;   // trade's days-to-expiry; used for Fed Rule gate
 
   /// Called whenever the computed [PhaseResult] status changes.
   final void Function(PhaseResult)? onResult;
@@ -126,6 +213,7 @@ class EconomicPhasePanel extends ConsumerStatefulWidget {
     super.key,
     required this.ticker,
     required this.contractType,
+    this.dte,
     this.onResult,
   });
 
@@ -221,20 +309,122 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
       refineryNow:  refineryNow,
     );
 
+    final gate   = _computeGateScore(d);
     final result = _computeResult(d);
     _notifyIfChanged(result);
 
-    return _PanelBody(d: d, result: result);
+    return _PanelBody(d: d, gate: gate, result: result);
   }
 
-  // ── Result computation ────────────────────────────────────────────────────
+  // ── Weighted gate scoring ────────────────────────────────────────────────────
+  //
+  // Returns a 0–100 weighted score built from four pillars.
+  // Each pillar sub-score is 0–100; final = weighted sum.
 
-  PhaseResult _computeResult(_EcoData d) {
-    final regime  = d.macro?.regime ?? MacroRegime.neutral;
-    final score   = d.macro?.total ?? 50.0;
-    final isCall  = d.contractType == ContractType.call;
+  _GateScore _computeGateScore(_EcoData d) {
+    final isCall = d.contractType == ContractType.call;
+    final dte    = widget.dte;
 
-    // Directional contradiction — trade direction opposes macro regime
+    // ── Pillar 1 — Monetary (40%) ─────────────────────────────────────────────
+    // Fed stance (0–100) + yield curve (0–100) averaged.
+    final fedDelta   = (d.fedNow != null && d.fedSixMo != null)
+        ? d.fedNow! - d.fedSixMo!
+        : null;
+    final int fedSub;                  // Fed trajectory sub-score
+    if (fedDelta == null)              fedSub = 50;
+    else if (fedDelta > 0.50)          fedSub = 5;    // strongly hiking
+    else if (fedDelta > 0.25)          fedSub = 20;   // hiking
+    else if (fedDelta < -0.25)         fedSub = 90;   // cutting
+    else                               fedSub = 65;   // holding
+
+    final int yieldSub;               // Yield curve sub-score
+    final y = d.yieldNow;
+    if (y == null)                     yieldSub = 50;
+    else if (y > 0.50)                 yieldSub = 90; // normal — expansion
+    else if (y > 0)                    yieldSub = 65; // flat — slowing
+    else if (y > -0.50)                yieldSub = 30; // inverted — warning
+    else                               yieldSub = 5;  // deeply inverted
+
+    final monetaryScore = (fedSub + yieldSub) ~/ 2;
+
+    // ── Pillar 2 — Volatility (30%) ───────────────────────────────────────────
+    final int volScore;
+    final vix = d.vixNow;
+    if (vix == null)       volScore = 50;
+    else if (vix < 15)     volScore = 90;
+    else if (vix < 20)     volScore = 70;
+    else if (vix < 30)     volScore = 35;
+    else                   volScore = 5;   // crisis
+
+    // ── Pillar 3 — Liquidity proxy (20%) ─────────────────────────────────────
+    // Fed cutting → more liquidity in system → bullish bias.
+    // Use Fed trajectory as the liquidity proxy (no balance-sheet data).
+    final int liquidSub;
+    if (fedDelta == null)              liquidSub = 50;
+    else if (fedDelta < -0.25)         liquidSub = 90; // cutting = easing
+    else if (fedDelta > 0.25)          liquidSub = 15; // hiking = draining
+    else                               liquidSub = 60; // holding
+
+    // ── Pillar 4 — Real Economy (10%) ─────────────────────────────────────────
+    final int realSub;
+    final u3Delta = (d.u3Now != null && d.u3Prev != null)
+        ? d.u3Now! - d.u3Prev!
+        : null;
+    if (u3Delta == null)               realSub = 50;
+    else if (u3Delta < -0.2)           realSub = 85; // improving
+    else if (u3Delta > 0.2)            realSub = 25; // deteriorating
+    else                               realSub = 60; // stable
+
+    // ── Weighted total ─────────────────────────────────────────────────────────
+    final weighted = monetaryScore * 0.40
+        + volScore      * 0.30
+        + liquidSub     * 0.20
+        + realSub       * 0.10;
+    final total = weighted.round().clamp(0, 100);
+
+    // ── Quadrant classification ────────────────────────────────────────────────
+    // Growth proxy: monetary + liquidity avg.  Inflation proxy: inverse of that.
+    final growthScore = (monetaryScore + liquidSub) / 2;
+    final _EcoQuadrant quadrant;
+    if (growthScore >= 65 && volScore >= 60)           quadrant = _EcoQuadrant.goldilocks;
+    else if (growthScore >= 60 && volScore < 60)       quadrant = _EcoQuadrant.reflation;
+    else if (growthScore < 45 && yieldSub >= 30)       quadrant = _EcoQuadrant.deflationaryBust;
+    else if (growthScore < 45 && yieldSub < 30)        quadrant = _EcoQuadrant.stagflation;
+    else                                               quadrant = _EcoQuadrant.neutral;
+
+    // ── Hard overrides ─────────────────────────────────────────────────────────
+    final hardFlags = <String>[];
+
+    // Override 1: VIX > 30 — size reduction mandate regardless of score
+    final vixCrisis = vix != null && vix > 30;
+    if (vixCrisis) {
+      hardFlags.add(
+          'VIX > 30 — Size Reduction Mandate: '
+          'reduce position size regardless of contract score. '
+          'Crisis volatility means standard Greek models underestimate tail risk.');
+    }
+
+    // Override 2: deeply inverted yield curve — WARN floor for long delta
+    final deeplyInverted = y != null && y < -0.50;
+    if (deeplyInverted && isCall) {
+      hardFlags.add(
+          'Deeply inverted 2s10s (${y.toStringAsFixed(2)}%) — '
+          'bond market pricing recession. Long calls face structural headwind.');
+    }
+
+    // Override 3: Fed Rule — Hawkish + inverted + long delta + DTE > 30
+    final fedHawkish   = fedDelta != null && fedDelta > 0.25;
+    final yieldInvert  = y != null && y < 0;
+    final fedRule      = fedHawkish && yieldInvert && isCall && (dte == null || dte > 30);
+    if (fedRule) {
+      hardFlags.add(
+          'Fed Rule: Hawkish Fed + inverted yield curve — '
+          'FAIL for net-long delta positions with DTE > 30. '
+          'Fighting both the price of money and the bond market recession signal.');
+    }
+
+    // ── Directional contradiction ──────────────────────────────────────────────
+    final regime = d.macro?.regime ?? MacroRegime.neutral;
     bool contradiction = false;
     if (isCall  && (regime == MacroRegime.crisis || regime == MacroRegime.caution)) {
       contradiction = true;
@@ -242,50 +432,86 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
     if (!isCall && regime == MacroRegime.riskOn) {
       contradiction = true;
     }
-
-    // Oil-specific contradiction — calling calls when crude is in surplus
+    // Oil contradiction
     bool oilBearish = false;
-    if (d.sector == _Sector.oil &&
-        d.crudeNow != null &&
-        d.crudeAvg != null) {
-      oilBearish = d.crudeNow! > d.crudeAvg! * 1.02; // >2% above 1-yr avg
+    if (d.sector == _Sector.oil && d.crudeNow != null && d.crudeAvg != null) {
+      oilBearish = d.crudeNow! > d.crudeAvg! * 1.02;
       if (isCall && oilBearish) contradiction = true;
     }
 
-    // Gate: score < 35 or explicit contradiction → FAIL
-    // Gate: score < 55 or caution regime → WARN
+    return _GateScore(
+      total:          total,
+      monetaryScore:  monetaryScore,
+      volScore:       volScore,
+      liquidScore:    liquidSub,
+      realScore:      realSub,
+      quadrant:       quadrant,
+      fedRule:        fedRule,
+      vixCrisis:      vixCrisis,
+      deeplyInverted: deeplyInverted,
+      contradiction:  contradiction,
+      oilBearish:     oilBearish,
+      hardFlags:      hardFlags,
+    );
+  }
+
+  // ── Result computation ────────────────────────────────────────────────────────
+
+  PhaseResult _computeResult(_EcoData d) {
+    final gate   = _computeGateScore(d);
+    final regime = d.macro?.regime ?? MacroRegime.neutral;
+    final isCall = d.contractType == ContractType.call;
+
+    // ── Status ────────────────────────────────────────────────────────────────
     final PhaseStatus status;
-    if (score < 35 || contradiction) {
+    if (gate.fedRule || gate.contradiction) {
       status = PhaseStatus.fail;
-    } else if (score < 55 || regime == MacroRegime.caution) {
+    } else if (gate.total < 35 || gate.quadrant == _EcoQuadrant.stagflation) {
+      status = PhaseStatus.fail;
+    } else if (gate.vixCrisis ||
+               gate.deeplyInverted ||
+               gate.total < 55 ||
+               gate.quadrant == _EcoQuadrant.deflationaryBust ||
+               regime == MacroRegime.caution) {
       status = PhaseStatus.warn;
     } else {
       status = PhaseStatus.pass;
     }
 
-    // Build signal bullets
+    // ── Signal bullets ─────────────────────────────────────────────────────────
     final signals = <String>[
       if (d.vixNow != null)
         'VIX ${d.vixNow!.toStringAsFixed(1)} — ${_vixLabel(d.vixNow!)}',
-      'Macro Score: ${score.toStringAsFixed(0)} — ${regime.label}',
+      'Weighted Gate Score: ${gate.total}/100  [Monetary ${gate.monetaryScore} · '
+          'Vol ${gate.volScore} · Liquidity ${gate.liquidScore} · Economy ${gate.realScore}]',
+      'Quadrant: ${gate.quadrant.label}  —  ${gate.quadrant.guidance}',
       if (d.yieldNow != null)
-        'Yield curve (2s10s): ${d.yieldNow!.toStringAsFixed(2)} — ${_yieldLabel(d.yieldNow!)}',
+        'Yield curve (2s10s): ${d.yieldNow!.toStringAsFixed(2)}% — ${_yieldLabel(d.yieldNow!)}',
       if (d.u3Now != null)
         'Unemployment (U3): ${_u3Label(d.u3Now!, d.u3Prev)}',
       if (d.fedNow != null)
         'Fed Funds: ${_fedDetail(d.fedNow!, d.fedSixMo)}',
       if (d.sector == _Sector.oil && d.crudeNow != null)
-        'Crude stocks: ${_fmtMbbl(d.crudeNow!)} — ${oilBearish ? "Surplus (bearish)" : "Tightening (bullish)"}',
+        'Crude stocks: ${_fmtMbbl(d.crudeNow!)} — ${gate.oilBearish ? "Surplus (bearish)" : "Tightening (bullish)"}',
+      ...gate.hardFlags,
     ];
 
+    // ── Headline ───────────────────────────────────────────────────────────────
     final vixTag = d.vixNow != null
         ? '  ·  VIX ${d.vixNow!.toStringAsFixed(1)}'
         : '';
-    final headline = contradiction
-        ? (isCall
-            ? 'Macro headwinds — regime opposes calls'
-            : 'Risk-On regime — regime opposes puts')
-        : '${regime.label} (${score.toStringAsFixed(0)}/100)$vixTag';
+    final String headline;
+    if (gate.fedRule) {
+      headline = 'Fed Rule FAIL — Hawkish + inverted curve, long delta blocked';
+    } else if (gate.contradiction) {
+      headline = isCall
+          ? 'Macro headwinds — regime opposes calls'
+          : 'Risk-On regime — regime opposes puts';
+    } else if (gate.quadrant == _EcoQuadrant.stagflation) {
+      headline = 'Stagflation — Strict FAIL: Growth↓ + Inflation↑';
+    } else {
+      headline = '${gate.quadrant.label} · ${gate.total}/100$vixTag';
+    }
 
     return PhaseResult(status: status, headline: headline, signals: signals);
   }
@@ -304,8 +530,9 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
 
 class _PanelBody extends StatelessWidget {
   final _EcoData    d;
+  final _GateScore  gate;
   final PhaseResult result;
-  const _PanelBody({required this.d, required this.result});
+  const _PanelBody({required this.d, required this.gate, required this.result});
 
   @override
   Widget build(BuildContext context) {
@@ -322,16 +549,26 @@ class _PanelBody extends StatelessWidget {
           const SizedBox(height: 12),
         ],
 
-        // 3. Macro regime card
+        // 3. Weighted gate score + quadrant
+        _WeightedScoreCard(gate: gate),
+        const SizedBox(height: 12),
+
+        // 4. Hard override flags (VIX crisis, Fed Rule, etc.)
+        if (gate.hardFlags.isNotEmpty) ...[
+          _HardFlagsCard(flags: gate.hardFlags),
+          const SizedBox(height: 12),
+        ],
+
+        // 5. Macro regime card (legacy context)
         _MacroRegimeCard(d: d),
         const SizedBox(height: 16),
 
-        // 4. Supporting indicators
+        // 6. Supporting indicators
         _SectionLabel('Supporting Indicators'),
         const SizedBox(height: 8),
         _SupportingTable(d: d),
 
-        // 5. Sector overlay
+        // 7. Sector overlay
         if (d.sector == _Sector.oil) ...[
           const SizedBox(height: 16),
           _SectionLabel('Oil Sector Overlay'),
@@ -494,6 +731,224 @@ class _VixStrip extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Weighted gate score card ──────────────────────────────────────────────────
+
+class _WeightedScoreCard extends StatelessWidget {
+  final _GateScore gate;
+  const _WeightedScoreCard({required this.gate});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = gate.total >= 65
+        ? AppTheme.profitColor
+        : gate.total >= 45
+            ? const Color(0xFFFBBF24)
+            : AppTheme.lossColor;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color:        AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(10),
+        border:       Border.all(color: gate.quadrant.color.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Score + quadrant badge
+          Row(
+            children: [
+              Text(
+                'Gate Score  ',
+                style: const TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+              ),
+              Text(
+                '${gate.total} / 100',
+                style: TextStyle(
+                  color: color, fontSize: 14, fontWeight: FontWeight.w800),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color:        gate.quadrant.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border:       Border.all(
+                      color: gate.quadrant.color.withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  gate.quadrant.label,
+                  style: TextStyle(
+                    color:      gate.quadrant.color,
+                    fontSize:   11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Score progress bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value:           (gate.total / 100).clamp(0.0, 1.0),
+              minHeight:       6,
+              backgroundColor: AppTheme.borderColor.withValues(alpha: 0.3),
+              valueColor:      AlwaysStoppedAnimation(color),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Pillar breakdown
+          _pillarRow('Monetary',    gate.monetaryScore, '40%', Icons.account_balance_outlined),
+          const SizedBox(height: 5),
+          _pillarRow('Volatility',  gate.volScore,      '30%', Icons.show_chart_rounded),
+          const SizedBox(height: 5),
+          _pillarRow('Liquidity',   gate.liquidScore,   '20%', Icons.water_drop_outlined),
+          const SizedBox(height: 5),
+          _pillarRow('Real Economy',gate.realScore,     '10%', Icons.people_outline_rounded),
+          const SizedBox(height: 10),
+          // Quadrant guidance
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color:        gate.quadrant.color.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(7),
+              border:       Border.all(
+                  color: gate.quadrant.color.withValues(alpha: 0.25)),
+            ),
+            child: Text(
+              gate.quadrant.guidance,
+              style: TextStyle(
+                color:      gate.quadrant.color,
+                fontSize:   11,
+                fontWeight: FontWeight.w600,
+                height:     1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _pillarRow(String label, int score, String weight, IconData icon) {
+  final color = score >= 65
+      ? AppTheme.profitColor
+      : score >= 45
+          ? const Color(0xFFFBBF24)
+          : AppTheme.lossColor;
+  return Row(
+    children: [
+      Icon(icon, size: 13, color: AppTheme.neutralColor),
+      const SizedBox(width: 6),
+      SizedBox(
+        width: 90,
+        child: Text(
+          label,
+          style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+        ),
+      ),
+      Text(
+        weight,
+        style: const TextStyle(
+          color: AppTheme.neutralColor, fontSize: 10, letterSpacing: 0.3),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(
+            value:           (score / 100).clamp(0.0, 1.0),
+            minHeight:       4,
+            backgroundColor: AppTheme.borderColor.withValues(alpha: 0.3),
+            valueColor:      AlwaysStoppedAnimation(color),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      SizedBox(
+        width: 28,
+        child: Text(
+          '$score',
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            color:      color,
+            fontSize:   11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
+// ── Hard override flags card ──────────────────────────────────────────────────
+
+class _HardFlagsCard extends StatelessWidget {
+  final List<String> flags;
+  const _HardFlagsCard({required this.flags});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color:        AppTheme.lossColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border:       Border.all(color: AppTheme.lossColor.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded,
+                  color: AppTheme.lossColor, size: 14),
+              const SizedBox(width: 6),
+              const Text(
+                'INSTITUTIONAL OVERRIDE',
+                style: TextStyle(
+                  color:         AppTheme.lossColor,
+                  fontSize:      10,
+                  fontWeight:    FontWeight.w800,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...flags.map(
+            (f) => Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('• ',
+                      style: TextStyle(
+                          color: AppTheme.lossColor, fontSize: 11)),
+                  Expanded(
+                    child: Text(
+                      f,
+                      style: const TextStyle(
+                        color:  AppTheme.lossColor,
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

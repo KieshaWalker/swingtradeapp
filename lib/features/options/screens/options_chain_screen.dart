@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
 import '../../../features/vol_surface/providers/vol_surface_provider.dart';
+import '../../../services/greeks/greek_snapshot_providers.dart';
 import '../../../services/iv/iv_providers.dart';
 import '../../../services/kalshi/kalshi_providers.dart';
 import '../../../services/schwab/schwab_models.dart';
@@ -73,6 +74,14 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
           loading: () => Text('${widget.symbol} Options'),
           error:   (_, _) => Text('${widget.symbol} Options'),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.ssid_chart_rounded, size: 20),
+            tooltip: 'Greeks Chart',
+            onPressed: () =>
+                context.push('/ticker/${widget.symbol}/chains/greeks'),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabs,
           indicatorColor: AppTheme.profitColor,
@@ -118,10 +127,17 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
           }
 
           // Auto-ingest IV + vol surface snapshot once per chain load.
+          // autoIngestVolSurface fetches its own wide chain (strikeCount: 150)
+          // so the vol surface always has full strike coverage.
+          // Invalidate volSurfaceProvider after the save so the vol surface
+          // screen refreshes automatically if it is already open.
           if (!_hasIngested) {
             _hasIngested = true;
             autoIngestIv(chain);
-            autoIngestVolSurface(chain);
+            autoIngestGreeks(chain);
+            autoIngestVolSurface(widget.symbol).then((_) {
+              if (mounted) ref.invalidate(volSurfaceProvider);
+            });
           }
 
           // Auto-select the expiration closest to 30 DTE on first load only.

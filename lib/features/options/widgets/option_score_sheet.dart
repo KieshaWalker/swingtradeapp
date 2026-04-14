@@ -646,7 +646,6 @@ class _ScoreBarChart extends StatelessWidget {
       ('DTE',       score.dteScore,       20),
       ('Spread',    score.spreadScore,    15),
       ('IV',        score.ivScore,        20),
-      ('OI',        score.oiScore,        10),
       ('Moneyness', score.moneynessScore, 15),
     ];
 
