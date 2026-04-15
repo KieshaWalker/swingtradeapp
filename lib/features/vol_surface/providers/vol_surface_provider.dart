@@ -49,6 +49,7 @@ Future<void> autoIngestVolSurface(String symbol) async {
       symbol,
       contractType: 'ALL',
       strikeCount:  150, // wide enough to capture all listed strikes
+      
     );
     if (chain == null || chain.expirations.isEmpty) return;
     final snap = VolSurfaceParser.fromChain(chain);

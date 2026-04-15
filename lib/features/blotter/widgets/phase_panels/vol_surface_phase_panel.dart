@@ -30,6 +30,7 @@ import '../../../../core/theme.dart';
 import '../../../../services/fmp/fmp_models.dart';
 import '../../../../services/fmp/fmp_providers.dart';
 import '../../../../services/fred/fred_providers.dart';
+import '../../../../services/iv/iv_providers.dart';
 import '../../../../services/iv/realized_vol_models.dart';
 import '../../../../services/iv/realized_vol_providers.dart';
 import '../../../vol_surface/models/vol_surface_models.dart';
@@ -130,7 +131,7 @@ _SurfaceAnalysis _analyzeSnap({
     final nearIv = sorted.first.value;
     final farIv  = sorted.last.value;
     termSlope = nearIv - farIv; // + = near > far = backwardation
-    if (termSlope > 0.015) {
+    if (termSlope > 0.030) {
       termShape = _TermShape.backwardation;
     } else if (termSlope < -0.005) {
       termShape = _TermShape.contango;
@@ -181,26 +182,33 @@ PhaseResult _toPhaseResult({
   double?                    vxvNow,
   double?                    vega,
   double?                    prevPutCallRatio,
+  double?                    ivPercentileOverride,  // 0–100; from IvAnalysis.ivPercentile
 }) {
   final signals  = <String>[];
   final warnings = <String>[];
 
+  // Use historical IVP when available; fall back to min-max surface rank.
+  final cellPct = ivPercentileOverride != null
+      ? (ivPercentileOverride / 100).clamp(0.0, 1.0)
+      : a.cellPct;
+  final pctSource = ivPercentileOverride != null ? 'IVP' : 'surface rank';
+
   // ── 1. IV Level ────────────────────────────────────────────────────────────
   final ivStr  = a.cellIv != null ? '${(a.cellIv! * 100).toStringAsFixed(1)}%' : 'N/A';
-  final pctStr = '${(a.cellPct * 100).toStringAsFixed(0)}th pct';
+  final pctStr = '${(cellPct * 100).toStringAsFixed(0)}th pct ($pctSource)';
   signals.add(
     'IV at \$${_fmtK(a.closestStrike)} / ${a.closestDte}d: '
     '$ivStr  ($pctStr of surface range)');
 
   final String ivInterpret;
-  if (a.cellPct < 0.30) {
+  if (cellPct < 0.30) {
     ivInterpret = 'Very low IV — premium is historically cheap. Favor buying outright or debit spreads. Model σ may underestimate realized vol.';
-  } else if (a.cellPct < 0.60) {
+  } else if (cellPct < 0.60) {
     ivInterpret = 'Normal IV — option priced near the surface average. No strong premium-direction bias.';
-  } else if (a.cellPct < 0.80) {
+  } else if (cellPct < 0.80) {
     ivInterpret = 'Elevated IV — above-average cost. Consider credit spreads or reducing size. IV compression after catalyst will hurt long premium.';
   } else {
-    ivInterpret = 'High IV — top ${((1 - a.cellPct) * 100).toStringAsFixed(0)}% of surface. Strong IV crush risk. Prefer selling premium or defined-risk credit structure.';
+    ivInterpret = 'High IV — top ${((1 - cellPct) * 100).toStringAsFixed(0)}% of surface. Strong IV crush risk. Prefer selling premium or defined-risk credit structure.';
   }
   signals.add(ivInterpret);
 
@@ -252,14 +260,16 @@ PhaseResult _toPhaseResult({
     if (skewAligned) {
       signals.add('Direction: Call skew ✓ — surface supports bullish position');
     } else {
-      warnings.add('Smile works against long call — puts command premium; calls are relatively cheap but surface sentiment is bearish');
+      // Put skew on equity markets is structural (protective hedging), not a risk flag.
+      // Calls are relatively cheaper vs puts — this is normal for equities.
+      signals.add('Surface note: put skew present (P/C ${a.putCallRatio.toStringAsFixed(2)}) — structural equity skew; calls are relatively cheap vs puts. Not a risk signal for long calls.');
     }
   } else {
     skewAligned = a.smileSkew == _SmileSkew.putBid || a.smileSkew == _SmileSkew.symmetric;
     if (skewAligned) {
       signals.add('Direction: Put skew ✓ — surface supports bearish position; puts command premium');
     } else {
-      warnings.add('Smile works against long put — calls command premium; surface sentiment is bullish');
+      signals.add('Surface note: call skew present (P/C ${a.putCallRatio.toStringAsFixed(2)}) — calls commanding premium over puts; surface has bullish tilt. Puts are relatively cheap.');
     }
   }
 
@@ -431,17 +441,18 @@ PhaseResult _toPhaseResult({
 
   // ── Pass / Warn / Fail ─────────────────────────────────────────────────────
   final bool ivCrush       = a.termShape == _TermShape.backwardation && a.termSlope > 0.05;
-  final bool ivHighBuy     = a.cellPct > 0.90;
+  final bool ivHighBuy     = cellPct > 0.90;
   final bool earningsFail  = earningsInWindow && a.termShape == _TermShape.backwardation;
 
   // Hard fails include panic-mode VIX term structure + extreme IV crush trap
   final bool hardFail = ivCrush || ivHighBuy || earningsFail ||
       (vixVxvPanic && ivHighBuy);
 
-  // Soft warns include any new structural signal
-  final bool softWarn = warnings.isNotEmpty ||
+  // Soft warns require ≥2 independent warning signals to avoid hair-triggers.
+  // A single structural flag (e.g. earnings outside window) is noted but not a warn.
+  final bool softWarn = warnings.length >= 2 ||
       earningsInWindow ||
-      a.cellPct > 0.60 ||
+      cellPct > 0.60 ||
       a.termShape == _TermShape.backwardation ||
       ivBelowRv ||       // selling cheap insurance
       skewSteepening ||  // pre-hedge flow building
@@ -458,15 +469,14 @@ PhaseResult _toPhaseResult({
     } else if (ivCrush) {
       headline = 'Fail — backwardation $slopePct% → IV crush setup';
     } else {
-      headline = 'Fail — IV at ${(a.cellPct * 100).toStringAsFixed(0)}th pct; extreme premium';
+      headline = 'Fail — IV at ${(cellPct * 100).toStringAsFixed(0)}th pct; extreme premium';
     }
   } else if (softWarn) {
     status = PhaseStatus.warn;
     final parts = <String>[];
-    if (a.cellPct > 0.60) parts.add('${(a.cellPct * 100).toStringAsFixed(0)}th pct IV');
+    if (cellPct > 0.60) parts.add('${(cellPct * 100).toStringAsFixed(0)}th pct IV');
     if (a.termShape == _TermShape.backwardation) parts.add('backwardation');
     if (earningsInWindow) parts.add('earnings in window');
-    if (!skewAligned) parts.add('adverse skew');
     if (ivBelowRv) parts.add('IV < RV');
     if (skewSteepening) parts.add('skew steepening');
     if (crushEdgeNegative) parts.add('crush drag');
@@ -474,8 +484,8 @@ PhaseResult _toPhaseResult({
     headline = 'Warn — ${parts.join(' · ')}';
   } else {
     status = PhaseStatus.pass;
-    headline = a.cellPct < 0.40
-        ? 'Pass — low IV (${(a.cellPct * 100).toStringAsFixed(0)}th pct), contango, skew aligned'
+    headline = cellPct < 0.40
+        ? 'Pass — low IV (${(cellPct * 100).toStringAsFixed(0)}th pct), contango, skew aligned'
         : 'Pass — normal IV, contango, smile supports direction';
   }
 
@@ -537,6 +547,8 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
     final rvAsync       = ref.watch(realizedVolProvider(widget.ticker));
     final vixAsync      = ref.watch(fredVixProvider);
     final vxvAsync      = ref.watch(fredSeriesProvider('VXVCLS'));
+    final ivAsync       = ref.watch(ivAnalysisProvider(widget.ticker));
+    final ivAnalysis    = ivAsync.valueOrNull;
 
     // Extract latest VIX and VXV values from FRED series
     final vixObs = vixAsync.valueOrNull?.observations ?? [];
@@ -604,17 +616,18 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
           isCall: widget.isCall,
         );
         final result = _toPhaseResult(
-          a:                analysis,
-          isCall:           widget.isCall,
-          dte:              widget.daysToExpiry,
-          strike:           widget.strike,
-          spot:             snap.spotPrice,
-          earnings:         earningsAsync.valueOrNull,
-          rvResult:         rvResult,
-          vixNow:           vixNow,
-          vxvNow:           vxvNow,
-          vega:             widget.vega,
-          prevPutCallRatio: prevPutCallRatio,
+          a:                    analysis,
+          isCall:               widget.isCall,
+          dte:                  widget.daysToExpiry,
+          strike:               widget.strike,
+          spot:                 snap.spotPrice,
+          earnings:             earningsAsync.valueOrNull,
+          rvResult:             rvResult,
+          vixNow:               vixNow,
+          vxvNow:               vxvNow,
+          vega:                 widget.vega,
+          prevPutCallRatio:     prevPutCallRatio,
+          ivPercentileOverride: ivAnalysis?.ivPercentile,
         );
         _notifyIfChanged(result);
 

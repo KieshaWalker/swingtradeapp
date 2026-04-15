@@ -39,6 +39,7 @@ final schwabOptionsChainProvider =
         contractType:   params.contractType,
         strikeCount:    params.strikeCount,
         expirationDate: params.expirationDate,
+    
       );
 });
 
@@ -61,7 +62,7 @@ class OptionsChainParams {
   const OptionsChainParams({
     required this.symbol,
     this.contractType  = 'ALL',
-    this.strikeCount   = 10,
+    this.strikeCount   = 30,
     this.expirationDate,
   });
 

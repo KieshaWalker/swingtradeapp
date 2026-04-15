@@ -98,7 +98,15 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_hasData) return const _NotReadyTile();
+    if (!_hasData) {
+      final r = PhaseResult(
+        status: PhaseStatus.warn,
+        headline: 'Waiting for pricing data',
+        signals: ['Enter spot, mid price, DTE, and IV to evaluate Phase 3.'],
+      );
+      _notifyIfChanged(r);
+      return const _NotReadyTile();
+    }
 
     // ── Synchronous pricing ────────────────────────────────────────────────
     final fv = FairValueEngine.compute(
@@ -122,6 +130,10 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     final gammaEs  =
         0.5 * posGamma.abs() * widget.spot * widget.spot * sigma * sigma * T * 1.5;
 
+    // Cap ES₉₅ at max loss for a long option = premium paid × 100 shares × lots
+    final maxLoss   = widget.brokerMid * widget.quantity * 100;
+    final tradeEs95 = (deltaEs + gammaEs).clamp(0.0, maxLoss);
+
     // ── Portfolio what-if (async portfolio state, fallback to empty) ───────
     final portfolioAsync = ref.watch(_portfolioProvider);
     final portfolio = portfolioAsync.value ?? PortfolioState.empty;
@@ -144,7 +156,7 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     final result = _computeResult(
       fv:         fv,
       whatIf:     whatIf,
-      tradeEs95:  deltaEs + gammaEs,
+      tradeEs95:  tradeEs95,
       deltaEs:    deltaEs,
       gammaEs:    gammaEs,
       ivAnalysis: ivAnalysis,
@@ -189,13 +201,13 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     // OTM call fair value below broker mid). A small negative edge is noise;
     // only deltaBreached and extreme ES₉₅ are structural risk gates.
     final deltaBreached = whatIf.exceedsDeltaThreshold;
-    final es95High      = tradeEs95 > 700;
+    final es95High      = tradeEs95 > 1500;
 
     final PhaseStatus status;
     if (deltaBreached || es95High) {
       status = PhaseStatus.fail;
     } else if (edgeBps < 0 ||
-               tradeEs95 > 300 ||
+               tradeEs95 > 500 ||
                whatIf.newDelta.abs() > whatIf.deltaThreshold * 0.80) {
       status = PhaseStatus.warn;
     } else {
