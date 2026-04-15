@@ -568,7 +568,7 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
             status: PhaseStatus.warn,
             headline: 'No surface data for ${widget.ticker}',
             signals: [
-              'Paste a ThinkorSwim CSV in the Vol Surface screen to unlock this phase.',
+              'Load an options chain for ${widget.ticker} in the Vol Surface screen to unlock this phase.',
               earningsAsync.valueOrNull != null
                   ? 'Next earnings: ${earningsAsync.valueOrNull!.date.month}/${earningsAsync.valueOrNull!.date.day}'
                   : 'Earnings data loading…',
@@ -672,8 +672,8 @@ class _NoDataTile extends StatelessWidget {
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           const Text(
-            'Export a "Stock and Option Quote" CSV from ThinkorSwim '
-            'and paste it on the Vol Surface screen.',
+            'Search for the ticker and load an options chain '
+            'on the Vol Surface screen to unlock this gate.',
             style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.4),
           ),
           if (earnings != null) ...[

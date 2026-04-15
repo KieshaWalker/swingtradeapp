@@ -29,6 +29,8 @@ import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/schwab/schwab_models.dart';
 import '../../../services/schwab/schwab_providers.dart';
+import '../../ideas/models/trade_idea.dart';
+import '../../ideas/providers/trade_ideas_notifier.dart';
 import '../models/blotter_models.dart';
 import '../models/phase_result.dart';
 import '../widgets/phase_stepper.dart';
@@ -195,6 +197,50 @@ class _FivePhaseBlotterScreenState
     );
   }
 
+  Future<void> _saveAsIdea() async {
+    if (!_hasFullTrade) return;
+    final idea = TradeIdea(
+      id:           '',
+      ticker:       _ticker,
+      contractType: _contractType,
+      strike:       _strike!,
+      expiryDate:   _expiry!,
+      quantity:     _qty,
+      budget:       _budget,
+      priceTarget:  _target,
+      createdAt:    DateTime.now(),
+    );
+    try {
+      await ref.read(tradeIdeasNotifierProvider.notifier).add(idea);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppTheme.elevatedColor,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          content: Text(
+            'Saved "$_ticker ${_contractType.label} \$$_strike" to ideas',
+            style: const TextStyle(color: Colors.white),
+          ),
+          action: SnackBarAction(
+            label: 'View Ideas',
+            textColor: AppTheme.profitColor,
+            onPressed: () => context.push('/ideas'),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppTheme.lossColor,
+          content: Text('Failed to save idea: $e',
+              style: const TextStyle(color: Colors.black)),
+        ),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -250,9 +296,10 @@ class _FivePhaseBlotterScreenState
 
       bottomNavigationBar: _hasFullTrade
           ? _ActionBar(
-              results:   [_p1, _p2, _p3, _p4, _p5],
-              canCommit: _canCommit,
-              onCommit:  _commitTrade,
+              results:    [_p1, _p2, _p3, _p4, _p5],
+              canCommit:  _canCommit,
+              onCommit:   _commitTrade,
+              onSaveIdea: _saveAsIdea,
             )
           : null,
 
@@ -339,6 +386,7 @@ class _FivePhaseBlotterScreenState
                   child: (spot == 0.0 && chainAsync?.isLoading == true)
                       ? const _LoadingPlaceholder('Loading contract data…')
                       : BlotterPhasePanel(
+                          key:          ValueKey('p3-$_ticker-$_strike-$_expiryStr-${_contractType.name}'),
                           ticker:       _ticker,
                           spot:         spot > 0 ? spot : _strike!,
                           strike:       _strike!,
@@ -363,6 +411,7 @@ class _FivePhaseBlotterScreenState
                   expanded:  _exp4,
                   onChanged: (v) => setState(() => _exp4 = v),
                   child: VolSurfacePhasePanel(
+                    key:          ValueKey('p4-$_ticker-$_strike-$_expiryStr-${_contractType.name}'),
                     ticker:       _ticker,
                     strike:       _strike!,
                     daysToExpiry: _dte ?? 30,
@@ -869,11 +918,13 @@ class _ActionBar extends StatelessWidget {
   final List<PhaseResult> results;
   final bool              canCommit;
   final VoidCallback      onCommit;
+  final VoidCallback      onSaveIdea;
 
   const _ActionBar({
     required this.results,
     required this.canCommit,
     required this.onCommit,
+    required this.onSaveIdea,
   });
 
   @override
@@ -944,6 +995,24 @@ class _ActionBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
+          // Save as Idea button — always available regardless of phase results
+          Tooltip(
+            message: 'Save to Trade Ideas watchlist',
+            child: OutlinedButton(
+              onPressed: onSaveIdea,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFFBBF24),
+                side: const BorderSide(
+                    color: Color(0xFFFBBF24), width: 1.5),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Icon(Icons.lightbulb_outline_rounded, size: 18),
+            ),
+          ),
+          const SizedBox(width: 8),
           // Commit button
           ElevatedButton.icon(
             onPressed: canCommit ? onCommit : null,

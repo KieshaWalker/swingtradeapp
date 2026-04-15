@@ -8,7 +8,16 @@
       "Bash(find /Users/k/trading/apps/swing_options_trader/lib -type f -name \"*.dart\" -exec grep -l \"class SchwabOptionContract\" {} \\\\;)",
       "Bash(find /Users/k/trading/apps/swing_options_trader/lib -type f -name \"*.dart\" -exec grep -l \"fl_chart\\\\|BarChart\\\\|LineChart\" {} \\\\;)",
       "Bash(grep -h \"^create table\" /Users/k/trading/apps/swing_options_trader/supabase/migrations/*.sql)",
-      "Bash(grep -n \"from\\(\" /Users/k/trading/apps/swing_options_trader/lib/features/*/providers/*.dart)"
+      "Bash(grep -n \"from\\(\" /Users/k/trading/apps/swing_options_trader/lib/features/*/providers/*.dart)",
+      "Bash(/Users/k/fvm/versions/stable/bin/flutter analyze:*)",
+      "Bash(find /Users/k/trading/apps/swing_options_trader/lib -type f -name \"*.dart\" -exec wc -l {} \\\\;)",
+      "Bash(awk '$1 > 600 {print $0}')",
+      "Bash(xargs -I {} basename {})",
+      "Bash(find /Users/k/trading/apps/swing_options_trader/lib -name \"*.dart\" -type f -exec wc -l {} \\\\;)",
+      "Bash(awk '$1 > 600 {print $1 \" lines: \" $2}')",
+      "Bash(wc -l echo \"\" echo \"3. Typos in filenames:\" find /Users/k/trading/apps/swing_options_trader/lib -name \"*serivce*\" -o -name \"*servce*\" -o -name \"*srvice*\" echo \"\" echo \"4. Unused providers \\(orphaned - never watched/read\\):\" grep \"activeSRLevelsProvider\\\\|eiaGasolinePriceHistoryProvider\\\\|fredGoldProvider\\\\|ivWatchlistProvider\\\\|kalshiLiveOddsProvider\\\\|openTradesProvider\\\\|quotesProvider\\\\|realizedVolHistoryProvider\\\\|schwabEarningsDateProvider\\\\|secRecentEventsProvider\\\\|secSearchProvider\\\\|stockProfileProvider\\\\|tickerHistoricalPricesProvider\" /Users/k/trading/apps/swing_options_trader/lib/services/**/*.dart /Users/k/trading/apps/swing_options_trader/lib/features/**/*.dart)",
+      "Bash(find /Users/k/trading/apps/swing_options_trader/lib -name \"*.dart\" -type f ! -name \"main.dart\" -exec sh -c 'grep -q \"^import\\\\|^export\" \"$1\" || echo \"$1\"' _ {} \\\\;)",
+      "Bash(find /Users/k/trading/apps/swing_options_trader/lib -name \"*.dart\" -type f ! -name \"main.dart\" -exec sh -c 'if ! grep -q \"^import\\\\|^export\" \"$1\"; then echo \"$1\"; fi' _ {} \\\\;)"
     ]
   }
 }

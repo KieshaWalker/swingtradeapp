@@ -331,49 +331,54 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
         ? d.fedNow! - d.fedSixMo!
         : null;
     final int fedSub;                  // Fed trajectory sub-score
-    if (fedDelta == null)              fedSub = 50;
-    else if (fedDelta > 0.50)          fedSub = 5;    // strongly hiking
-    else if (fedDelta > 0.25)          fedSub = 20;   // hiking
-    else if (fedDelta < -0.25)         fedSub = 90;   // cutting
-    else                               fedSub = 65;   // holding
+    if (fedDelta == null) {
+      fedSub = 50;
+    } else if (fedDelta > 0.50)        { fedSub = 5;  // strongly hiking
+    } else if (fedDelta > 0.25)        { fedSub = 20; // hiking
+    } else if (fedDelta < -0.25)       { fedSub = 90; // cutting
+    } else                             { fedSub = 65; } // holding
 
     final int yieldSub;               // Yield curve sub-score
     final y = d.yieldNow;
-    if (y == null)                     yieldSub = 50;
-    else if (y > 0.50)                 yieldSub = 90; // normal — expansion
-    else if (y > 0)                    yieldSub = 65; // flat — slowing
-    else if (y > -0.50)                yieldSub = 30; // inverted — warning
-    else                               yieldSub = 5;  // deeply inverted
+    if (y == null) {
+      yieldSub = 50;
+    } else if (y > 0.50)               { yieldSub = 90; // normal — expansion
+    } else if (y > 0)                  { yieldSub = 65; // flat — slowing
+    } else if (y > -0.50)              { yieldSub = 30; // inverted — warning
+    } else                             { yieldSub = 5; } // deeply inverted
 
     final monetaryScore = (fedSub + yieldSub) ~/ 2;
 
     // ── Pillar 2 — Volatility (30%) ───────────────────────────────────────────
     final int volScore;
     final vix = d.vixNow;
-    if (vix == null)       volScore = 50;
-    else if (vix < 15)     volScore = 90;
-    else if (vix < 20)     volScore = 70;
-    else if (vix < 30)     volScore = 35;
-    else                   volScore = 5;   // crisis
+    if (vix == null) {
+      volScore = 50;
+    } else if (vix < 15)  { volScore = 90;
+    } else if (vix < 20)  { volScore = 70;
+    } else if (vix < 30)  { volScore = 35;
+    } else                { volScore = 5; } // crisis
 
     // ── Pillar 3 — Liquidity proxy (20%) ─────────────────────────────────────
     // Fed cutting → more liquidity in system → bullish bias.
     // Use Fed trajectory as the liquidity proxy (no balance-sheet data).
     final int liquidSub;
-    if (fedDelta == null)              liquidSub = 50;
-    else if (fedDelta < -0.25)         liquidSub = 90; // cutting = easing
-    else if (fedDelta > 0.25)          liquidSub = 15; // hiking = draining
-    else                               liquidSub = 60; // holding
+    if (fedDelta == null) {
+      liquidSub = 50;
+    } else if (fedDelta < -0.25) { liquidSub = 90; // cutting = easing
+    } else if (fedDelta > 0.25)  { liquidSub = 15; // hiking = draining
+    } else                       { liquidSub = 60; } // holding
 
     // ── Pillar 4 — Real Economy (10%) ─────────────────────────────────────────
     final int realSub;
     final u3Delta = (d.u3Now != null && d.u3Prev != null)
         ? d.u3Now! - d.u3Prev!
         : null;
-    if (u3Delta == null)               realSub = 50;
-    else if (u3Delta < -0.2)           realSub = 85; // improving
-    else if (u3Delta > 0.2)            realSub = 25; // deteriorating
-    else                               realSub = 60; // stable
+    if (u3Delta == null) {
+      realSub = 50;
+    } else if (u3Delta < -0.2) { realSub = 85; // improving
+    } else if (u3Delta > 0.2)  { realSub = 25; // deteriorating
+    } else                     { realSub = 60; } // stable
 
     // ── Weighted total ─────────────────────────────────────────────────────────
     final weighted = monetaryScore * 0.40
@@ -386,11 +391,12 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
     // Growth proxy: monetary + liquidity avg.  Inflation proxy: inverse of that.
     final growthScore = (monetaryScore + liquidSub) / 2;
     final _EcoQuadrant quadrant;
-    if (growthScore >= 65 && volScore >= 60)           quadrant = _EcoQuadrant.goldilocks;
-    else if (growthScore >= 60 && volScore < 60)       quadrant = _EcoQuadrant.reflation;
-    else if (growthScore < 45 && yieldSub >= 30)       quadrant = _EcoQuadrant.deflationaryBust;
-    else if (growthScore < 45 && yieldSub < 30)        quadrant = _EcoQuadrant.stagflation;
-    else                                               quadrant = _EcoQuadrant.neutral;
+    if (growthScore >= 65 && volScore >= 60) {
+      quadrant = _EcoQuadrant.goldilocks;
+    } else if (growthScore >= 60 && volScore < 60)  { quadrant = _EcoQuadrant.reflation;
+    } else if (growthScore < 45 && yieldSub >= 30)  { quadrant = _EcoQuadrant.deflationaryBust;
+    } else if (growthScore < 45 && yieldSub < 30)   { quadrant = _EcoQuadrant.stagflation;
+    } else                                           { quadrant = _EcoQuadrant.neutral; }
 
     // ── Hard overrides ─────────────────────────────────────────────────────────
     final hardFlags = <String>[];

@@ -153,18 +153,20 @@ class OptionScoringEngine {
     if (ivpUsed) {
       // Cheap IV = good for long premium (swing trade buyers).
       // IVP 0–20 = very cheap → 20 pts.  IVP 80–100 = expensive → 2 pts.
-      if (ivp <= 20)       ivScore = 20;
-      else if (ivp <= 40)  ivScore = 16;
-      else if (ivp <= 60)  ivScore = 10;
-      else if (ivp <= 80)  ivScore = 5;
-      else                 ivScore = 2;
+      if (ivp <= 20) {
+        ivScore = 20;
+      } else if (ivp <= 40)  { ivScore = 16;
+      } else if (ivp <= 60)  { ivScore = 10;
+      } else if (ivp <= 80)  { ivScore = 5;
+      } else                 { ivScore = 2; }
     } else {
       // Fallback: absolute IV (normalised to same 0–20 range)
       final iv = contract.impliedVolatility;
-      if (iv >= 50)       ivScore = 15;
-      else if (iv >= 20)  ivScore = (8 + 7 * (iv - 20) / 30).round();
-      else if (iv >= 5)   ivScore = (8 * (iv - 5) / 15).clamp(0, 8).round();
-      else                ivScore = 0;
+      if (iv >= 50) {
+        ivScore = 15;
+      } else if (iv >= 20)  { ivScore = (8 + 7 * (iv - 20) / 30).round();
+      } else if (iv >= 5)   { ivScore = (8 * (iv - 5) / 15).clamp(0, 8).round();
+      } else                { ivScore = 0; }
     }
 
     // ── 5. Liquidity (0–15): OI + Volume/OI ratio ──────────────────────────
@@ -174,19 +176,21 @@ class OptionScoringEngine {
 
     // OI sub-score (0–10)
     final int oiSub;
-    if (oi >= 5000)      oiSub = 10;
-    else if (oi >= 1000) oiSub = 8;
-    else if (oi >= 500)  oiSub = 5;
-    else if (oi >= 100)  oiSub = 3;
-    else                 oiSub = 0;
+    if (oi >= 5000) {
+      oiSub = 10;
+    } else if (oi >= 1000) { oiSub = 8;
+    } else if (oi >= 500)  { oiSub = 5;
+    } else if (oi >= 100)  { oiSub = 3;
+    } else                 { oiSub = 0; }
     if (oi == 0) flags.add('No open interest');
 
     // Volume/OI sub-score (0–5) — measures today's tradability
     final int volOiSub;
-    if (volOiRatio >= 0.50)      volOiSub = 5;
-    else if (volOiRatio >= 0.20) volOiSub = 3;
-    else if (volOiRatio >= 0.05) volOiSub = 1;
-    else                         volOiSub = 0;
+    if (volOiRatio >= 0.50) {
+      volOiSub = 5;
+    } else if (volOiRatio >= 0.20) { volOiSub = 3;
+    } else if (volOiRatio >= 0.05) { volOiSub = 1;
+    } else                         { volOiSub = 0; }
     if (oi > 0 && vol == 0) flags.add('Zero volume today — stale OI');
 
     // Slippage gate: (ask − theo) / mid > 2% → penalty + flag
@@ -218,10 +222,13 @@ class OptionScoringEngine {
         flags.add('Deep ITM');
       }
     } else {
-      if (pctOtm <= 0.01)       moneynessScore = 12;
-      else if (pctOtm <= 0.07)  moneynessScore = 15;
-      else if (pctOtm <= 0.12)  moneynessScore = 7;
-      else {
+      if (pctOtm <= 0.01) {
+        moneynessScore = 12;
+      } else if (pctOtm <= 0.07) {
+        moneynessScore = 15;
+      } else if (pctOtm <= 0.12) {
+        moneynessScore = 7;
+      } else {
         moneynessScore = 0;
         flags.add('Deep OTM');
       }

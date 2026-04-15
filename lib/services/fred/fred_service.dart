@@ -49,7 +49,7 @@ Future<FredSeries> getSeries(String seriesId, {int limit = 500}) async {
 
     return FredSeries(seriesId: seriesId, observations: observations);
   } catch (e) {
-    print('Edge Function Error: $e');
+    // Swallow and return empty series — widgets handle empty gracefully.
     return FredSeries(seriesId: seriesId, observations: []);
   }
 }

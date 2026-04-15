@@ -53,6 +53,8 @@ import '../widgets/add_earnings_reaction_sheet.dart';
 import '../widgets/paste_form4_sheet.dart';
 import '../widgets/add_sr_level_sheet.dart';
 import '../widgets/add_ticker_note_sheet.dart';
+import 'ticker_profile_cards.dart';
+import 'ticker_profile_shared_widgets.dart';
 
 class TickerProfileScreen extends ConsumerStatefulWidget {
   final String symbol;
@@ -211,13 +213,13 @@ class _OverviewTab extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       children: [
         // Next earnings card
-        _SectionHeader('Next Earnings'),
+        SectionHeader('Next Earnings'),
         nextEarnings.when(
-          loading: () => const _LoadingCard(),
-          error: (e, _) => const _ErrorCard('Could not load earnings date'),
+          loading: () => const LoadingCard(),
+          error: (e, _) => const ErrorCard('Could not load earnings date'),
           data: (e) => e == null
-              ? _EmptyCard('No upcoming earnings in the next 6 months')
-              : _EarningsDateCard(e),
+              ? EmptyCard('No upcoming earnings in the next 6 months')
+              : EarningsDateCard(e),
         ),
         const SizedBox(height: 20),
 
@@ -225,7 +227,7 @@ class _OverviewTab extends ConsumerWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _SectionHeader('Insider Transactions'),
+            SectionHeader('Insider Transactions'),
             TextButton.icon(
               onPressed: onAddInsider,
               icon: const Icon(Icons.upload_file_outlined, size: 16),
@@ -234,17 +236,17 @@ class _OverviewTab extends ConsumerWidget {
           ],
         ),
         insiders.when(
-          loading: () => const _LoadingCard(),
+          loading: () => const LoadingCard(),
           error: (e, _) =>
-              const _ErrorCard('Could not load insider transactions'),
+              const ErrorCard('Could not load insider transactions'),
           data: (list) => list.isEmpty
-              ? _EmptyCard('No insider transactions logged yet')
+              ? EmptyCard('No insider transactions logged yet')
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     ...list
                         .take(3)
-                        .map((b) => _InsiderBuyCard(symbol: symbol, buy: b)),
+                        .map((b) => InsiderBuyCard(symbol: symbol, buy: b)),
                     TextButton(
                       onPressed: onSeeAllInsiders,
                       child: Text(
@@ -260,7 +262,7 @@ class _OverviewTab extends ConsumerWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _SectionHeader('Earnings History'),
+            SectionHeader('Earnings History'),
             TextButton.icon(
               onPressed: onAddEarnings,
               icon: const Icon(Icons.add, size: 16),
@@ -269,27 +271,27 @@ class _OverviewTab extends ConsumerWidget {
           ],
         ),
         earningsHistory.when(
-          loading: () => const _LoadingCard(),
-          error: (e, _) =>const _ErrorCard('Could not load earnings history'),
+          loading: () => const LoadingCard(),
+          error: (e, _) =>const ErrorCard('Could not load earnings history'),
           data: (list) => list.isEmpty
-              ? _EmptyCard('No earnings reactions logged yet')
+              ? EmptyCard('No earnings reactions logged yet')
               : Column(
                   children: list
-                      .map((e) => _EarningsReactionCard(symbol: symbol, reaction: e))
+                      .map((e) => EarningsReactionCard(symbol: symbol, reaction: e))
                       .toList(),
                 ),
         ),
         const SizedBox(height: 20),
 
         // Notes
-        _SectionHeader('Notes'),
+        SectionHeader('Notes'),
         notes.when(
-          loading: () => const _LoadingCard(),
-          error: (e, _) =>const _ErrorCard('Could not load notes'),
+          loading: () => const LoadingCard(),
+          error: (e, _) =>const ErrorCard('Could not load notes'),
           data: (list) => list.isEmpty
-              ? _EmptyCard('No notes yet — tap + to add one')
+              ? EmptyCard('No notes yet — tap + to add one')
               : Column(
-                  children: list.map((n) => _NoteCard(symbol: symbol, note: n)).toList(),
+                  children: list.map((n) => NoteCard(symbol: symbol, note: n)).toList(),
                 ),
         ),
         const SizedBox(height: 80),
@@ -378,7 +380,7 @@ class _MyEdgeTab extends ConsumerWidget {
 
         // Monthly P&L chart
         if (analytics.monthlyPnl.isNotEmpty) ...[
-          _SectionHeader('Monthly P&L'),
+          SectionHeader('Monthly P&L'),
           SizedBox(
             height: 160,
             child: _MonthlyPnlChart(monthlyPnl: analytics.monthlyPnl),
@@ -387,7 +389,7 @@ class _MyEdgeTab extends ConsumerWidget {
         ],
 
         // Strategy breakdown
-        _SectionHeader('By Strategy'),
+        SectionHeader('By Strategy'),
         ...(analytics.strategyBreakdown.entries.toList()
               ..sort((a, b) => b.value.count.compareTo(a.value.count)))
             .map((e) => _StrategyRow(strategy: e.key, stats: e.value)),
@@ -397,7 +399,7 @@ class _MyEdgeTab extends ConsumerWidget {
         // Best conditions
         if (analytics.bestDteRange != null ||
             analytics.bestIvRankRange != null) ...[
-          _SectionHeader('Best Conditions'),
+          SectionHeader('Best Conditions'),
           if (analytics.bestDteRange != null)
             _ConditionChip(
               label: 'Best DTE',
@@ -454,14 +456,14 @@ class _LevelsTab extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           children: [
             if (active.isNotEmpty) ...[
-              _SectionHeader('Active'),
-              ...active.map((l) => _SRLevelCard(symbol: symbol, level: l)),
+              SectionHeader('Active'),
+              ...active.map((l) => SRLevelCard(symbol: symbol, level: l)),
               const SizedBox(height: 16),
             ],
             if (invalidated.isNotEmpty) ...[
-              _SectionHeader('Invalidated'),
+              SectionHeader('Invalidated'),
               ...invalidated
-                  .map((l) => _SRLevelCard(symbol: symbol, level: l)),
+                  .map((l) => SRLevelCard(symbol: symbol, level: l)),
             ],
             const SizedBox(height: 80),
           ],
@@ -497,113 +499,13 @@ class _TimelineTab extends ConsumerWidget {
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: events.length,
-          itemBuilder: (_, i) => _TimelineEventTile(event: events[i]),
+          itemBuilder: (_, i) => TimelineEventTile(event: events[i]),
         );
       },
     );
   }
 }
 
-// ─── Shared small widgets ─────────────────────────────────────────────────────
-
-class _SectionHeader extends StatelessWidget {
-  final String text;
-  const _SectionHeader(this.text);
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            color: AppTheme.neutralColor,
-            fontSize: 12,
-            letterSpacing: 1,
-          ),
-        ),
-      );
-}
-
-class _LoadingCard extends StatelessWidget {
-  const _LoadingCard();
-  @override
-  Widget build(BuildContext context) => const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      );
-}
-
-class _ErrorCard extends StatelessWidget {
-  final String message;
-  const _ErrorCard(this.message);
-  @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(message,
-              style: const TextStyle(color: AppTheme.lossColor)),
-        ),
-      );
-}
-
-class _EmptyCard extends StatelessWidget {
-  final String message;
-  const _EmptyCard(this.message);
-  @override
-  Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(message,
-              style: const TextStyle(color: AppTheme.neutralColor)),
-        ),
-      );
-}
-
-// ─── Earnings date card ───────────────────────────────────────────────────────
-
-class _EarningsDateCard extends StatelessWidget {
-  final FmpEarningsDate earnings;
-  const _EarningsDateCard(this.earnings);
-
-  @override
-  Widget build(BuildContext context) {
-    final d = earnings.date;
-    final label =
-        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            const Icon(Icons.event, color: AppTheme.profitColor),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                  if (earnings.timeLabel.isNotEmpty)
-                    Text(earnings.timeLabel,
-                        style: const TextStyle(
-                            color: AppTheme.neutralColor, fontSize: 12)),
-                  if (earnings.epsEstimated != null)
-                    Text(
-                        'EPS est. ${earnings.epsEstimated!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                            color: AppTheme.neutralColor, fontSize: 12)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 // ─── Insider activity chart ───────────────────────────────────────────────────
 
@@ -777,54 +679,6 @@ class _LegendDot extends StatelessWidget {
             style: const TextStyle(
                 color: AppTheme.neutralColor, fontSize: 11)),
       ],
-    );
-  }
-}
-
-// ─── Insider buy card ─────────────────────────────────────────────────────────
-
-class _InsiderBuyCard extends ConsumerWidget {
-  final String symbol;
-  final TickerInsiderBuy buy;
-  const _InsiderBuyCard({required this.symbol, required this.buy});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isBuy = buy.transactionType == InsiderTransactionType.purchase ||
-        buy.transactionType == InsiderTransactionType.exercise;
-    final isSell = buy.transactionType == InsiderTransactionType.sale ||
-        buy.transactionType == InsiderTransactionType.taxWithholding;
-    final iconColor = isBuy
-        ? AppTheme.profitColor
-        : isSell
-            ? AppTheme.lossColor
-            : AppTheme.neutralColor;
-    final icon = isBuy
-        ? Icons.trending_up
-        : isSell
-            ? Icons.trending_down
-            : Icons.swap_horiz;
-    final val = buy.totalValue != null
-        ? ' · \$${(buy.totalValue! / 1000).toStringAsFixed(0)}k'
-        : '';
-    final dateStr =
-        '${buy.filedAt.year}-${buy.filedAt.month.toString().padLeft(2, '0')}-${buy.filedAt.day.toString().padLeft(2, '0')}';
-    return Card(
-      child: ListTile(
-        leading: Icon(icon, color: iconColor),
-        title: Text(buy.insiderName),
-        subtitle: Text(
-            '${buy.transactionType.label} · ${buy.shares} sh$val · $dateStr'),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline,
-              size: 18, color: AppTheme.neutralColor),
-          onPressed: () async {
-            await ref
-                .read(tickerProfileNotifierProvider.notifier)
-                .deleteInsiderBuy(buy.id, symbol);
-          },
-        ),
-      ),
     );
   }
 }
@@ -1263,252 +1117,6 @@ class _Detail extends StatelessWidget {
   Widget build(BuildContext context) => Text(text,
       style:
           const TextStyle(color: AppTheme.neutralColor, fontSize: 12));
-}
-
-// ─── Earnings reaction card ───────────────────────────────────────────────────
-
-class _EarningsReactionCard extends ConsumerWidget {
-  final String symbol;
-  final TickerEarningsReaction reaction;
-  const _EarningsReactionCard(
-      {required this.symbol, required this.reaction});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final dir = reaction.direction ?? '';
-    final dirColor = dir == 'up'
-        ? AppTheme.profitColor
-        : dir == 'down'
-            ? AppTheme.lossColor
-            : AppTheme.neutralColor;
-    final movePctStr = reaction.movePct != null
-        ? '${reaction.movePct! >= 0 ? '+' : ''}${reaction.movePct!.toStringAsFixed(1)}%'
-        : '';
-
-    return Card(
-      child: ListTile(
-        leading: Icon(
-          dir == 'up'
-              ? Icons.arrow_upward
-              : dir == 'down'
-                  ? Icons.arrow_downward
-                  : Icons.remove,
-          color: dirColor,
-        ),
-        title: Text(reaction.fiscalPeriod ??
-            '${reaction.earningsDate.year}-${reaction.earningsDate.month.toString().padLeft(2, '0')}-${reaction.earningsDate.day.toString().padLeft(2, '0')}'),
-        subtitle: Text([
-          if (movePctStr.isNotEmpty) movePctStr,
-          if (reaction.beat) 'Beat',
-          if (reaction.epsActual != null)
-            'EPS ${reaction.epsActual!.toStringAsFixed(2)}',
-        ].join(' · ')),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.edit_outlined,
-                  size: 18, color: AppTheme.neutralColor),
-              onPressed: () => showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: AppTheme.elevatedColor,
-                shape: const RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                builder: (_) => AddEarningsReactionSheet(
-                    symbol: symbol, existing: reaction),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline,
-                  size: 18, color: AppTheme.neutralColor),
-              onPressed: () async {
-                await ref
-                    .read(tickerProfileNotifierProvider.notifier)
-                    .deleteEarningsReaction(reaction.id, symbol);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Note card ────────────────────────────────────────────────────────────────
-
-class _NoteCard extends ConsumerWidget {
-  final String symbol;
-  final TickerProfileNote note;
-  const _NoteCard({required this.symbol, required this.note});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${note.createdAt.year}-${note.createdAt.month.toString().padLeft(2, '0')}-${note.createdAt.day.toString().padLeft(2, '0')}',
-                    style: const TextStyle(
-                        color: AppTheme.neutralColor, fontSize: 12),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline,
-                      size: 18, color: AppTheme.neutralColor),
-                  onPressed: () async {
-                    await ref
-                        .read(tickerProfileNotifierProvider.notifier)
-                        .deleteNote(note.id, symbol);
-                  },
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
-            ),
-            Text(note.body),
-            if (note.tags.isNotEmpty)
-              Wrap(
-                spacing: 4,
-                children: note.tags
-                    .map((t) => Chip(
-                          label: Text(t),
-                          visualDensity: VisualDensity.compact,
-                        ))
-                    .toList(),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── S/R level card ───────────────────────────────────────────────────────────
-
-class _SRLevelCard extends ConsumerWidget {
-  final String symbol;
-  final SupportResistanceLevel level;
-  const _SRLevelCard({required this.symbol, required this.level});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isSupport = level.levelType == SRLevelType.support;
-    return Card(
-      child: ListTile(
-        leading: Icon(
-          isSupport ? Icons.arrow_upward : Icons.arrow_downward,
-          color:
-              isSupport ? AppTheme.profitColor : AppTheme.lossColor,
-        ),
-        title: Text('\$${level.price.toStringAsFixed(2)}'
-            '${level.label != null ? '  ·  ${level.label}' : ''}'),
-        subtitle: Text([
-          level.levelType.name,
-          if (level.timeframe != null) level.timeframe!.label,
-          if (!level.isActive) 'Invalidated',
-        ].join(' · ')),
-        trailing: level.isActive
-            ? IconButton(
-                icon: const Icon(Icons.check_circle_outline,
-                    size: 18, color: AppTheme.neutralColor),
-                tooltip: 'Invalidate level',
-                onPressed: () async {
-                  await ref
-                      .read(tickerProfileNotifierProvider.notifier)
-                      .invalidateSRLevel(level.id, symbol, null);
-                },
-              )
-            : null,
-      ),
-    );
-  }
-}
-
-// ─── Timeline event tile ──────────────────────────────────────────────────────
-
-class _TimelineEventTile extends StatelessWidget {
-  final TickerTimelineEvent event;
-  const _TimelineEventTile({required this.event});
-
-  Color _dotColor() => switch (event.type) {
-        TimelineEventType.tradeClosed => event.trade?.isProfitable == true
-            ? AppTheme.profitColor
-            : AppTheme.lossColor,
-        TimelineEventType.tradeOpened => AppTheme.neutralColor,
-        TimelineEventType.note => const Color(0xFF7EC8E3),       // sky-blue
-        TimelineEventType.secFiling => const Color(0xFFFFD166),   // golden-yellow
-        TimelineEventType.earningsReaction =>
-          event.earningsReaction?.direction == 'up'
-              ? AppTheme.profitColor
-              : AppTheme.lossColor,
-        TimelineEventType.insiderBuy => AppTheme.profitColor,
-        TimelineEventType.srLevelAdded => const Color(0xFFBBABFF), // bright lavender
-        TimelineEventType.srLevelInvalidated => AppTheme.neutralColor,
-      };
-
-  IconData _icon() => switch (event.type) {
-        TimelineEventType.tradeOpened => Icons.open_in_new,
-        TimelineEventType.tradeClosed => Icons.check_circle_outline,
-        TimelineEventType.note => Icons.note_outlined,
-        TimelineEventType.secFiling => Icons.description_outlined,
-        TimelineEventType.earningsReaction => Icons.bar_chart,
-        TimelineEventType.insiderBuy => Icons.trending_up,
-        TimelineEventType.srLevelAdded => Icons.horizontal_rule,
-        TimelineEventType.srLevelInvalidated => Icons.remove_circle_outline,
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    final d = event.timestamp;
-    final dateStr =
-        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Column(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: _dotColor().withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(_icon(), size: 16, color: _dotColor()),
-              ),
-              Container(
-                  width: 2, height: 32, color: AppTheme.borderColor),
-            ],
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(dateStr,
-                    style: const TextStyle(
-                        color: AppTheme.neutralColor, fontSize: 11)),
-                const SizedBox(height: 2),
-                Text(event.summary),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ─── My Edge sub-widgets ──────────────────────────────────────────────────────

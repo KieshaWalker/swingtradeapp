@@ -1,24 +1,27 @@
 // =============================================================================
 // services/greeks/greek_snapshot_models.dart
 // =============================================================================
-// One row per ticker per calendar day — ATM call + ATM put greeks.
+// One row per (ticker, obs_date, dte_bucket) — ATM call + ATM put greeks.
+//
+// DTE buckets: 4, 7, 31  — each corresponds to a separate expiry selection
+// so you can compare term-structure evolution across short/medium expirations.
 //
 // "ATM" selection strategy (in priority order):
 //   1. Call with |delta| closest to 0.50
 //   2. Put  with |delta| closest to 0.50
-//   3. Fallback: strike closest to underlying price
+//   3. Fallback: first contract in list
 //
-// Expiration selected: nearest expiry with DTE in [7, 90]; falls back to
-// nearest overall DTE if none qualify.
+// Expiration selected: expiry with DTE closest to the bucket target.
 //
 // Stored in Supabase table:  greek_snapshots
-// Upsert key:                (user_id, ticker, obs_date)
+// Upsert key:                (user_id, ticker, obs_date, dte_bucket)
 // =============================================================================
 
 class GreekSnapshot {
   final String    ticker;
   final DateTime  obsDate;          // date only (UTC midnight)
   final double    underlyingPrice;
+  final int       dteBucket;        // 4 | 7 | 31 — target DTE for this row
 
   // ATM Call (null when chain has no calls)
   final double?   callStrike;
@@ -46,6 +49,7 @@ class GreekSnapshot {
     required this.ticker,
     required this.obsDate,
     required this.underlyingPrice,
+    required this.dteBucket,
     this.callStrike,
     this.callDte,
     this.callDelta,
@@ -71,6 +75,7 @@ class GreekSnapshot {
     'ticker':           ticker.toUpperCase(),
     'obs_date':         obsDate.toIso8601String().substring(0, 10),
     'underlying_price': underlyingPrice,
+    'dte_bucket':       dteBucket,
     'call_strike':      callStrike,
     'call_dte':         callDte,
     'call_delta':       callDelta,
@@ -95,6 +100,7 @@ class GreekSnapshot {
     ticker:          j['ticker'] as String,
     obsDate:         DateTime.parse(j['obs_date'] as String),
     underlyingPrice: (j['underlying_price'] as num).toDouble(),
+    dteBucket:       (j['dte_bucket'] as num?)?.toInt() ?? 31,
     callStrike:      (j['call_strike'] as num?)?.toDouble(),
     callDte:         j['call_dte'] as int?,
     callDelta:       (j['call_delta'] as num?)?.toDouble(),

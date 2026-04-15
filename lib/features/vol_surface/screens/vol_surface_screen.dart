@@ -3,10 +3,10 @@
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
 import '../models/vol_surface_models.dart';
 import '../providers/vol_surface_provider.dart';
-import '../services/vol_surface_parser.dart';
 import '../widgets/vol_heatmap.dart';
 import '../widgets/vol_smile_chart.dart';
 import '../widgets/vol_surface_guide.dart';
@@ -29,11 +29,6 @@ class VolSurfaceScreen extends ConsumerStatefulWidget {
 
 class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
     with SingleTickerProviderStateMixin {
-  final _csvController = TextEditingController();
-  DateTime _obsDate = DateTime.now();
-  String _statusMsg = '';
-  bool _isError = false;
-  bool _parsing = false;
   String _ivMode = 'otm';
   VolSnapshot? _activeSnap;
   VolSnapshot? _baseSnap;
@@ -47,60 +42,16 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
 
   @override
   void dispose() {
-    _csvController.dispose();
     _tabs.dispose();
     super.dispose();
   }
 
-  // ── Parse & Save ────────────────────────────────────────────────────────────
-  Future<void> _parseAndSave() async {
-    final csv = _csvController.text.trim();
-    if (csv.isEmpty) {
-      _setStatus('Paste CSV content first.', error: true);
-      return;
+  Future<void> _deleteSnap(VolSnapshot s) async {
+    await ref.read(volSurfaceProvider.notifier).delete(s);
+    if (_activeSnap?.ticker == s.ticker &&
+        _activeSnap?.obsDateStr == s.obsDateStr) {
+      setState(() => _activeSnap = null);
     }
-    setState(() {
-      _parsing = true;
-      _statusMsg = '';
-      _isError = false;
-    });
-    try {
-      final snap = VolSurfaceParser.parse(csv, _obsDate);
-      await ref.read(volSurfaceProvider.notifier).save(snap);
-      _csvController.clear();
-      setState(() {
-        _activeSnap = snap;
-        _parsing = false;
-      });
-      _setStatus(
-        '${snap.ticker} · ${snap.points.length} rows'
-        '${snap.spotPrice != null ? ' · \$${snap.spotPrice!.toStringAsFixed(2)}' : ''}',
-        error: false,
-      );
-    } catch (e) {
-      setState(() => _parsing = false);
-      _setStatus(e.toString(), error: true);
-    }
-  }
-
-  void _setStatus(String msg, {required bool error}) =>
-      setState(() {
-        _statusMsg = msg;
-        _isError = error;
-      });
-
-  String _fmtDate(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  // ── Pick date ───────────────────────────────────────────────────────────────
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _obsDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) setState(() => _obsDate = picked);
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
@@ -111,7 +62,20 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Vol Surface'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Vol Surface'),
+            if (_activeSnap != null)
+              Text(
+                '${_activeSnap!.ticker} · ${_activeSnap!.obsDateStr}',
+                style: const TextStyle(
+                    color: AppTheme.neutralColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w400),
+              ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 20),
@@ -128,65 +92,40 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth > 680;
+          final wide = constraints.maxWidth < 400;
           return wide
               ? Row(children: [
                   _Sidebar(
-                    csvController: _csvController,
-                    obsDate: _obsDate,
-                    onPickDate: _pickDate,
-                    statusMsg: _statusMsg,
-                    isError: _isError,
-                    parsing: _parsing,
-                    onParse: _parseAndSave,
-                    snaps: snaps,
-                    activeSnap: _activeSnap,
+                    snaps:        snaps,
+                    activeSnap:   _activeSnap,
                     onSelectSnap: (s) => setState(() => _activeSnap = s),
-                    onDeleteSnap: (s) async {
-                      await ref.read(volSurfaceProvider.notifier).delete(s);
-                      if (_activeSnap?.ticker == s.ticker && _activeSnap?.obsDateStr == s.obsDateStr) {
-                        setState(() => _activeSnap = null);
-                      }
-                    },
-                    fmtDate: _fmtDate,
+                    onDeleteSnap: _deleteSnap,
                   ),
                   Expanded(
-                      child: _MainPanel(
-                    tabs: _tabs,
-                    ivMode: _ivMode,
-                    onIvModeChanged: (m) => setState(() => _ivMode = m),
-                    snaps: snaps,
-                    activeSnap: _activeSnap,
-                    baseSnap: _baseSnap,
-                    onActiveSnapChanged: (s) => setState(() => _activeSnap = s),
-                    onBaseSnapChanged: (s) => setState(() => _baseSnap = s),
-                    loading: snapsAsync.isLoading,
-                  )),
+                    child: _MainPanel(
+                      tabs:               _tabs,
+                      ivMode:             _ivMode,
+                      onIvModeChanged:    (m) => setState(() => _ivMode = m),
+                      snaps:              snaps,
+                      activeSnap:         _activeSnap,
+                      baseSnap:           _baseSnap,
+                      onActiveSnapChanged: (s) => setState(() => _activeSnap = s),
+                      onBaseSnapChanged:   (s) => setState(() => _baseSnap = s),
+                      loading:            snapsAsync.isLoading,
+                    ),
+                  ),
                 ])
               : _NarrowLayout(
-                  csvController: _csvController,
-                  obsDate: _obsDate,
-                  onPickDate: _pickDate,
-                  statusMsg: _statusMsg,
-                  isError: _isError,
-                  parsing: _parsing,
-                  onParse: _parseAndSave,
-                  snaps: snaps,
-                  activeSnap: _activeSnap,
-                  onSelectSnap: (s) => setState(() => _activeSnap = s),
-                  onDeleteSnap: (s) async {
-                    await ref.read(volSurfaceProvider.notifier).delete(s);
-                    if (_activeSnap?.ticker == s.ticker && _activeSnap?.obsDateStr == s.obsDateStr) {
-                      setState(() => _activeSnap = null);
-                    }
-                  },
-                  tabs: _tabs,
-                  ivMode: _ivMode,
-                  onIvModeChanged: (m) => setState(() => _ivMode = m),
-                  baseSnap: _baseSnap,
-                  onBaseSnapChanged: (s) => setState(() => _baseSnap = s),
-                  loading: snapsAsync.isLoading,
-                  fmtDate: _fmtDate,
+                  snaps:            snaps,
+                  activeSnap:       _activeSnap,
+                  onSelectSnap:     (s) => setState(() => _activeSnap = s),
+                  onDeleteSnap:     _deleteSnap,
+                  tabs:             _tabs,
+                  ivMode:           _ivMode,
+                  onIvModeChanged:  (m) => setState(() => _ivMode = m),
+                  baseSnap:         _baseSnap,
+                  onBaseSnapChanged:(s) => setState(() => _baseSnap = s),
+                  loading:          snapsAsync.isLoading,
                 );
         },
       ),
@@ -195,39 +134,44 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Sidebar
+// Sidebar — ticker search + dataset list
 // ═══════════════════════════════════════════════════════════════════════════════
-class _Sidebar extends StatelessWidget {
-  final TextEditingController csvController;
-  final DateTime obsDate;
-  final VoidCallback onPickDate;
-  final String statusMsg;
-  final bool isError;
-  final bool parsing;
-  final VoidCallback onParse;
-  final List<VolSnapshot> snaps;
-  final VolSnapshot? activeSnap;
-  final ValueChanged<VolSnapshot> onSelectSnap;
-  final ValueChanged<VolSnapshot> onDeleteSnap;
-  final String Function(DateTime) fmtDate;
+class _Sidebar extends StatefulWidget {
+  final List<VolSnapshot>          snaps;
+  final VolSnapshot?               activeSnap;
+  final ValueChanged<VolSnapshot>  onSelectSnap;
+  final ValueChanged<VolSnapshot>  onDeleteSnap;
 
   const _Sidebar({
-    required this.csvController,
-    required this.obsDate,
-    required this.onPickDate,
-    required this.statusMsg,
-    required this.isError,
-    required this.parsing,
-    required this.onParse,
     required this.snaps,
     required this.activeSnap,
     required this.onSelectSnap,
     required this.onDeleteSnap,
-    required this.fmtDate,
   });
 
   @override
+  State<_Sidebar> createState() => _SidebarState();
+}
+
+class _SidebarState extends State<_Sidebar> {
+  final _searchCtrl = TextEditingController();
+  String _filter = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final filtered = _filter.isEmpty
+        ? widget.snaps
+        : widget.snaps
+            .where((s) =>
+                s.ticker.toUpperCase().contains(_filter.toUpperCase()))
+            .toList();
+
     return SizedBox(
       width: 264,
       child: Container(
@@ -241,153 +185,84 @@ class _Sidebar extends StatelessWidget {
             // ── Header ──
             const Padding(
               padding: EdgeInsets.fromLTRB(14, 14, 14, 10),
-              child: Text('ADD SNAPSHOT',
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                      color: Color(0xFF6b7280),
-                      fontFamily: 'monospace')),
-            ),
-            // ── Date picker ──
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: GestureDetector(
-                onTap: onPickDate,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0d1117),
-                    border: Border.all(color: const Color(0xFF374151)),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Row(children: [
-                    const Icon(Icons.calendar_today_rounded,
-                        size: 13, color: Color(0xFF9ca3af)),
-                    const SizedBox(width: 8),
-                    Text(fmtDate(obsDate),
-                        style: const TextStyle(
-                            color: Color(0xFFd1d5db),
-                            fontSize: 12,
-                            fontFamily: 'monospace')),
-                  ]),
-                ),
+              child: Text(
+                'DATASETS',
+                style: TextStyle(
+                    fontSize:    10,
+                    fontWeight:  FontWeight.w700,
+                    letterSpacing: 1.2,
+                    color:       Color(0xFF6b7280),
+                    fontFamily:  'monospace'),
               ),
             ),
-            // ── CSV input ──
+            // ── Ticker search ──
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
               child: TextField(
-                controller: csvController,
-                maxLines: 7,
+                controller: _searchCtrl,
+                onChanged: (v) => setState(() => _filter = v),
                 style: const TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     color: Color(0xFFd1d5db),
                     fontFamily: 'monospace'),
                 decoration: InputDecoration(
-                  hintText: 'Paste ThinkorSwim CSV here…',
+                  hintText: 'Search ticker…',
                   hintStyle: const TextStyle(
-                      color: Color(0xFF4b5563), fontSize: 11),
+                      color: Color(0xFF4b5563), fontSize: 12),
+                  prefixIcon: const Icon(Icons.search_rounded,
+                      size: 15, color: Color(0xFF6b7280)),
+                  suffixIcon: _filter.isNotEmpty
+                      ? GestureDetector(
+                          onTap: () {
+                            _searchCtrl.clear();
+                            setState(() => _filter = '');
+                          },
+                          child: const Icon(Icons.close_rounded,
+                              size: 14, color: Color(0xFF6b7280)),
+                        )
+                      : null,
                   filled: true,
                   fillColor: const Color(0xFF0d1117),
-                  contentPadding: const EdgeInsets.all(8),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide:
-                        const BorderSide(color: Color(0xFF374151)),
+                    borderSide: const BorderSide(color: Color(0xFF374151)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide:
-                        const BorderSide(color: Color(0xFF374151)),
+                    borderSide: const BorderSide(color: Color(0xFF374151)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide:
-                        const BorderSide(color: Color(0xFF3b82f6)),
+                    borderSide: const BorderSide(color: Color(0xFF3b82f6)),
                   ),
+                  isDense: true,
                 ),
-              ),
-            ),
-            // ── Status msg ──
-            if (statusMsg.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: isError
-                        ? const Color(0x1fef4444)
-                        : const Color(0x143b82f6),
-                    border: Border.all(
-                      color: isError
-                          ? const Color(0x4def4444)
-                          : const Color(0x403b82f6),
-                    ),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(statusMsg,
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: isError
-                              ? const Color(0xFFfca5a5)
-                              : const Color(0xFF93c5fd),
-                          fontFamily: 'monospace')),
-                ),
-              ),
-            // ── Parse button ──
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
-              child: ElevatedButton(
-                onPressed: parsing ? null : onParse,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3b82f6),
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(36),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6)),
-                  textStyle: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      fontFamily: 'monospace'),
-                ),
-                child: parsing
-                    ? const SizedBox(
-                        height: 14,
-                        width: 14,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Text('Parse & Save'),
               ),
             ),
             const Divider(color: Color(0xFF1f2937), height: 1),
-            // ── Datasets list ──
-            const Padding(
-              padding: EdgeInsets.fromLTRB(14, 12, 14, 6),
-              child: Text('DATASETS',
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
-                      color: Color(0xFF6b7280),
-                      fontFamily: 'monospace')),
-            ),
+            // ── Dataset list ──
             Expanded(
-              child: snaps.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.all(14),
-                      child: Text('No datasets yet.',
-                          style: TextStyle(
-                              color: Color(0xFF4b5563),
-                              fontSize: 11,
-                              fontStyle: FontStyle.italic)))
+              child: filtered.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Text(
+                        _filter.isEmpty
+                            ? 'No datasets yet.\n\nOpen an options chain to auto-ingest a vol surface.'
+                            : 'No tickers match "$_filter".',
+                        style: const TextStyle(
+                            color:      Color(0xFF4b5563),
+                            fontSize:   11,
+                            fontStyle:  FontStyle.italic,
+                            height:     1.6),
+                      ),
+                    )
                   : _GroupedDatasetList(
-                      snaps: snaps,
-                      activeSnap: activeSnap,
-                      onSelectSnap: onSelectSnap,
-                      onDeleteSnap: onDeleteSnap,
+                      snaps:        filtered,
+                      activeSnap:   widget.activeSnap,
+                      onSelectSnap: widget.onSelectSnap,
+                      onDeleteSnap: widget.onDeleteSnap,
                     ),
             ),
           ],
@@ -397,6 +272,9 @@ class _Sidebar extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Dataset tile
+// ═══════════════════════════════════════════════════════════════════════════════
 class _DatasetTile extends StatelessWidget {
   final VolSnapshot snap;
   final bool active;
@@ -418,9 +296,7 @@ class _DatasetTile extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: active
-              ? const Color(0x183b82f6)
-              : Colors.transparent,
+          color: active ? const Color(0x183b82f6) : Colors.transparent,
           border: Border.all(
             color: active
                 ? const Color(0x593b82f6)
@@ -433,20 +309,23 @@ class _DatasetTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(snap.obsDateStr,
-                    style: const TextStyle(
-                        color: Color(0xFFf9fafb),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'monospace')),
+                Text(
+                  snap.obsDateStr,
+                  style: const TextStyle(
+                      color:      Color(0xFFf9fafb),
+                      fontSize:   12,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace'),
+                ),
                 const SizedBox(height: 2),
                 Text(
-                    '${snap.ticker} · ${snap.points.length} rows'
-                    '${snap.spotPrice != null ? ' · \$${snap.spotPrice!.toStringAsFixed(2)}' : ''}',
-                    style: const TextStyle(
-                        color: Color(0xFF6b7280),
-                        fontSize: 10,
-                        fontFamily: 'monospace')),
+                  '${snap.ticker} · ${snap.points.length} rows'
+                  '${snap.spotPrice != null ? ' · \$${snap.spotPrice!.toStringAsFixed(2)}' : ''}',
+                  style: const TextStyle(
+                      color:     Color(0xFF6b7280),
+                      fontSize:  10,
+                      fontFamily: 'monospace'),
+                ),
               ],
             ),
           ),
@@ -467,10 +346,10 @@ class _DatasetTile extends StatelessWidget {
 // Grouped dataset list — collapsible ticker sections, clickable headers
 // ═══════════════════════════════════════════════════════════════════════════════
 class _GroupedDatasetList extends ConsumerStatefulWidget {
-  final List<VolSnapshot> snaps;
-  final VolSnapshot? activeSnap;
-  final ValueChanged<VolSnapshot> onSelectSnap;
-  final ValueChanged<VolSnapshot> onDeleteSnap;
+  final List<VolSnapshot>          snaps;
+  final VolSnapshot?               activeSnap;
+  final ValueChanged<VolSnapshot>  onSelectSnap;
+  final ValueChanged<VolSnapshot>  onDeleteSnap;
 
   const _GroupedDatasetList({
     required this.snaps,
@@ -493,7 +372,6 @@ class _GroupedDatasetListState extends ConsumerState<_GroupedDatasetList> {
     for (final s in widget.snaps) {
       grouped.putIfAbsent(s.ticker, () => []).add(s);
     }
-    // Sort each ticker's snaps newest-first
     for (final v in grouped.values) {
       v.sort((a, b) => b.obsDate.compareTo(a.obsDate));
     }
@@ -503,14 +381,11 @@ class _GroupedDatasetListState extends ConsumerState<_GroupedDatasetList> {
       children: [
         for (final ticker in grouped.keys) ...[
           _TickerHeader(
-            ticker:     ticker,
-            count:      grouped[ticker]!.length,
-            collapsed:  _collapsed.contains(ticker),
-            isActive:   widget.activeSnap?.ticker == ticker,
-            onTap: () {
-              // Select most recent snapshot for this ticker
-              widget.onSelectSnap(grouped[ticker]!.first);
-            },
+            ticker:    ticker,
+            count:     grouped[ticker]!.length,
+            collapsed: _collapsed.contains(ticker),
+            isActive:  widget.activeSnap?.ticker == ticker,
+            onTap: () => widget.onSelectSnap(grouped[ticker]!.first),
             onToggle: () => setState(() {
               if (_collapsed.contains(ticker)) {
                 _collapsed.remove(ticker);
@@ -538,7 +413,8 @@ class _GroupedDatasetListState extends ConsumerState<_GroupedDatasetList> {
     );
   }
 
-  Future<void> _confirmDeleteTicker(BuildContext context, String ticker) async {
+  Future<void> _confirmDeleteTicker(
+      BuildContext context, String ticker) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -548,8 +424,9 @@ class _GroupedDatasetListState extends ConsumerState<_GroupedDatasetList> {
           style: const TextStyle(color: Colors.white, fontSize: 15),
         ),
         content: Text(
-          'This will permanently remove all ${widget.snaps.where((s) => s.ticker == ticker).length} '
-          'uploaded surfaces for $ticker.',
+          'This will permanently remove all '
+          '${widget.snaps.where((s) => s.ticker == ticker).length} '
+          'surfaces for $ticker.',
           style: const TextStyle(color: Colors.white60, fontSize: 13),
         ),
         actions: [
@@ -610,7 +487,6 @@ class _TickerHeader extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Collapse toggle
             GestureDetector(
               onTap: onToggle,
               behavior: HitTestBehavior.opaque,
@@ -625,30 +501,27 @@ class _TickerHeader extends StatelessWidget {
                 ),
               ),
             ),
-            // Ticker name
             Text(
               ticker,
               style: TextStyle(
-                color: isActive
+                color:        isActive
                     ? const Color(0xFF60a5fa)
                     : const Color(0xFF93c5fd),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+                fontSize:     12,
+                fontWeight:   FontWeight.w700,
                 letterSpacing: 0.8,
-                fontFamily: 'monospace',
+                fontFamily:   'monospace',
               ),
             ),
             const SizedBox(width: 6),
             Text(
               '$count',
               style: const TextStyle(
-                color: Color(0xFF4b5563),
-                fontSize: 10,
-                fontFamily: 'monospace',
-              ),
+                  color:     Color(0xFF4b5563),
+                  fontSize:  10,
+                  fontFamily: 'monospace'),
             ),
             const Spacer(),
-            // Delete all for this ticker
             GestureDetector(
               onTap: onDeleteAll,
               behavior: HitTestBehavior.opaque,
@@ -669,15 +542,15 @@ class _TickerHeader extends StatelessWidget {
 // Main panel (wide layout)
 // ═══════════════════════════════════════════════════════════════════════════════
 class _MainPanel extends StatelessWidget {
-  final TabController tabs;
-  final String ivMode;
-  final ValueChanged<String> onIvModeChanged;
-  final List<VolSnapshot> snaps;
-  final VolSnapshot? activeSnap;
-  final VolSnapshot? baseSnap;
+  final TabController           tabs;
+  final String                  ivMode;
+  final ValueChanged<String>    onIvModeChanged;
+  final List<VolSnapshot>       snaps;
+  final VolSnapshot?            activeSnap;
+  final VolSnapshot?            baseSnap;
   final ValueChanged<VolSnapshot> onActiveSnapChanged;
   final ValueChanged<VolSnapshot> onBaseSnapChanged;
-  final bool loading;
+  final bool                    loading;
 
   const _MainPanel({
     required this.tabs,
@@ -695,27 +568,27 @@ class _MainPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(children: [
       _ControlsBar(
-        tabs: tabs,
-        ivMode: ivMode,
-        onIvModeChanged: onIvModeChanged,
-        snaps: snaps,
-        activeSnap: activeSnap,
-        baseSnap: baseSnap,
+        tabs:               tabs,
+        ivMode:             ivMode,
+        onIvModeChanged:    onIvModeChanged,
+        snaps:              snaps,
+        activeSnap:         activeSnap,
+        baseSnap:           baseSnap,
         onActiveSnapChanged: onActiveSnapChanged,
-        onBaseSnapChanged: onBaseSnapChanged,
+        onBaseSnapChanged:   onBaseSnapChanged,
       ),
       Expanded(child: _ChartArea(
-        tabs: tabs,
+        tabs:       tabs,
         activeSnap: activeSnap,
-        baseSnap: baseSnap,
-        ivMode: ivMode,
-        loading: loading,
+        baseSnap:   baseSnap,
+        ivMode:     ivMode,
+        loading:    loading,
       )),
       if (activeSnap != null)
         SizedBox(
           height: 220,
           child: VolSurfaceInterpretation(
-            snap: activeSnap!,
+            snap:   activeSnap!,
             ivMode: ivMode,
           ),
         ),
@@ -727,12 +600,12 @@ class _MainPanel extends StatelessWidget {
 // Controls bar
 // ═══════════════════════════════════════════════════════════════════════════════
 class _ControlsBar extends StatelessWidget {
-  final TabController tabs;
-  final String ivMode;
-  final ValueChanged<String> onIvModeChanged;
-  final List<VolSnapshot> snaps;
-  final VolSnapshot? activeSnap;
-  final VolSnapshot? baseSnap;
+  final TabController           tabs;
+  final String                  ivMode;
+  final ValueChanged<String>    onIvModeChanged;
+  final List<VolSnapshot>       snaps;
+  final VolSnapshot?            activeSnap;
+  final VolSnapshot?            baseSnap;
   final ValueChanged<VolSnapshot> onActiveSnapChanged;
   final ValueChanged<VolSnapshot> onBaseSnapChanged;
 
@@ -756,17 +629,14 @@ class _ControlsBar extends StatelessWidget {
       builder: (context2, child) => Container(
         decoration: const BoxDecoration(
           color: Color(0xFF111827),
-          border:
-              Border(bottom: BorderSide(color: Color(0xFF1f2937))),
+          border: Border(bottom: BorderSide(color: Color(0xFF1f2937))),
         ),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Wrap(
           spacing: 14,
           runSpacing: 6,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            // View tabs
             _SegmentedControl(
               options: const [
                 ('heatmap', 'Heatmap'),
@@ -774,30 +644,28 @@ class _ControlsBar extends StatelessWidget {
                 ('diff', 'Diff'),
               ],
               selected: ['heatmap', 'smile', 'diff'][tabs.index],
-              onSelected: (v) => tabs.animateTo(
-                  ['heatmap', 'smile', 'diff'].indexOf(v)),
+              onSelected: (v) =>
+                  tabs.animateTo(['heatmap', 'smile', 'diff'].indexOf(v)),
             ),
-            // IV mode
             _SegmentedControl(
               options: _ivModes,
               selected: ivMode,
               onSelected: onIvModeChanged,
             ),
-            // Snapshot selectors for diff mode
             if (tabs.index == 2 && snaps.isNotEmpty) ...[
               _SnapSelect(
-                 label: 'Base',
+                label: 'Base',
                 snaps: selectedTicker != null
-                  ? snaps.where((s) => s.ticker == selectedTicker).toList()
-                  : snaps,
+                    ? snaps.where((s) => s.ticker == selectedTicker).toList()
+                    : snaps,
                 selected: baseSnap,
                 onChanged: onBaseSnapChanged,
               ),
               _SnapSelect(
                 label: 'Compare',
                 snaps: selectedTicker != null
-                  ? snaps.where((s) => s.ticker == selectedTicker).toList()
-                  : snaps,
+                    ? snaps.where((s) => s.ticker == selectedTicker).toList()
+                    : snaps,
                 selected: activeSnap,
                 onChanged: onActiveSnapChanged,
               ),
@@ -805,7 +673,9 @@ class _ControlsBar extends StatelessWidget {
               _SnapSelect(
                 label: 'Date',
                 snaps: activeSnap != null
-                    ? snaps.where((s) => s.ticker == activeSnap!.ticker).toList()
+                    ? snaps
+                        .where((s) => s.ticker == activeSnap!.ticker)
+                        .toList()
                     : snaps,
                 selected: activeSnap,
                 onChanged: onActiveSnapChanged,
@@ -819,8 +689,8 @@ class _ControlsBar extends StatelessWidget {
 
 class _SegmentedControl extends StatelessWidget {
   final List<(String, String)> options;
-  final String selected;
-  final ValueChanged<String> onSelected;
+  final String                 selected;
+  final ValueChanged<String>   onSelected;
 
   const _SegmentedControl({
     required this.options,
@@ -849,7 +719,7 @@ class _SegmentedControl extends StatelessWidget {
                       ? const Color(0xFF3b82f6)
                       : Colors.transparent,
                   borderRadius: BorderRadius.horizontal(
-                    left: i == 0 ? const Radius.circular(5) : Radius.zero,
+                    left:  i == 0 ? const Radius.circular(5) : Radius.zero,
                     right: i == options.length - 1
                         ? const Radius.circular(5)
                         : Radius.zero,
@@ -862,7 +732,7 @@ class _SegmentedControl extends StatelessWidget {
                 child: Text(
                   options[i].$2,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize:   11,
                     fontWeight: FontWeight.w600,
                     fontFamily: 'monospace',
                     color: selected == options[i].$1
@@ -879,9 +749,9 @@ class _SegmentedControl extends StatelessWidget {
 }
 
 class _SnapSelect extends StatelessWidget {
-  final String label;
-  final List<VolSnapshot> snaps;
-  final VolSnapshot? selected;
+  final String                 label;
+  final List<VolSnapshot>      snaps;
+  final VolSnapshot?           selected;
   final ValueChanged<VolSnapshot> onChanged;
 
   const _SnapSelect({
@@ -896,11 +766,11 @@ class _SnapSelect extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Text('$label ',
           style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
+              fontSize:     10,
+              fontWeight:   FontWeight.w700,
               letterSpacing: 0.8,
-              color: Color(0xFF6b7280),
-              fontFamily: 'monospace')),
+              color:        Color(0xFF6b7280),
+              fontFamily:   'monospace')),
       DropdownButton<VolSnapshot>(
         value: selected == null
             ? null
@@ -911,8 +781,8 @@ class _SnapSelect extends StatelessWidget {
                 .firstOrNull,
         hint: const Text('—',
             style: TextStyle(
-                color: Color(0xFF6b7280),
-                fontSize: 11,
+                color:     Color(0xFF6b7280),
+                fontSize:  11,
                 fontFamily: 'monospace')),
         items: snaps
             .map((s) => DropdownMenuItem(
@@ -927,8 +797,8 @@ class _SnapSelect extends StatelessWidget {
         },
         dropdownColor: const Color(0xFF111827),
         style: const TextStyle(
-            color: Color(0xFFd1d5db),
-            fontSize: 11,
+            color:     Color(0xFFd1d5db),
+            fontSize:  11,
             fontFamily: 'monospace'),
         underline: const SizedBox.shrink(),
         isDense: true,
@@ -942,10 +812,10 @@ class _SnapSelect extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════════
 class _ChartArea extends StatelessWidget {
   final TabController tabs;
-  final VolSnapshot? activeSnap;
-  final VolSnapshot? baseSnap;
-  final String ivMode;
-  final bool loading;
+  final VolSnapshot?  activeSnap;
+  final VolSnapshot?  baseSnap;
+  final String        ivMode;
+  final bool          loading;
 
   const _ChartArea({
     required this.tabs,
@@ -964,28 +834,25 @@ class _ChartArea extends StatelessWidget {
       controller: tabs,
       physics: const NeverScrollableScrollPhysics(),
       children: [
-        // ── Heatmap ──
         activeSnap != null
             ? VolHeatmap(
-                points: activeSnap!.points,
+                points:    activeSnap!.points,
                 spotPrice: activeSnap!.spotPrice,
-                ivMode: ivMode,
+                ivMode:    ivMode,
               )
-            : _empty('Select or add a dataset'),
-        // ── Smile ──
+            : _empty('Select a ticker and date to view the surface'),
         activeSnap != null
             ? VolSmileChart(
-                points: activeSnap!.points,
+                points:    activeSnap!.points,
                 spotPrice: activeSnap!.spotPrice,
-                ivMode: ivMode,
+                ivMode:    ivMode,
               )
-            : _empty('Select or add a dataset'),
-        // ── Diff ──
+            : _empty('Select a ticker and date to view the smile'),
         (activeSnap != null && baseSnap != null)
             ? _DiffHeatmap(
-                base: baseSnap!,
+                base:    baseSnap!,
                 compare: activeSnap!,
-                ivMode: ivMode,
+                ivMode:  ivMode,
               )
             : _empty('Select Base and Compare datasets'),
       ],
@@ -995,8 +862,8 @@ class _ChartArea extends StatelessWidget {
   Widget _empty(String msg) => Center(
         child: Text(msg,
             style: const TextStyle(
-                color: Color(0xFF4b5563),
-                fontSize: 13,
+                color:     Color(0xFF4b5563),
+                fontSize:  13,
                 fontFamily: 'monospace')),
       );
 }
@@ -1005,7 +872,7 @@ class _ChartArea extends StatelessWidget {
 class _DiffHeatmap extends StatelessWidget {
   final VolSnapshot base;
   final VolSnapshot compare;
-  final String ivMode;
+  final String      ivMode;
 
   const _DiffHeatmap({
     required this.base,
@@ -1015,7 +882,6 @@ class _DiffHeatmap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Build lookup maps
     Map<(int, double), double?> ivMap(VolSnapshot s) {
       final m = <(int, double), double?>{};
       for (final p in s.points) {
@@ -1025,19 +891,17 @@ class _DiffHeatmap extends StatelessWidget {
     }
 
     final baseMap = ivMap(base);
-    final cmpMap = ivMap(compare);
+    final cmpMap  = ivMap(compare);
 
-    // Diff points: only where both have IV
     final diffPoints = <VolPoint>[];
     for (final entry in cmpMap.entries) {
       final bv = baseMap[entry.key];
       final cv = entry.value;
       if (bv != null && cv != null) {
-        final diff = cv - bv;
         diffPoints.add(VolPoint(
           strike: entry.key.$2,
-          dte: entry.key.$1,
-          callIv: diff, // store diff in callIv, use 'call' mode
+          dte:    entry.key.$1,
+          callIv: cv - bv,
         ));
       }
     }
@@ -1046,8 +910,8 @@ class _DiffHeatmap extends StatelessWidget {
       return const Center(
           child: Text('No overlapping data between the two datasets',
               style: TextStyle(
-                  color: Color(0xFF4b5563),
-                  fontSize: 13,
+                  color:     Color(0xFF4b5563),
+                  fontSize:  13,
                   fontFamily: 'monospace')));
     }
 
@@ -1057,23 +921,23 @@ class _DiffHeatmap extends StatelessWidget {
         child: Row(children: [
           Text('${compare.obsDateStr} − ${base.obsDateStr}',
               style: const TextStyle(
-                  color: Color(0xFF9ca3af),
-                  fontSize: 11,
+                  color:     Color(0xFF9ca3af),
+                  fontSize:  11,
                   fontFamily: 'monospace')),
           const SizedBox(width: 12),
           const Text('Red = IV rose  ·  Blue = IV fell',
               style: TextStyle(
-                  color: Color(0xFF6b7280),
-                  fontSize: 10,
-                  fontStyle: FontStyle.italic,
+                  color:      Color(0xFF6b7280),
+                  fontSize:   10,
+                  fontStyle:  FontStyle.italic,
                   fontFamily: 'monospace')),
         ]),
       ),
       Expanded(
         child: VolHeatmap(
-          points: diffPoints,
+          points:    diffPoints,
           spotPrice: compare.spotPrice,
-          ivMode: 'call',
+          ivMode:    'call',
         ),
       ),
     ]);
@@ -1081,36 +945,21 @@ class _DiffHeatmap extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Narrow layout — chart on top, input in modal bottom sheet via FAB
+// Narrow layout — full-screen chart with FAB to open dataset picker
 // ═══════════════════════════════════════════════════════════════════════════════
-class _NarrowLayout extends StatelessWidget {
-  final TextEditingController csvController;
-  final DateTime obsDate;
-  final VoidCallback onPickDate;
-  final String statusMsg;
-  final bool isError;
-  final bool parsing;
-  final VoidCallback onParse;
-  final List<VolSnapshot> snaps;
-  final VolSnapshot? activeSnap;
-  final ValueChanged<VolSnapshot> onSelectSnap;
-  final ValueChanged<VolSnapshot> onDeleteSnap;
-  final TabController tabs;
-  final String ivMode;
-  final ValueChanged<String> onIvModeChanged;
-  final VolSnapshot? baseSnap;
-  final ValueChanged<VolSnapshot> onBaseSnapChanged;
-  final bool loading;
-  final String Function(DateTime) fmtDate;
+class _NarrowLayout extends StatefulWidget {
+  final List<VolSnapshot>          snaps;
+  final VolSnapshot?               activeSnap;
+  final ValueChanged<VolSnapshot>  onSelectSnap;
+  final ValueChanged<VolSnapshot>  onDeleteSnap;
+  final TabController              tabs;
+  final String                     ivMode;
+  final ValueChanged<String>       onIvModeChanged;
+  final VolSnapshot?               baseSnap;
+  final ValueChanged<VolSnapshot>  onBaseSnapChanged;
+  final bool                       loading;
 
   const _NarrowLayout({
-    required this.csvController,
-    required this.obsDate,
-    required this.onPickDate,
-    required this.statusMsg,
-    required this.isError,
-    required this.parsing,
-    required this.onParse,
     required this.snaps,
     required this.activeSnap,
     required this.onSelectSnap,
@@ -1121,96 +970,34 @@ class _NarrowLayout extends StatelessWidget {
     required this.baseSnap,
     required this.onBaseSnapChanged,
     required this.loading,
-    required this.fmtDate,
   });
 
-  void _showInputSheet(BuildContext context) {
+  @override
+  State<_NarrowLayout> createState() => _NarrowLayoutState();
+}
+
+class _NarrowLayoutState extends State<_NarrowLayout> {
+  void _showDatasetSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF111827),
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(12))),
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 16,
-            right: 16,
-            top: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            GestureDetector(
-              onTap: onPickDate,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0d1117),
-                  border: Border.all(color: const Color(0xFF374151)),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(children: [
-                  const Icon(Icons.calendar_today_rounded,
-                      size: 13, color: Color(0xFF9ca3af)),
-                  const SizedBox(width: 8),
-                  Text(fmtDate(obsDate),
-                      style: const TextStyle(
-                          color: Color(0xFFd1d5db),
-                          fontSize: 12,
-                          fontFamily: 'monospace')),
-                ]),
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: csvController,
-              maxLines: 6,
-              style: const TextStyle(
-                  fontSize: 11,
-                  color: Color(0xFFd1d5db),
-                  fontFamily: 'monospace'),
-              decoration: InputDecoration(
-                hintText: 'Paste ThinkorSwim CSV here…',
-                hintStyle:
-                    const TextStyle(color: Color(0xFF4b5563), fontSize: 11),
-                filled: true,
-                fillColor: const Color(0xFF0d1117),
-                contentPadding: const EdgeInsets.all(8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: const BorderSide(color: Color(0xFF374151)),
-                ),
-              ),
-            ),
-            if (statusMsg.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(statusMsg,
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: isError
-                            ? const Color(0xFFfca5a5)
-                            : const Color(0xFF93c5fd),
-                        fontFamily: 'monospace')),
-              ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: parsing ? null : onParse,
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3b82f6),
-                  foregroundColor: Colors.white),
-              child: parsing
-                  ? const SizedBox(
-                      height: 14,
-                      width: 14,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white))
-                  : const Text('Parse & Save'),
-            ),
-            const SizedBox(height: 16),
-          ],
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        minChildSize:     0.4,
+        maxChildSize:     0.92,
+        builder: (ctx, scrollController) => _DatasetSheetContent(
+          snaps:        widget.snaps,
+          activeSnap:   widget.activeSnap,
+          onSelectSnap: (s) {
+            widget.onSelectSnap(s);
+            Navigator.pop(context);
+          },
+          onDeleteSnap: widget.onDeleteSnap,
+          scrollController: scrollController,
         ),
       ),
     );
@@ -1222,43 +1009,176 @@ class _NarrowLayout extends StatelessWidget {
       children: [
         Column(children: [
           _ControlsBar(
-            tabs: tabs,
-            ivMode: ivMode,
-            onIvModeChanged: onIvModeChanged,
-            snaps: snaps,
-            activeSnap: activeSnap,
-            baseSnap: baseSnap,
-            onActiveSnapChanged: onSelectSnap,
-            onBaseSnapChanged: onBaseSnapChanged,
+            tabs:               widget.tabs,
+            ivMode:             widget.ivMode,
+            onIvModeChanged:    widget.onIvModeChanged,
+            snaps:              widget.snaps,
+            activeSnap:         widget.activeSnap,
+            baseSnap:           widget.baseSnap,
+            onActiveSnapChanged: widget.onSelectSnap,
+            onBaseSnapChanged:   widget.onBaseSnapChanged,
           ),
           Expanded(child: _ChartArea(
-            tabs: tabs,
-            activeSnap: activeSnap,
-            baseSnap: baseSnap,
-            ivMode: ivMode,
-            loading: loading,
+            tabs:       widget.tabs,
+            activeSnap: widget.activeSnap,
+            baseSnap:   widget.baseSnap,
+            ivMode:     widget.ivMode,
+            loading:    widget.loading,
           )),
-          if (activeSnap != null)
+          if (widget.activeSnap != null)
             SizedBox(
               height: 220,
               child: VolSurfaceInterpretation(
-                snap: activeSnap!,
-                ivMode: ivMode,
+                snap:   widget.activeSnap!,
+                ivMode: widget.ivMode,
               ),
             ),
         ]),
         Positioned(
-          bottom: activeSnap != null ? 236 : 16,
-          right: 16,
+          bottom: widget.activeSnap != null ? 236 : 16,
+          right:  16,
           child: FloatingActionButton.extended(
-            onPressed: () => _showInputSheet(context),
+            onPressed: () => _showDatasetSheet(context),
             backgroundColor: const Color(0xFF3b82f6),
-            label: const Text('Add Data',
+            label: const Text('Datasets',
                 style: TextStyle(fontFamily: 'monospace')),
-            icon: const Icon(Icons.add_rounded),
+            icon: const Icon(Icons.dataset_rounded),
           ),
         ),
       ],
     );
+  }
+}
+
+// Bottom sheet content for narrow layout
+class _DatasetSheetContent extends StatefulWidget {
+  final List<VolSnapshot>          snaps;
+  final VolSnapshot?               activeSnap;
+  final ValueChanged<VolSnapshot>  onSelectSnap;
+  final ValueChanged<VolSnapshot>  onDeleteSnap;
+  final ScrollController           scrollController;
+
+  const _DatasetSheetContent({
+    required this.snaps,
+    required this.activeSnap,
+    required this.onSelectSnap,
+    required this.onDeleteSnap,
+    required this.scrollController,
+  });
+
+  @override
+  State<_DatasetSheetContent> createState() => _DatasetSheetContentState();
+}
+
+class _DatasetSheetContentState extends State<_DatasetSheetContent> {
+  final _searchCtrl = TextEditingController();
+  String _filter = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filter.isEmpty
+        ? widget.snaps
+        : widget.snaps
+            .where((s) =>
+                s.ticker.toUpperCase().contains(_filter.toUpperCase()))
+            .toList();
+
+    return Column(children: [
+      // Drag handle
+      Center(
+        child: Container(
+          margin: const EdgeInsets.only(top: 10, bottom: 12),
+          width: 36, height: 4,
+          decoration: BoxDecoration(
+            color: const Color(0xFF374151),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      ),
+      // Header
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: Row(children: [
+          Text('SELECT DATASET',
+              style: TextStyle(
+                  fontSize:    10,
+                  fontWeight:  FontWeight.w700,
+                  letterSpacing: 1.2,
+                  color:       Color(0xFF6b7280),
+                  fontFamily:  'monospace')),
+        ]),
+      ),
+      // Search
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: TextField(
+          controller: _searchCtrl,
+          autofocus: true,
+          onChanged: (v) => setState(() => _filter = v),
+          style: const TextStyle(
+              fontSize: 13, color: Color(0xFFd1d5db)),
+          decoration: InputDecoration(
+            hintText: 'Search ticker…',
+            hintStyle: const TextStyle(color: Color(0xFF4b5563)),
+            prefixIcon: const Icon(Icons.search_rounded,
+                size: 18, color: Color(0xFF6b7280)),
+            suffixIcon: _filter.isNotEmpty
+                ? GestureDetector(
+                    onTap: () {
+                      _searchCtrl.clear();
+                      setState(() => _filter = '');
+                    },
+                    child: const Icon(Icons.close_rounded,
+                        size: 16, color: Color(0xFF6b7280)),
+                  )
+                : null,
+            filled: true,
+            fillColor: const Color(0xFF0d1117),
+            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFF374151)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFF374151)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFF3b82f6)),
+            ),
+          ),
+        ),
+      ),
+      const Divider(color: Color(0xFF1f2937), height: 1),
+      // List
+      Expanded(
+        child: filtered.isEmpty
+            ? Center(
+                child: Text(
+                  _filter.isEmpty
+                      ? 'No datasets yet.\nOpen an options chain to auto-ingest.'
+                      : 'No tickers match "$_filter".',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color:     Color(0xFF4b5563),
+                      fontSize:  13,
+                      height:    1.6),
+                ),
+              )
+            : _GroupedDatasetList(
+                snaps:        filtered,
+                activeSnap:   widget.activeSnap,
+                onSelectSnap: widget.onSelectSnap,
+                onDeleteSnap: widget.onDeleteSnap,
+              ),
+      ),
+    ]);
   }
 }

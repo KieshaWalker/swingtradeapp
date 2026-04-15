@@ -6,7 +6,7 @@
 // =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/bls/bls_models.dart';
-import '../../../services/bls/bls_serivce.dart';
+import '../../../services/bls/bls_service.dart';
 import '../../../services/bea/bea_models.dart';
 import '../../../services/bea/bea_service.dart';
 import '../../../services/eia/eia_models.dart';

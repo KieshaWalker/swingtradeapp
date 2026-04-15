@@ -27,7 +27,6 @@ FredStorageService get _storage =>
 /// Fetch a FRED series. [limit] defaults to 500 for initial history bootstrap.
 final fredSeriesProvider =
     FutureProvider.family<FredSeries, String>((ref, seriesId) async {
-      print('Fetching FRED series $seriesId');
   return _fredService.getSeries(seriesId, limit: 500);
 });
 

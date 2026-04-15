@@ -2,8 +2,7 @@
 // core/router.dart — Navigation & route definitions
 // =============================================================================
 // Widgets defined here:
-//   • _AppShell       — persistent scaffold with 6-tab NavigationBar;
-//                       wraps every main-feature screen
+//   • _AppShell           — thin shell; wraps every main-feature screen
 //   • _AuthCallbackScreen — loading screen shown while Supabase exchanges
 //                           the email-link token; auto-redirects on auth event
 //
@@ -28,7 +27,8 @@
 // Auth guard (redirect):
 //   Unauthenticated users → /login
 //   Authenticated users on /login or /signup → /
-//   Watches authStateProvider (features/auth/providers/auth_provider.dart)
+//   Uses _RouterNotifier + refreshListenable so GoRouter is never recreated
+//   on auth events (prevents navigation reset to initialLocation on token refresh).
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -59,7 +59,45 @@ import '../features/blotter/screens/trade_blotter_screen.dart';
 import '../features/blotter/screens/validated_blotters_screen.dart';
 import '../features/options/screens/greek_chart_screen.dart';
 import '../features/vol_surface/screens/vol_surface_screen.dart';
+import '../features/ideas/screens/trade_ideas_screen.dart';
 
+// =============================================================================
+// _RouterNotifier
+// =============================================================================
+// Bridges Riverpod auth state into GoRouter's refreshListenable.
+//
+// WHY: if routerProvider used ref.watch(authStateProvider), the entire GoRouter
+// instance would be recreated on every Supabase auth event (token refresh,
+// session ping, etc.), which resets navigation to initialLocation: '/'.
+// Using ref.listen + ChangeNotifier means GoRouter is created ONCE and only
+// re-evaluates the redirect function when auth state changes — navigation
+// history is preserved.
+class _RouterNotifier extends ChangeNotifier {
+  final Ref _ref;
+
+  _RouterNotifier(this._ref) {
+    _ref.listen<AsyncValue<dynamic>>(authStateProvider, (_, _) {
+      notifyListeners();
+    });
+  }
+
+  String? redirect(BuildContext context, GoRouterState state) {
+    final authState   = _ref.read(authStateProvider);
+    final isAuthed    = authState.valueOrNull?.session != null;
+    final location    = state.matchedLocation;
+    final isAuthRoute = location == '/login' || location == '/signup';
+    final isCallback  = location == '/auth/callback';
+
+    if (isCallback) return isAuthed ? '/' : null;
+    if (!isAuthed && !isAuthRoute) return '/login';
+    if (isAuthed && isAuthRoute) return '/';
+    return null;
+  }
+}
+
+// =============================================================================
+// _AppShell
+// =============================================================================
 // Thin shell — just provides the route transition wrapper.
 // Navigation is handled by AppMenuButton in each screen's AppBar.
 class _AppShell extends StatelessWidget {
@@ -70,25 +108,19 @@ class _AppShell extends StatelessWidget {
   Widget build(BuildContext context) => child;
 }
 
+// =============================================================================
+// routerProvider
+// =============================================================================
 final routerProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authStateProvider);
+  final notifier = _RouterNotifier(ref);
 
   return GoRouter(
-    initialLocation: '/',
-    redirect: (context, state) {
-      final isAuthed = authState.valueOrNull?.session != null;
-      final location = state.matchedLocation;
-      final isAuthRoute = location == '/login' || location == '/signup';
-      final isCallback = location == '/auth/callback';
-
-      if (isCallback) return isAuthed ? '/' : null;
-      if (!isAuthed && !isAuthRoute) return '/login';
-      if (isAuthed && isAuthRoute) return '/';
-      return null;
-    },
+    initialLocation:    '/',
+    refreshListenable:  notifier,
+    redirect:           notifier.redirect,
     routes: [
       // Auth
-      GoRoute(path: '/login', builder: (context, _) => const LoginScreen()),
+      GoRoute(path: '/login',  builder: (context, _) => const LoginScreen()),
       GoRoute(path: '/signup', builder: (context, _) => const SignupScreen()),
       GoRoute(
         path: '/auth/callback',
@@ -105,7 +137,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) =>
             const NoTransitionPage(child: _AppShell(child: TradesScreen())),
         routes: [
-          GoRoute(path: 'add', builder: (context, _) => const AddTradeScreen()),
+          GoRoute(path: 'add',    builder: (context, _) => const AddTradeScreen()),
           GoRoute(path: 'blocks', builder: (_, _) => const TradeBlocksScreen()),
           GoRoute(path: 'import', builder: (_, _) => const CsvImportScreen()),
           GoRoute(
@@ -131,7 +163,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) =>
             const NoTransitionPage(child: _AppShell(child: CalculatorScreen())),
       ),
-
       GoRoute(
         path: '/journal',
         pageBuilder: (context, state) =>
@@ -173,6 +204,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/vol-surface',
         pageBuilder: (context, state) => const NoTransitionPage(
           child: _AppShell(child: VolSurfaceScreen()),
+        ),
+      ),
+      GoRoute(
+        path: '/ideas',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: TradeIdeasScreen()),
         ),
       ),
 
@@ -220,8 +257,11 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
+// =============================================================================
+// _AuthCallbackScreen
+// =============================================================================
 // Shown briefly while Supabase exchanges the PKCE token from the email link.
-// The authStateProvider stream will fire and GoRouter will redirect to '/' automatically.
+// _RouterNotifier will fire notifyListeners() and GoRouter will redirect to '/'.
 class _AuthCallbackScreen extends StatelessWidget {
   const _AuthCallbackScreen();
 

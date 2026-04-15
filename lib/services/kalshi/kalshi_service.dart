@@ -34,7 +34,7 @@ class KalshiService {
       }
       return data as Map<String, dynamic>;
     } catch (e) {
-      print('Kalshi API Error: $e');
+      // rethrow propagates the error to the caller for handling.
       rethrow;
     }
   }

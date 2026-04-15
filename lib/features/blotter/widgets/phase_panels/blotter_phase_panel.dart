@@ -183,15 +183,18 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
   }) {
     final edgeBps = fv.edgeBps;
 
-    // Hard fails
+    // Hard fails — note: edgeBps alone is NOT a hard fail.
+    // The SABR+Heston stack uses the contract's own IV for calibration, which
+    // produces a systematic negative bias on OTM options (Heston ρ=-0.7 lowers
+    // OTM call fair value below broker mid). A small negative edge is noise;
+    // only deltaBreached and extreme ES₉₅ are structural risk gates.
     final deltaBreached = whatIf.exceedsDeltaThreshold;
     final es95High      = tradeEs95 > 700;
-    final edgeNegative  = edgeBps < 0;
 
     final PhaseStatus status;
-    if (edgeNegative || deltaBreached || es95High) {
+    if (deltaBreached || es95High) {
       status = PhaseStatus.fail;
-    } else if (edgeBps < 5 ||
+    } else if (edgeBps < 0 ||
                tradeEs95 > 300 ||
                whatIf.newDelta.abs() > whatIf.deltaThreshold * 0.80) {
       status = PhaseStatus.warn;

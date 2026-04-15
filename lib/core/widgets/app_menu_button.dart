@@ -25,6 +25,7 @@ class AppMenuButton extends StatelessWidget {
         _navItem('/ticker', Icons.candlestick_chart_rounded, 'Tickers', location),
         _navItem('/blotter', Icons.receipt_long_rounded, 'Blotter', location),
         _navItem('/blotter/evaluate', Icons.fact_check_rounded, 'Trade Eval', location),
+        _navItem('/ideas', Icons.lightbulb_outline_rounded, 'Trade Ideas', location),
         _navItem('/vol-surface', Icons.stacked_line_chart_rounded, 'Vol Surface', location),
       ],
     );

@@ -1118,13 +1118,6 @@ String _ivDetail(double iv, int score) {
       'Cheap to buy; small moves dominate P&L';
 }
 
-String _oiDetail(int oi, int score) {
-  if (oi >= 1000) return 'OI ${_fmtInt(oi)} — liquid. Exit at fair value likely';
-  if (oi >= 500)  return 'OI ${_fmtInt(oi)} — good. Institutional interest present';
-  if (oi >= 100)  return 'OI ${_fmtInt(oi)} — adequate. Reduce size 25%';
-  if (oi >= 20)   return 'OI ${_fmtInt(oi)} — thin. Plan exit before liquidity dries up';
-  return 'OI $oi — illiquid. Cannot exit at fair value';
-}
 
 String _moneynessDetail(double pctOtm, bool isItm, int score) {
   if (isItm) {

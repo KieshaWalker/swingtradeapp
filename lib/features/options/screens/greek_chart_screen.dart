@@ -3,7 +3,8 @@
 // Route: /ticker/:symbol/chains/greeks
 // =============================================================================
 // Displays ATM option Greeks tracked daily over time.
-// One card per Greek (Delta, Gamma, Theta, Vega, Rho, IV) with two lines:
+// Three DTE tabs: 4 DTE · 7 DTE · 31 DTE
+// Each tab: one card per Greek (Delta, Gamma, Theta, Vega, Rho, IV)
 //   Call — AppTheme.profitColor (green)
 //   Put  — AppTheme.lossColor  (pink)
 //
@@ -16,6 +17,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
 import '../../../services/greeks/greek_snapshot_models.dart';
 import '../../../services/greeks/greek_snapshot_providers.dart';
+
+// ── DTE bucket config ─────────────────────────────────────────────────────────
+
+const _buckets = [
+  _BucketDef(dte: 4,  label: '4 DTE',  description: 'Weekly / near-expiry'),
+  _BucketDef(dte: 7,  label: '7 DTE',  description: 'Weekly'),
+  _BucketDef(dte: 31, label: '31 DTE', description: 'Monthly'),
+];
+
+class _BucketDef {
+  final int    dte;
+  final String label;
+  final String description;
+  const _BucketDef({required this.dte, required this.label, required this.description});
+}
 
 // ── Greek descriptor ──────────────────────────────────────────────────────────
 
@@ -108,22 +124,41 @@ String _fmtPct(double v) => '${v.toStringAsFixed(1)}%';
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-class GreekChartScreen extends ConsumerWidget {
+class GreekChartScreen extends ConsumerStatefulWidget {
   final String symbol;
   const GreekChartScreen({super.key, required this.symbol});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final histAsync = ref.watch(greekHistoryProvider(symbol));
+  ConsumerState<GreekChartScreen> createState() => _GreekChartScreenState();
+}
 
+class _GreekChartScreenState extends ConsumerState<GreekChartScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs = TabController(length: _buckets.length, vsync: this, initialIndex: 2);
+    // Default to 31 DTE tab (index 2) — most history data
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('$symbol  Greeks'),
+            Text('${widget.symbol}  Greeks'),
             const Text(
-              'ATM option greeks tracked daily',
+              'ATM greeks by DTE bucket — tracked daily',
               style: TextStyle(
                   color: AppTheme.neutralColor,
                   fontSize: 11,
@@ -135,27 +170,72 @@ class GreekChartScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.refresh_rounded, size: 20),
             tooltip: 'Refresh',
-            onPressed: () => ref.invalidate(greekHistoryProvider(symbol)),
+            onPressed: () {
+              for (final b in _buckets) {
+                ref.invalidate(greekHistoryProvider((widget.symbol, b.dte)));
+              }
+            },
           ),
         ],
-      ),
-      body: histAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text('Error loading greek history: $e',
-                style: const TextStyle(color: AppTheme.lossColor)),
-          ),
+        bottom: TabBar(
+          controller: _tabs,
+          tabs: _buckets
+              .map((b) => Tab(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(b.label,
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w700)),
+                        Text(b.description,
+                            style: const TextStyle(
+                                color: AppTheme.neutralColor, fontSize: 9)),
+                      ],
+                    ),
+                  ))
+              .toList(),
+          labelColor:         Colors.white,
+          unselectedLabelColor: AppTheme.neutralColor,
+          indicatorColor:     AppTheme.profitColor,
         ),
-        data: (history) {
-          if (history.isEmpty) {
-            return const _EmptyState();
-          }
-          return _GreekChartBody(symbol: symbol, history: history);
-        },
       ),
+      body: TabBarView(
+        controller: _tabs,
+        children: _buckets
+            .map((b) => _BucketView(symbol: widget.symbol, bucket: b))
+            .toList(),
+      ),
+    );
+  }
+}
+
+// ── Bucket tab view ───────────────────────────────────────────────────────────
+
+class _BucketView extends ConsumerWidget {
+  final String     symbol;
+  final _BucketDef bucket;
+  const _BucketView({required this.symbol, required this.bucket});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final histAsync = ref.watch(greekHistoryProvider((symbol, bucket.dte)));
+
+    return histAsync.when(
+      loading: () =>
+          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (e, _) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text('Error loading greek history: $e',
+              style: const TextStyle(color: AppTheme.lossColor)),
+        ),
+      ),
+      data: (history) {
+        if (history.isEmpty) {
+          return _EmptyState(bucket: bucket);
+        }
+        return _GreekChartBody(symbol: symbol, history: history, bucket: bucket);
+      },
     );
   }
 }
@@ -165,7 +245,12 @@ class GreekChartScreen extends ConsumerWidget {
 class _GreekChartBody extends StatelessWidget {
   final String              symbol;
   final List<GreekSnapshot> history;
-  const _GreekChartBody({required this.symbol, required this.history});
+  final _BucketDef          bucket;
+  const _GreekChartBody({
+    required this.symbol,
+    required this.history,
+    required this.bucket,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -183,6 +268,7 @@ class _GreekChartBody extends StatelessWidget {
           callStrike:  callStrike,
           putStrike:   putStrike,
           dte:         callDte,
+          dteBucket:   bucket.dte,
           dayCount:    history.length,
         ),
         const SizedBox(height: 16),
@@ -208,12 +294,14 @@ class _SummaryBar extends StatelessWidget {
   final double? callStrike;
   final double? putStrike;
   final int?    dte;
+  final int     dteBucket;
   final int     dayCount;
   const _SummaryBar({
     required this.underlying,
     required this.callStrike,
     required this.putStrike,
     required this.dte,
+    required this.dteBucket,
     required this.dayCount,
   });
 
@@ -244,7 +332,7 @@ class _SummaryBar extends StatelessWidget {
           ),
           const _Divider(),
           _StatCell(
-            'DTE',
+            'Actual DTE',
             dte != null ? '${dte}d' : '—',
             AppTheme.neutralColor,
           ),
@@ -602,7 +690,8 @@ class _ValueBadge extends StatelessWidget {
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  final _BucketDef bucket;
+  const _EmptyState({required this.bucket});
 
   @override
   Widget build(BuildContext context) {
@@ -615,20 +704,20 @@ class _EmptyState extends StatelessWidget {
             Icon(Icons.show_chart_rounded,
                 size: 48, color: AppTheme.neutralColor.withValues(alpha: 0.4)),
             const SizedBox(height: 16),
-            const Text(
-              'No greek history yet',
-              style: TextStyle(
+            Text(
+              'No ${bucket.label} history yet',
+              style: const TextStyle(
                   color:      Colors.white,
                   fontSize:   16,
                   fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Open the options chain for this ticker to start tracking '
-              'ATM greeks daily. Data builds automatically each time you '
-              'view the chain.',
+              'ATM greeks daily at the ${bucket.label} expiry. '
+              'Data builds automatically each time you view the chain.',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                   color:  AppTheme.neutralColor,
                   fontSize: 13,
                   height: 1.5),
