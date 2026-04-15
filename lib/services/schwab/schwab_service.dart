@@ -47,7 +47,7 @@ class SchwabService {
   Future<SchwabOptionsChain?> getOptionsChain(
     String symbol, {
     String contractType = 'ALL',
-    int strikeCount = 50,
+    int strikeCount = 30,
     String? expirationDate,
   }) async {
     try {

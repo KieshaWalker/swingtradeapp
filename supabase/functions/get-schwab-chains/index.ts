@@ -57,7 +57,13 @@ Deno.serve(async (req) => {
     const text = await resp.text()
     if (!resp.ok) return _error(`Schwab API error ${resp.status}: ${text}`, resp.status)
 
-    return new Response(text, {
+    // Slim the payload — Schwab returns ~45 fields per contract but the app only
+    // reads ~23. Dropping the rest cuts response size by ~40-50%, keeping us well
+    // below Schwab's Apigee TooBigBody limit for high-strike-count requests.
+    const chain    = JSON.parse(text)
+    const slimmed  = slimChain(chain)
+
+    return new Response(JSON.stringify(slimmed), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status:  200,
     })
@@ -67,6 +73,44 @@ Deno.serve(async (req) => {
     return _error(msg, status)
   }
 })
+
+// Only keep fields read by SchwabOptionContract.fromJson — drops description,
+// exchangeName, tradeDate, theoreticalVolatility, optionDeliverablesList, mini,
+// nonStandard, percentChange, markChange, penultimateLastSize, etc.
+const CONTRACT_KEEP = new Set([
+  'symbol', 'strikePrice', 'bid', 'ask', 'last', 'mark',
+  'bidSize', 'askSize', 'highPrice', 'lowPrice',
+  'delta', 'gamma', 'theta', 'vega', 'rho',
+  'volatility', 'totalVolume', 'openInterest', 'daysToExpiration',
+  'inTheMoney', 'intrinsicValue', 'timeValue', 'theoreticalOptionValue',
+  'expirationDate',
+])
+
+function slimContract(c: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const k of CONTRACT_KEEP) if (k in c) out[k] = c[k]
+  return out
+}
+
+function slimExpMap(
+  expMap: Record<string, Record<string, unknown[]>>,
+): Record<string, Record<string, unknown[]>> {
+  const result: Record<string, Record<string, unknown[]>> = {}
+  for (const [exp, strikes] of Object.entries(expMap)) {
+    result[exp] = {}
+    for (const [strike, contracts] of Object.entries(strikes)) {
+      result[exp][strike] = (contracts as Record<string, unknown>[]).map(slimContract)
+    }
+  }
+  return result
+}
+
+function slimChain(chain: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...chain }
+  if (out['callExpDateMap']) out['callExpDateMap'] = slimExpMap(out['callExpDateMap'] as Record<string, Record<string, unknown[]>>)
+  if (out['putExpDateMap'])  out['putExpDateMap']  = slimExpMap(out['putExpDateMap']  as Record<string, Record<string, unknown[]>>)
+  return out
+}
 
 function _error(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: message }), {

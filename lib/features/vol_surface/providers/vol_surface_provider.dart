@@ -48,8 +48,7 @@ Future<void> autoIngestVolSurface(String symbol) async {
     final chain = await SchwabService().getOptionsChain(
       symbol,
       contractType: 'ALL',
-      strikeCount:  150, // wide enough to capture all listed strikes
-      
+      strikeCount:  40, // Schwab Apigee TooBigBody limit hit at ~150; 40 covers ±40 ATM strikes across all expirations
     );
     if (chain == null || chain.expirations.isEmpty) return;
     final snap = VolSurfaceParser.fromChain(chain);
