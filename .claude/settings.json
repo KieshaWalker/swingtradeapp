@@ -22,7 +22,8 @@
       "Bash(python3 -c \"import sys; print\\(sys.version_info\\)\")",
       "Bash(python3.12 --version)",
       "Bash(brew list *)",
-      "Bash(pyenv versions *)"
+      "Bash(pyenv versions *)",
+      "Bash(grep -A 20 \"vol_surface_snapshots\" /Users/k/trading/apps/swing_options_trader/supabase/migrations/*.sql)"
     ],
     "additionalDirectories": [
       "/Users/k/trading/apps/swing_options_trader/lib/services"
