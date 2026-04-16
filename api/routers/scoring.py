@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from core.chain_utils import normalize_chain
 from services.option_scoring import score
 
 router = APIRouter()
@@ -47,8 +50,9 @@ def score_contract(req: ScoreRequest):
 
 @router.post("/rank")
 def rank_chain(req: RankRequest):
+    chain = normalize_chain(req.chain)
     results = []
-    for exp in req.chain.get("expirations", []):
+    for exp in chain.get("expirations", []):
         for c in list(exp.get("calls", [])) + list(exp.get("puts", [])):
             if float(c.get("bid", 0)) == 0 and float(c.get("ask", 0)) == 0:
                 continue

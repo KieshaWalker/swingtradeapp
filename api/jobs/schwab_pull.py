@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # =============================================================================
 # jobs/schwab_pull.py
 # =============================================================================
@@ -25,6 +27,7 @@ import httpx
 
 from core.config import settings
 from core.supabase_client import get_supabase
+from core.chain_utils import parse_expirations, _dte_from_key
 from services.sabr_calibrator import calibrate_snapshot
 from services.iv_analytics import analyse as iv_analyse
 from services.greek_grid_ingester import ingest as grid_ingest
@@ -68,14 +71,14 @@ async def run_schwab_pull() -> dict:
                     headers=headers,
                 )
                 if chain_resp.status_code != 200:
-                    log.error("chain_fetch_failed", ticker=ticker, status=chain_resp.status_code)
+                    log.error("chain_fetch_failed ticker=%s status=%s", ticker, chain_resp.status_code)
                     results[ticker] = f"chain_error_{chain_resp.status_code}"
                     continue
 
                 chain = chain_resp.json()
                 spot = float(chain.get("underlyingPrice", 0))
                 if spot <= 0:
-                    log.warning("zero_spot", ticker=ticker)
+                    log.warning("zero_spot ticker=%s", ticker)
                     results[ticker] = "zero_spot"
                     continue
 
@@ -108,13 +111,13 @@ async def run_schwab_pull() -> dict:
                     closes = await _fetch_fmp_closes(client, ticker, fmp_key, days=65)
                     if closes:
                         rv = rv_compute(closes)
-                        log.info("rv_computed", ticker=ticker, rv20d=rv.rv20d, rv60d=rv.rv60d)
+                        log.info("rv_computed ticker=%s rv20d=%s rv60d=%s", ticker, rv.rv20d, rv.rv60d)
 
                 results[ticker] = "ok"
-                log.info("ticker_pulled", ticker=ticker)
+                log.info("ticker_pulled ticker=%s", ticker)
 
             except Exception as exc:
-                log.error("ticker_pull_failed", ticker=ticker, error=str(exc))
+                log.error("ticker_pull_failed ticker=%s error=%s", ticker, exc)
                 results[ticker] = f"error: {exc}"
 
     return {"status": "complete", "tickers": results, "date": today}
@@ -133,7 +136,7 @@ def _upsert_greek_snapshots(
       - ATM call = contract with |delta| closest to 0.50.
       - ATM put  = contract with |delta| closest to 0.50.
     """
-    expirations = _parse_expirations(chain)
+    expirations = parse_expirations(chain)
     if not expirations:
         return
 
@@ -186,54 +189,8 @@ def _upsert_greek_snapshots(
             ).execute()
 
         except Exception as exc:
-            log.warning("greek_snapshot_failed", ticker=ticker, dte=target_dte, error=str(exc))
+            log.warning("greek_snapshot_failed ticker=%s dte=%s error=%s", ticker, target_dte, exc)
 
-
-def _parse_expirations(chain: dict) -> list[dict]:
-    """Normalize the Schwab callExpDateMap/putExpDateMap into a flat list.
-
-    Returns: [{dte, calls: [contract, ...], puts: [contract, ...]}, ...]
-    The key format is "YYYY-MM-DD:DTE" — DTE is after the colon.
-    """
-    call_map: dict[int, list[dict]] = {}
-    put_map:  dict[int, list[dict]] = {}
-
-    for key, strikes in chain.get("callExpDateMap", {}).items():
-        dte = _dte_from_key(key)
-        if dte is None:
-            continue
-        contracts: list[dict] = []
-        for contracts_at_strike in strikes.values():
-            contracts.extend(contracts_at_strike)
-        call_map[dte] = contracts
-
-    for key, strikes in chain.get("putExpDateMap", {}).items():
-        dte = _dte_from_key(key)
-        if dte is None:
-            continue
-        contracts: list[dict] = []
-        for contracts_at_strike in strikes.values():
-            contracts.extend(contracts_at_strike)
-        put_map[dte] = contracts
-
-    all_dtes = sorted(set(call_map) | set(put_map))
-    return [
-        {
-            "dte":   dte,
-            "calls": call_map.get(dte, []),
-            "puts":  put_map.get(dte, []),
-        }
-        for dte in all_dtes
-        if dte > 0
-    ]
-
-
-def _dte_from_key(key: str) -> int | None:
-    """Extract DTE from Schwab expDate key format "YYYY-MM-DD:DTE"."""
-    try:
-        return int(key.split(":")[1])
-    except (IndexError, ValueError):
-        return None
 
 
 def _atm_contract(contracts: list[dict]) -> dict | None:
@@ -261,7 +218,7 @@ def _pct_to_dec(value) -> float | None:
 
 def _chain_to_vol_points(chain: dict, spot: float) -> list[dict]:
     """Convert Schwab callExpDateMap/putExpDateMap to vol surface points."""
-    expirations = _parse_expirations(chain)
+    expirations = parse_expirations(chain)
     points = []
     for exp in expirations:
         dte = exp["dte"]

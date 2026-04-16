@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -20,7 +22,7 @@ class IvSnapshotRequest(IvAnalyticsRequest):
     obs_date: str | None = None
 
 
-def _result_to_dict(result) -> dict:
+def _result_to_dict(result, spot: float = 0.0) -> dict:
     return {
         "ticker": result.ticker,
         "current_iv": result.current_iv,
@@ -55,7 +57,7 @@ def _result_to_dict(result) -> dict:
                 "put_oi": g.put_oi,
                 "call_gamma": g.call_gamma,
                 "put_gamma": g.put_gamma,
-                "dealer_gex": g.dealer_gex(float(result.ticker or 0) or g.strike),
+                "dealer_gex": g.dealer_gex(spot),
             }
             for g in result.gex_strikes
         ],
@@ -64,15 +66,16 @@ def _result_to_dict(result) -> dict:
 
 @router.post("/analytics")
 def iv_analytics_endpoint(req: IvAnalyticsRequest):
+    spot = float(req.chain.get("underlyingPrice", 0))
     result = analyse(req.chain, req.history, req.risk_free_rate)
-    return _result_to_dict(result)
+    return _result_to_dict(result, spot)
 
 
 @router.post("/snapshot")
 def iv_snapshot_endpoint(req: IvSnapshotRequest):
+    spot = float(req.chain.get("underlyingPrice", 0))
     result = analyse(req.chain, req.history, req.risk_free_rate)
     today = req.obs_date or date.today().isoformat()
-    spot = float(req.chain.get("underlyingPrice", 0))
     gex_by_strike = [
         {"strike": g.strike, "dealer_gex": g.dealer_gex(spot), "call_oi": g.call_oi, "put_oi": g.put_oi}
         for g in result.gex_strikes
@@ -89,4 +92,4 @@ def iv_snapshot_endpoint(req: IvSnapshotRequest):
         "put_call_ratio": result.put_call_ratio,
         "underlying_price": spot,
     }, on_conflict="ticker,date").execute()
-    return {**_result_to_dict(result), "persisted": True, "date": today}
+    return {**_result_to_dict(result, spot), "persisted": True, "date": today}

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # =============================================================================
 # services/iv_analytics.py
 # =============================================================================
@@ -15,8 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone
 
-from scipy.stats import norm
-
+from core.chain_utils import normalize_chain
 from core.constants import (
     DEFAULT_R,
     IV_OTM_MIN_PCT,
@@ -174,6 +175,8 @@ def analyse(
     Returns:
         IvAnalysisResult with all computed analytics.
     """
+    chain = normalize_chain(chain)
+
     raw_rate = risk_free_rate if risk_free_rate is not None else DEFAULT_R
     r = raw_rate / 100 if raw_rate > 0.5 else raw_rate
 

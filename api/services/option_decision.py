@@ -5,10 +5,13 @@
 # Exact port of OptionDecisionEngine from option_decision_engine.dart.
 # =============================================================================
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 
+from core.chain_utils import normalize_chain
 from services.option_scoring import OptionScore, score as score_contract
 
 
@@ -256,6 +259,7 @@ def rank_all(
 
     Matches OptionDecisionEngine.rankAll() sort order: buy > watch > avoid, then score desc.
     """
+    chain = normalize_chain(chain)
     is_call_direction = direction == TradeDirection.bullish
     results: list[OptionDecisionResult] = []
 

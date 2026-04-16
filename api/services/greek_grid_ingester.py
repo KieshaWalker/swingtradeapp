@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # =============================================================================
 # services/greek_grid_ingester.py
 # =============================================================================
@@ -14,6 +16,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from statistics import median as py_median
 
+from core.chain_utils import normalize_chain
 from core.constants import (
     GRID_APPROX_FORWARD_FACTOR,
     DEFAULT_R,
@@ -210,6 +213,7 @@ def ingest(chain: dict, obs_date: datetime | None = None) -> list[GridCell]:
     Returns:
         List of GridCell objects (one per non-empty (StrikeBand, ExpiryBucket) pair).
     """
+    chain = normalize_chain(chain)
     spot = float(chain.get("underlyingPrice", 0))
     if spot <= 0:
         return []
