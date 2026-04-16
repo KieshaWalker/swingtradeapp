@@ -19,7 +19,7 @@ import '../../../features/greek_grid/services/greek_interpreter.dart';
 import '../../../features/greek_grid/widgets/greek_interpretation_panel.dart';
 import '../../../services/greeks/greek_snapshot_models.dart';
 import '../../../services/greeks/greek_snapshot_providers.dart';
-
+ 
 // ── DTE bucket config ─────────────────────────────────────────────────────────
 
 const _buckets = [
