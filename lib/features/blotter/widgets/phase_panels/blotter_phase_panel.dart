@@ -38,6 +38,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme.dart';
 import '../../../../services/iv/iv_models.dart';
 import '../../../../services/iv/iv_providers.dart';
+import '../../../vol_surface/providers/sabr_calibration_provider.dart';
 import '../../models/blotter_models.dart';
 import '../../models/phase_result.dart';
 import '../../screens/trade_blotter_screen.dart';
@@ -108,14 +109,21 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
       return const _NotReadyTile();
     }
 
+    // ── Surface-calibrated SABR params (non-blocking) ──────────────────────
+    // Falls back to hardcoded defaults inside FairValueEngine when null.
+    final sabrSlice = ref.watch(
+        sabrSliceProvider((widget.ticker, widget.daysToExpiry)));
+
     // ── Synchronous pricing ────────────────────────────────────────────────
     final fv = FairValueEngine.compute(
-      spot:         widget.spot,
-      strike:       widget.strike,
-      impliedVol:   widget.impliedVol,
-      daysToExpiry: widget.daysToExpiry,
-      isCall:       widget.isCall,
-      brokerMid:    widget.brokerMid,
+      spot:            widget.spot,
+      strike:          widget.strike,
+      impliedVol:      widget.impliedVol,
+      daysToExpiry:    widget.daysToExpiry,
+      isCall:          widget.isCall,
+      brokerMid:       widget.brokerMid,
+      calibratedRho:   sabrSlice?.rho,
+      calibratedNu:    sabrSlice?.nu,
     );
 
     // ── ES₉₅ component decomposition ──────────────────────────────────────

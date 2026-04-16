@@ -60,6 +60,7 @@ import '../features/blotter/screens/validated_blotters_screen.dart';
 import '../features/options/screens/greek_chart_screen.dart';
 import '../features/vol_surface/screens/vol_surface_screen.dart';
 import '../features/ideas/screens/trade_ideas_screen.dart';
+import '../features/greek_grid/screens/greek_grid_screen.dart';
 
 // =============================================================================
 // _RouterNotifier
@@ -248,6 +249,18 @@ final routerProvider = Provider<GoRouter>((ref) {
                     ),
                   ),
                 ],
+              ),
+              GoRoute(
+                path: 'greek-grid',
+                builder: (_, state) => GreekGridScreen(
+                  symbol: state.pathParameters['symbol']!,
+                ),
+              ),
+              GoRoute(
+                path: 'vol-surface',
+                builder: (_, state) => VolSurfaceScreen(
+                  symbol: state.pathParameters['symbol']!,
+                ),
               ),
             ],
           ),

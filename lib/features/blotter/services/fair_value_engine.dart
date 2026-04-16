@@ -59,6 +59,10 @@ class FairValueEngine {
     required bool isCall,
     required double brokerMid,
     double r = _defaultR,
+    // Optional calibrated SABR params (from SabrCalibrator).
+    // When provided, override the hardcoded defaults for this ticker/DTE.
+    double? calibratedRho,
+    double? calibratedNu,
   }) {
     if (daysToExpiry <= 0 || impliedVol <= 0) {
       return FairValueResult(
@@ -79,6 +83,9 @@ class FairValueEngine {
     final bsPrice = _bsPrice(F, strike, T, r, impliedVol, isCall);
 
     // 2. SABR smile-adjusted vol and price
+    // Use surface-calibrated ρ/ν when available; fall back to hardcoded defaults.
+    final sabrRho = calibratedRho ?? _sabrRho;
+    final sabrNu  = calibratedNu  ?? _sabrNu;
     final alpha = _sabrAlpha(impliedVol, F, _sabrBeta);
     final sabrVol = _sabrIv(
       F: F,
@@ -86,8 +93,8 @@ class FairValueEngine {
       T: T,
       alpha: alpha,
       beta: _sabrBeta,
-      rho: _sabrRho,
-      nu: _sabrNu,
+      rho: sabrRho,
+      nu: sabrNu,
     );
     final sabrVol_ = sabrVol.clamp(0.01, 5.0); // guard
     final sabrPrice = _bsPrice(F, strike, T, r, sabrVol_, isCall);

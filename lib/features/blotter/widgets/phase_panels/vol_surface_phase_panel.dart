@@ -33,6 +33,7 @@ import '../../../../services/fred/fred_providers.dart';
 import '../../../../services/iv/iv_providers.dart';
 import '../../../../services/iv/realized_vol_models.dart';
 import '../../../../services/iv/realized_vol_providers.dart';
+import '../../../../services/vol_surface/arb_checker.dart';
 import '../../../vol_surface/models/vol_surface_models.dart';
 import '../../../vol_surface/providers/vol_surface_provider.dart';
 import '../../../vol_surface/widgets/vol_heatmap.dart';
@@ -183,6 +184,7 @@ PhaseResult _toPhaseResult({
   double?                    vega,
   double?                    prevPutCallRatio,
   double?                    ivPercentileOverride,  // 0–100; from IvAnalysis.ivPercentile
+  ArbCheckResult?            arbCheck,
 }) {
   final signals  = <String>[];
   final warnings = <String>[];
@@ -439,6 +441,26 @@ PhaseResult _toPhaseResult({
     }
   }
 
+  // ── 11. Arbitrage-free surface check ──────────────────────────────────────
+  bool surfaceHasArb = false;
+  if (arbCheck != null && !arbCheck.isArbitrageFree) {
+    surfaceHasArb = true;
+    if (arbCheck.calendarViolations.isNotEmpty) {
+      warnings.add(
+        'Surface calendar arb: ${arbCheck.calendarViolations.length} strike(s) '
+        'have inverted total variance across expiries. '
+        'IV pricing is inconsistent — model fair value may be unreliable.');
+    }
+    if (arbCheck.butterflyViolations.isNotEmpty) {
+      warnings.add(
+        'Surface butterfly arb: ${arbCheck.butterflyViolations.length} strike(s) '
+        'violate call-price convexity. '
+        'A riskless butterfly spread exists — raw data may have stale quotes.');
+    }
+  } else if (arbCheck != null) {
+    signals.add('Surface arbitrage check: clean ✓ (no calendar or butterfly violations)');
+  }
+
   // ── Pass / Warn / Fail ─────────────────────────────────────────────────────
   final bool ivCrush       = a.termShape == _TermShape.backwardation && a.termSlope > 0.05;
   final bool ivHighBuy     = cellPct > 0.90;
@@ -457,7 +479,8 @@ PhaseResult _toPhaseResult({
       ivBelowRv ||       // selling cheap insurance
       skewSteepening ||  // pre-hedge flow building
       crushEdgeNegative || // crush exceeds edge
-      vixVxvPanic;         // near-term vol curve inverted
+      vixVxvPanic ||       // near-term vol curve inverted
+      surfaceHasArb;       // surface has calendar or butterfly arb
 
   final PhaseStatus status;
   final String headline;
@@ -615,6 +638,8 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
           dte:    widget.daysToExpiry,
           isCall: widget.isCall,
         );
+        final arbCheck = ArbChecker.check(snap);
+
         final result = _toPhaseResult(
           a:                    analysis,
           isCall:               widget.isCall,
@@ -628,6 +653,7 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
           vega:                 widget.vega,
           prevPutCallRatio:     prevPutCallRatio,
           ivPercentileOverride: ivAnalysis?.ivPercentile,
+          arbCheck:             arbCheck,
         );
         _notifyIfChanged(result);
 

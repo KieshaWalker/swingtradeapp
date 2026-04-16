@@ -15,6 +15,8 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
+import '../../../features/greek_grid/services/greek_interpreter.dart';
+import '../../../features/greek_grid/widgets/greek_interpretation_panel.dart';
 import '../../../services/greeks/greek_snapshot_models.dart';
 import '../../../services/greeks/greek_snapshot_providers.dart';
 
@@ -271,7 +273,13 @@ class _GreekChartBody extends StatelessWidget {
           dteBucket:   bucket.dte,
           dayCount:    history.length,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
+
+        // ── Interpretation ───────────────────────────────────────────────────
+        GreekInterpretationPanel(
+          result: interpretGreekChart(history, bucket.dte),
+        ),
+        const SizedBox(height: 10),
 
         // ── Legend ──────────────────────────────────────────────────────────
         const _Legend(),

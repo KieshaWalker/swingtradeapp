@@ -21,7 +21,12 @@ const _ivModes = [
 ];
 
 class VolSurfaceScreen extends ConsumerStatefulWidget {
-  const VolSurfaceScreen({super.key});
+  /// When non-null the screen is scoped to a single ticker (pushed from
+  /// TickerProfileScreen). The sidebar is hidden and only that ticker's
+  /// snapshots are shown. When null the global multi-ticker view is shown.
+  final String? symbol;
+
+  const VolSurfaceScreen({super.key, this.symbol});
 
   @override
   ConsumerState<VolSurfaceScreen> createState() => _VolSurfaceScreenState();
@@ -58,17 +63,37 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
   @override
   Widget build(BuildContext context) {
     final snapsAsync = ref.watch(volSurfaceProvider);
-    final snaps = snapsAsync.valueOrNull ?? [];
+    final allSnaps = snapsAsync.valueOrNull ?? [];
+
+    // When scoped to a ticker, only show that ticker's snapshots.
+    final snaps = widget.symbol != null
+        ? allSnaps
+            .where((s) => s.ticker == widget.symbol!.toUpperCase())
+            .toList()
+        : allSnaps;
+
+    // Auto-select the most recent snapshot on first data load.
+    if (_activeSnap == null && snaps.isNotEmpty) {
+      final latest =
+          snaps.reduce((a, b) => a.obsDate.isAfter(b.obsDate) ? a : b);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _activeSnap = latest);
+      });
+    }
+
+    final isTicker = widget.symbol != null;
 
     return Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Vol Surface'),
+            Text(isTicker ? '${widget.symbol!.toUpperCase()} Vol Surface' : 'Vol Surface'),
             if (_activeSnap != null)
               Text(
-                '${_activeSnap!.ticker} · ${_activeSnap!.obsDateStr}',
+                isTicker
+                    ? _activeSnap!.obsDateStr
+                    : '${_activeSnap!.ticker} · ${_activeSnap!.obsDateStr}',
                 style: const TextStyle(
                     color: AppTheme.neutralColor,
                     fontSize: 11,
@@ -87,46 +112,48 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
             tooltip: 'How to read this',
             onPressed: () => showVolSurfaceGuide(context, _tabs.index),
           ),
-          const AppMenuButton(),
+          if (!isTicker) const AppMenuButton(),
         ],
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth < 400;
-          return wide
-              ? Row(children: [
-                  _Sidebar(
-                    snaps:        snaps,
-                    activeSnap:   _activeSnap,
-                    onSelectSnap: (s) => setState(() => _activeSnap = s),
-                    onDeleteSnap: _deleteSnap,
-                  ),
-                  Expanded(
-                    child: _MainPanel(
-                      tabs:               _tabs,
-                      ivMode:             _ivMode,
-                      onIvModeChanged:    (m) => setState(() => _ivMode = m),
-                      snaps:              snaps,
-                      activeSnap:         _activeSnap,
-                      baseSnap:           _baseSnap,
-                      onActiveSnapChanged: (s) => setState(() => _activeSnap = s),
-                      onBaseSnapChanged:   (s) => setState(() => _baseSnap = s),
-                      loading:            snapsAsync.isLoading,
-                    ),
-                  ),
-                ])
-              : _NarrowLayout(
-                  snaps:            snaps,
-                  activeSnap:       _activeSnap,
-                  onSelectSnap:     (s) => setState(() => _activeSnap = s),
-                  onDeleteSnap:     _deleteSnap,
-                  tabs:             _tabs,
-                  ivMode:           _ivMode,
-                  onIvModeChanged:  (m) => setState(() => _ivMode = m),
-                  baseSnap:         _baseSnap,
-                  onBaseSnapChanged:(s) => setState(() => _baseSnap = s),
-                  loading:          snapsAsync.isLoading,
-                );
+          // When scoped to a ticker, always skip the multi-ticker sidebar.
+          final showSidebar = !isTicker && constraints.maxWidth < 400;
+          if (showSidebar) {
+            return Row(children: [
+              _Sidebar(
+                snaps:        snaps,
+                activeSnap:   _activeSnap,
+                onSelectSnap: (s) => setState(() => _activeSnap = s),
+                onDeleteSnap: _deleteSnap,
+              ),
+              Expanded(
+                child: _MainPanel(
+                  tabs:               _tabs,
+                  ivMode:             _ivMode,
+                  onIvModeChanged:    (m) => setState(() => _ivMode = m),
+                  snaps:              snaps,
+                  activeSnap:         _activeSnap,
+                  baseSnap:           _baseSnap,
+                  onActiveSnapChanged: (s) => setState(() => _activeSnap = s),
+                  onBaseSnapChanged:   (s) => setState(() => _baseSnap = s),
+                  loading:            snapsAsync.isLoading,
+                ),
+              ),
+            ]);
+          }
+          return _NarrowLayout(
+            snaps:            snaps,
+            activeSnap:       _activeSnap,
+            onSelectSnap:     (s) => setState(() => _activeSnap = s),
+            onDeleteSnap:     _deleteSnap,
+            tabs:             _tabs,
+            ivMode:           _ivMode,
+            onIvModeChanged:  (m) => setState(() => _ivMode = m),
+            baseSnap:         _baseSnap,
+            onBaseSnapChanged:(s) => setState(() => _baseSnap = s),
+            loading:          snapsAsync.isLoading,
+          );
         },
       ),
     );

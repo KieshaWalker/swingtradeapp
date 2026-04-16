@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
 import '../../../features/vol_surface/providers/vol_surface_provider.dart';
+import '../../../features/greek_grid/services/greek_grid_ingester.dart';
 import '../../../services/greeks/greek_snapshot_providers.dart';
 import '../../../services/iv/iv_providers.dart';
 import '../../../services/kalshi/kalshi_providers.dart';
@@ -135,6 +136,7 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
             _hasIngested = true;
             autoIngestIv(chain);
             autoIngestGreeks(chain);
+            autoIngestGreekGrid(widget.symbol);
             autoIngestVolSurface(widget.symbol).then((_) {
               if (mounted) ref.invalidate(volSurfaceProvider);
             });

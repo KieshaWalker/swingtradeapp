@@ -324,6 +324,11 @@ class FmpService {
   }
 
   /// Next scheduled earnings date for [symbol] (returns first upcoming entry).
+  ///
+  /// FMP's /earnings-calendar endpoint returns all companies' earnings for the
+  /// date range regardless of the `symbol` query param — client-side filter is
+  /// required so we return only the requested ticker's next date, not whichever
+  /// company happens to report first in that window.
   Future<FmpEarningsDate?> getNextEarnings(String symbol) async {
     try {
       final from = DateTime.now();
@@ -336,10 +341,13 @@ class FmpService {
       ));
       if (res.statusCode != 200) return null;
       final data = jsonDecode(res.body);
-      if (data is List && data.isNotEmpty) {
-        return FmpEarningsDate.fromJson(data.first as Map<String, dynamic>);
-      }
-      return null;
+      if (data is! List || data.isEmpty) return null;
+      final upper = symbol.toUpperCase();
+      final match = data
+          .map((e) => FmpEarningsDate.fromJson(e as Map<String, dynamic>))
+          .where((e) => e.symbol.toUpperCase() == upper)
+          .firstOrNull;
+      return match;
     } catch (_) {
       return null;
     }

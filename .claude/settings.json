@@ -17,7 +17,15 @@
       "Bash(awk '$1 > 600 {print $1 \" lines: \" $2}')",
       "Bash(wc -l echo \"\" echo \"3. Typos in filenames:\" find /Users/k/trading/apps/swing_options_trader/lib -name \"*serivce*\" -o -name \"*servce*\" -o -name \"*srvice*\" echo \"\" echo \"4. Unused providers \\(orphaned - never watched/read\\):\" grep \"activeSRLevelsProvider\\\\|eiaGasolinePriceHistoryProvider\\\\|fredGoldProvider\\\\|ivWatchlistProvider\\\\|kalshiLiveOddsProvider\\\\|openTradesProvider\\\\|quotesProvider\\\\|realizedVolHistoryProvider\\\\|schwabEarningsDateProvider\\\\|secRecentEventsProvider\\\\|secSearchProvider\\\\|stockProfileProvider\\\\|tickerHistoricalPricesProvider\" /Users/k/trading/apps/swing_options_trader/lib/services/**/*.dart /Users/k/trading/apps/swing_options_trader/lib/features/**/*.dart)",
       "Bash(find /Users/k/trading/apps/swing_options_trader/lib -name \"*.dart\" -type f ! -name \"main.dart\" -exec sh -c 'grep -q \"^import\\\\|^export\" \"$1\" || echo \"$1\"' _ {} \\\\;)",
-      "Bash(find /Users/k/trading/apps/swing_options_trader/lib -name \"*.dart\" -type f ! -name \"main.dart\" -exec sh -c 'if ! grep -q \"^import\\\\|^export\" \"$1\"; then echo \"$1\"; fi' _ {} \\\\;)"
+      "Bash(find /Users/k/trading/apps/swing_options_trader/lib -name \"*.dart\" -type f ! -name \"main.dart\" -exec sh -c 'if ! grep -q \"^import\\\\|^export\" \"$1\"; then echo \"$1\"; fi' _ {} \\\\;)",
+      "Bash(chmod +x /Users/k/trading/apps/swing_options_trader/api/deploy.sh)",
+      "Bash(python3 -c \"import sys; print\\(sys.version_info\\)\")",
+      "Bash(python3.12 --version)",
+      "Bash(brew list *)",
+      "Bash(pyenv versions *)"
+    ],
+    "additionalDirectories": [
+      "/Users/k/trading/apps/swing_options_trader/lib/services"
     ]
   }
 }

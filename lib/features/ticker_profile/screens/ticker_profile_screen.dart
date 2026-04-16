@@ -155,6 +155,16 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
             tooltip: 'Options Chain',
             onPressed: () => context.push('/ticker/$_sym/chains'),
           ),
+          IconButton(
+            icon: const Icon(Icons.grid_view_rounded),
+            tooltip: 'Greek Grid',
+            onPressed: () => context.push('/ticker/$_sym/greek-grid'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.ssid_chart_rounded),
+            tooltip: 'Vol Surface',
+            onPressed: () => context.push('/ticker/$_sym/vol-surface'),
+          ),
         ],
         bottom: TabBar(
           controller: _tabs,
