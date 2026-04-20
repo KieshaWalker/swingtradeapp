@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/schwab/schwab_providers.dart';
+import '../../../services/schwab/schwab_reauth_provider.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../trades/models/trade.dart';
 import '../../trades/providers/trade_block_provider.dart';
@@ -39,6 +40,7 @@ class SummaryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final asyncTrades = ref.watch(tradesProvider);
     final user = ref.watch(currentUserProvider);
+    final reauthNeeded = ref.watch(schwabReauthNeededProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -69,6 +71,34 @@ class SummaryScreen extends ConsumerWidget {
                 .toList();
             return Column(
               children: [
+                if (reauthNeeded)
+                  Material(
+                    color: const Color(0xFF7C3205),
+                    child: InkWell(
+                      onTap: () => context.go('/settings/schwab-auth'),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        child: Row(
+                          children: [
+                            Icon(Icons.link_off_rounded, size: 16, color: Colors.orange),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Schwab connection expired',
+                                style: TextStyle(color: Colors.white, fontSize: 13),
+                              ),
+                            ),
+                            Text(
+                              'Reconnect',
+                              style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                            SizedBox(width: 4),
+                            Icon(Icons.chevron_right_rounded, color: Colors.orange, size: 16),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 _EdgeWarningCard(),
                 Expanded(
                   child: _Body(

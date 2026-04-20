@@ -32,6 +32,7 @@ from services.sabr_calibrator import calibrate_snapshot
 from services.iv_analytics import analyse as iv_analyse
 from services.greek_grid_ingester import ingest as grid_ingest
 from services.realized_vol import compute as rv_compute
+from services.vvol_analytics import compute as vvol_compute
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ async def run_schwab_pull() -> dict:
     fmp_key = settings.fmp_api_key
 
     # Fetch watched tickers + user_id (needed for user-scoped tables like greek_snapshots)
-    tickers_resp = db.table("watched_tickers").select("symbol,user_id").execute()
+    tickers_resp = db.table("watched_tickers").select("ticker,user_id").execute()
     rows = tickers_resp.data or []
     if not rows:
         log.warning("No watched tickers found — nothing to pull")
@@ -61,7 +62,7 @@ async def run_schwab_pull() -> dict:
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         for row in rows:
-            ticker  = row["symbol"]
+            ticker  = row["ticker"]
             user_id = row["user_id"]
             try:
                 # ── Step 1: Fetch chain from Schwab via Edge Function ──────────
@@ -89,13 +90,20 @@ async def run_schwab_pull() -> dict:
 
                 # ── Step 3: SABR calibration ──────────────────────────────────
                 slices = calibrate_snapshot(spot=spot, points=points)
+                # Fetch ν history BEFORE upserting today's calibration so that
+                # nu_history contains only prior observations (today excluded).
+                nu_history = _fetch_nu_history(db, ticker) if slices else []
                 if slices:
                     _upsert_sabr_calibrations(db, ticker, today, slices)
 
-                # ── Step 4: IV analytics ──────────────────────────────────────
+                # ── Step 4: IV analytics + vvol rank ─────────────────────────
                 history = _fetch_iv_history(db, ticker)
                 iv_result = iv_analyse(chain, history)
-                _upsert_iv_snapshot(db, ticker, today, iv_result, spot)
+                vvol = None
+                if slices and nu_history:
+                    atm_slice = min(slices, key=lambda s: abs(s.dte - 30))
+                    vvol      = vvol_compute(atm_slice.nu, nu_history)
+                _upsert_iv_snapshot(db, ticker, today, iv_result, spot, vvol)
 
                 # ── Step 5: Greek grid ────────────────────────────────────────
                 obs_dt = datetime.now(timezone.utc)
@@ -185,7 +193,7 @@ def _upsert_greek_snapshots(
 
             db.table("greek_snapshots").upsert(
                 row,
-                on_conflict="user_id,ticker,obs_date,dte_bucket",
+                on_conflict="user_id,ticker,obs_date,dte_bucket", 
             ).execute()
 
         except Exception as exc:
@@ -225,22 +233,37 @@ def _chain_to_vol_points(chain: dict, spot: float) -> list[dict]:
         call_map: dict[float, float] = {}
         put_map:  dict[float, float] = {}
 
+        call_oi_map:  dict[float, int] = {}
+        call_vol_map: dict[float, int] = {}
+        put_oi_map:   dict[float, int] = {}
+        put_vol_map:  dict[float, int] = {}
+
         for c in exp["calls"]:
             iv = c.get("volatility") or c.get("impliedVolatility") or 0
             if iv > 0:
-                call_map[float(c["strikePrice"])] = float(iv) / 100
+                s = float(c["strikePrice"])
+                call_map[s]     = float(iv) / 100
+                call_oi_map[s]  = c.get("openInterest") or 0
+                call_vol_map[s] = c.get("totalVolume") or 0
 
         for p in exp["puts"]:
             iv = p.get("volatility") or p.get("impliedVolatility") or 0
             if iv > 0:
-                put_map[float(p["strikePrice"])] = float(iv) / 100
+                s = float(p["strikePrice"])
+                put_map[s]     = float(iv) / 100
+                put_oi_map[s]  = p.get("openInterest") or 0
+                put_vol_map[s] = p.get("totalVolume") or 0
 
         for strike in sorted(set(call_map) | set(put_map)):
             points.append({
-                "strike": strike,
-                "dte":    dte,
-                "callIv": call_map.get(strike),
-                "putIv":  put_map.get(strike),
+                "strike":   strike,
+                "dte":      dte,
+                "call_iv":  call_map.get(strike),
+                "call_oi":  call_oi_map.get(strike),
+                "call_vol": call_vol_map.get(strike),
+                "put_iv":   put_map.get(strike),
+                "put_oi":   put_oi_map.get(strike),
+                "put_vol":  put_vol_map.get(strike),
             })
 
     return points
@@ -258,6 +281,41 @@ def _fetch_iv_history(db, ticker: str) -> list[dict]:
         .execute()
     )
     return resp.data or []
+
+
+def _fetch_nu_history(db, ticker: str, dte_target: int = 30) -> list[float]:
+    """Return a time-ordered series of calibrated SABR ν values for the DTE
+    slice closest to dte_target.  Used to compute vvol rank/percentile.
+
+    Call this BEFORE upserting today's calibration so the series contains
+    only prior observations (today excluded).
+    """
+    from collections import defaultdict
+    from datetime import timedelta
+    cutoff = (date.today() - timedelta(days=365)).isoformat()
+    resp = (
+        db.table("sabr_calibrations")
+        .select("obs_date,dte,nu")
+        .eq("ticker", ticker)
+        .gte("obs_date", cutoff)
+        .gte("n_points", 5)
+        .order("obs_date", desc=False)
+        .execute()
+    )
+    rows = resp.data or []
+    if not rows:
+        return []
+
+    by_date: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        by_date[r["obs_date"]].append(r)
+
+    series: list[float] = []
+    for obs_date in sorted(by_date):
+        best = min(by_date[obs_date], key=lambda s: abs(s["dte"] - dte_target))
+        if best["nu"] is not None:
+            series.append(float(best["nu"]))
+    return series
 
 
 def _upsert_vol_surface(
@@ -287,23 +345,29 @@ def _upsert_sabr_calibrations(db, ticker: str, today: str, slices) -> None:
         ).execute()
 
 
-def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float) -> None:
+def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvol=None) -> None:
     gex_by_strike = [
         {"strike": g.strike, "dealer_gex": g.dealer_gex(spot),
          "call_oi": g.call_oi, "put_oi": g.put_oi}
         for g in iv_result.gex_strikes
     ]
-    db.table("iv_snapshots").upsert(
-        {
-            "ticker": ticker, "date": today,
-            "atm_iv": iv_result.current_iv, "skew": iv_result.skew,
-            "gex_by_strike": gex_by_strike, "total_gex": iv_result.total_gex,
-            "max_gex_strike": iv_result.max_gex_strike,
-            "put_call_ratio": iv_result.put_call_ratio,
-            "underlying_price": spot,
-        },
-        on_conflict="ticker,date",
-    ).execute()
+    row: dict = {
+        "ticker": ticker, "date": today,
+        "atm_iv": iv_result.current_iv, "skew": iv_result.skew,
+        "gex_by_strike": gex_by_strike, "total_gex": iv_result.total_gex,
+        "max_gex_strike": iv_result.max_gex_strike,
+        "put_call_ratio": iv_result.put_call_ratio,
+        "underlying_price": spot,
+    }
+    if vvol is not None:
+        row.update({
+            "vvol_nu":         vvol.nu_current,
+            "vvol_rank":       vvol.vvol_rank,
+            "vvol_percentile": vvol.vvol_percentile,
+            "vvol_rating":     vvol.vvol_rating,
+            "vvol_trend":      vvol.nu_trend,
+        })
+    db.table("iv_snapshots").upsert(row, on_conflict="ticker,date").execute()
 
 
 def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float) -> None:
@@ -319,7 +383,7 @@ def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float) -> None:
                 "open_interest": cell.open_interest, "volume": cell.volume,
                 "contract_count": cell.contract_count, "spot_at_obs": spot,
             },
-            on_conflict="ticker,obs_date,strike_band,expiry_bucket",
+            on_conflict="user_id,ticker,obs_date,strike_band,expiry_bucket",
         ).execute()
 
 

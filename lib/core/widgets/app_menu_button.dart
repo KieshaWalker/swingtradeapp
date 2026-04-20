@@ -19,14 +19,15 @@ class AppMenuButton extends StatelessWidget {
       itemBuilder: (_) => [
         _navItem('/', Icons.home_rounded, 'Home', location),
         _navItem('/trades', Icons.show_chart_rounded, 'Trades', location),
-        _navItem('/calculator', Icons.calculate_rounded, 'Calculator', location),
-        _navItem('/journal', Icons.book_rounded, 'Journal', location),
         _navItem('/economy', Icons.bar_chart_rounded, 'Economy', location),
         _navItem('/ticker', Icons.candlestick_chart_rounded, 'Tickers', location),
         _navItem('/blotter', Icons.receipt_long_rounded, 'Blotter', location),
         _navItem('/blotter/evaluate', Icons.fact_check_rounded, 'Trade Eval', location),
         _navItem('/ideas', Icons.lightbulb_outline_rounded, 'Trade Ideas', location),
         _navItem('/vol-surface', Icons.stacked_line_chart_rounded, 'Vol Surface', location),
+        _navItem('/calculator', Icons.calculate_rounded, 'Calculator', location),
+        _navItem('/journal', Icons.book_rounded, 'Journal', location),
+        _navItem('/settings/schwab-auth', Icons.link_rounded, 'Schwab Auth', location),
       ],
     );
   }

@@ -176,8 +176,7 @@ class _CellAccumulator:
             vanna, charm, volga = _second_order_approx(spot, strike, iv_dec, dte)
             self.vannas.append(vanna)
             self.charms.append(charm)
-            if volga != 0.0:
-                self.volgas.append(volga)
+            self.volgas.append(volga)
 
         if self.nearest_expiry is None or expiry < self.nearest_expiry:
             self.nearest_expiry = expiry

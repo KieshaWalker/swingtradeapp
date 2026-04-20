@@ -7,6 +7,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../fmp/fmp_models.dart';
 import 'schwab_models.dart';
 
+class SchwabReauthRequiredException implements Exception {
+  const SchwabReauthRequiredException();
+}
+
 class SchwabService {
   static final SchwabService _instance = SchwabService._();
   SchwabService._();
@@ -37,6 +41,7 @@ class SchwabService {
               .toStockQuote())
           .toList();
     } catch (e) {
+      if (e is FunctionException && e.status == 401) throw const SchwabReauthRequiredException();
       debugPrint('SchwabService.getQuotes error: $e');
       return [];
     }
@@ -65,6 +70,7 @@ class SchwabService {
       if (data.containsKey('error')) return null;
       return SchwabOptionsChain.fromJson(data);
     } catch (e) {
+      if (e is FunctionException && e.status == 401) throw const SchwabReauthRequiredException();
       debugPrint('SchwabService.getOptionsChain error: $e');
       return null;
     }
@@ -86,6 +92,7 @@ class SchwabService {
           .map((e) => SchwabInstrument.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e) {
+      if (e is FunctionException && e.status == 401) throw const SchwabReauthRequiredException();
       debugPrint('SchwabService.searchTicker error: $e');
       return [];
     }
@@ -109,6 +116,7 @@ class SchwabService {
       if (entry == null) return null;
       return SchwabQuote.fromJson(symbol, entry).nextEarningsDate;
     } catch (e) {
+      if (e is FunctionException && e.status == 401) throw const SchwabReauthRequiredException();
       debugPrint('SchwabService.getEarningsDate error: $e');
       return null;
     }

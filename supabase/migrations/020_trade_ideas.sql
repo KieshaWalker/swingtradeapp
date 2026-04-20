@@ -15,7 +15,6 @@ create table if not exists trade_ideas (
   quantity      int         not null default 1,
   budget        numeric     not null default 5000,
   price_target  numeric,
-  notes         text,
   created_at    timestamptz not null default now()
 );
 

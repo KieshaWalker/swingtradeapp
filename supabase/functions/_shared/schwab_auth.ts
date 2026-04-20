@@ -8,7 +8,7 @@
 // =============================================================================
 
 const SCHWAB_TOKEN_URL = 'https://api.schwabapi.com/v1/oauth/token'
-const REFRESH_BUFFER_MS = 5 * 60 * 1000 // refresh 5 min before expiry
+const REFRESH_BUFFER_MS = 30 * 60 * 1000 // refresh 30 min before expiry
 
 export async function getValidToken(
   supabaseUrl: string,
@@ -26,7 +26,12 @@ export async function getValidToken(
 
   const expiresAt = new Date(row.expires_at).getTime()
   const now       = Date.now()
+  const REFRESH_TOKEN_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
+  const rowAge = Date.now() - new Date(row.created_at).getTime();
 
+  if (rowAge > REFRESH_TOKEN_LIMIT_MS - (12 * 60 * 60 * 1000)) {
+  console.warn("WARNING: Schwab Refresh Token expires in less than 12 hours.");
+  }
   // Still valid with buffer to spare
   if (expiresAt - now > REFRESH_BUFFER_MS) {
     return row.access_token
@@ -55,11 +60,12 @@ export async function getValidToken(
   }
 
   const tokens = await resp.json()
+  const updatedRefreshToken = tokens.refresh_token || row.refresh_token;
   const newExpiresAt = new Date(now + tokens.expires_in * 1000).toISOString()
 
   await _updateTokenRow(supabaseUrl, serviceRoleKey, row.id, {
     access_token:  tokens.access_token,
-    refresh_token: tokens.refresh_token ?? row.refresh_token,
+    refresh_token: updatedRefreshToken,
     expires_at:    newExpiresAt,
   })
 
@@ -71,9 +77,9 @@ export async function getValidToken(
 async function _fetchTokenRow(
   supabaseUrl: string,
   serviceRoleKey: string,
-): Promise<{ id: string; access_token: string; refresh_token: string; expires_at: string } | null> {
+): Promise<{ id: string; access_token: string; refresh_token: string; expires_at: string; created_at: string } | null> {
   const resp = await fetch(
-    `${supabaseUrl}/rest/v1/schwab_tokens?select=id,access_token,refresh_token,expires_at&order=created_at.desc&limit=1`,
+    `${supabaseUrl}/rest/v1/schwab_tokens?select=id,access_token,refresh_token,expires_at,created_at&order=created_at.desc&limit=1`,
     { headers: _headers(serviceRoleKey) },
   )
   if (!resp.ok) return null
@@ -104,3 +110,9 @@ function _headers(serviceRoleKey: string): Record<string, string> {
     'Prefer':        'return=minimal',
   }
 }
+
+
+// then in the terminal, run:
+// deno run --allow-env --allow-net supabase/functions/_shared/schwab_auth.ts
+// if deno command does not work then use npx:
+// npx deno run --allow-env --allow-net supabase/functions/_shared/schwab_auth.ts

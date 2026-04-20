@@ -55,12 +55,16 @@ def compute_rv(prices: list[float]) -> float:
     if len(prices) < 2:
         return 0.0
     sum_sq = 0.0
+    n_valid = 0
     for i in range(1, len(prices)):
         if prices[i - 1] <= 0:
             continue
         log_ret = math.log(prices[i] / prices[i - 1])
         sum_sq += log_ret * log_ret
-    variance = sum_sq / (len(prices) - 1)
+        n_valid += 1
+    if n_valid < 2:
+        return 0.0
+    variance = sum_sq / (n_valid - 1)
     return math.sqrt(variance * RV_TRADING_DAYS_YEAR)
 
 

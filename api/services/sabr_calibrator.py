@@ -17,6 +17,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from scipy.optimize import minimize
+import numpy as np
 
 from core.constants import (
     DEFAULT_R,
@@ -97,24 +98,27 @@ def calibrate_slice(
     rho0 = SABR_INITIAL_RHO0
     nu0 = SABR_INITIAL_NU0
 
-    def objective(params: list[float]) -> float:
-        a = max(1e-6, min(5.0, params[0]))
-        rh = max(-0.999, min(0.999, params[1]))
-        nv = max(1e-6, min(5.0, params[2]))
+    def objective(params: np.ndarray) -> float:
+        a, rh, nv = params
         sse = 0.0
         for K, iv_mkt in clean:
             iv_model = sabr_iv(F=F, K=K, T=T, alpha=a, beta=beta, rho=rh, nu=nv)
-            if iv_model <= 0:
-                sse += 1.0
+            # Use a severe penalty for domain failures, not just 1.0
+            if iv_model <= 0 or math.isnan(iv_model):
+                sse += 1e4 
                 continue
+            
             diff = iv_model - iv_mkt
             sse += diff * diff
         return sse
+    
+    bounds = [(1e-6, 5.0), (-0.999, 0.999), (1e-6, 5.0)]
 
     result = minimize(
         objective,
         x0=[alpha0, rho0, nu0],
         method="Nelder-Mead",
+        bounds=bounds,
         options={
             "maxiter": NM_MAX_ITER,
             "fatol": NM_FATOL,
@@ -122,16 +126,13 @@ def calibrate_slice(
         },
     )
 
-    best_alpha = max(1e-6, min(5.0, result.x[0]))
-    best_rho = max(-0.999, min(0.999, result.x[1]))
-    best_nu = max(1e-6, min(5.0, result.x[2]))
+    best_alpha, best_rho, best_nu = result.x
 
     # Compute RMSE
     sse = 0.0
     for K, iv_mkt in clean:
         iv_model = sabr_iv(F=F, K=K, T=T, alpha=best_alpha, beta=beta, rho=best_rho, nu=best_nu)
-        iv_used = iv_model if iv_model > 0 else iv_mkt
-        diff = iv_used - iv_mkt
+        diff = (iv_model - iv_mkt) if iv_model > 0 else iv_mkt
         sse += diff * diff
     rmse = math.sqrt(sse / len(clean))
 
@@ -203,5 +204,5 @@ def _select_iv(point: dict, spot: float) -> float | None:
     call_iv = point.get("callIv") or point.get("call_iv")
     put_iv = point.get("putIv") or point.get("put_iv")
     if strike >= spot:
-        return float(call_iv) if call_iv else None
+        return float(call_iv) if call_iv else (float(put_iv) if put_iv else None)
     return float(put_iv) if put_iv else (float(call_iv) if call_iv else None)

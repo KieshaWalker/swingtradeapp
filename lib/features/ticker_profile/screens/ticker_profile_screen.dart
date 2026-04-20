@@ -42,7 +42,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
-import '../../../services/fmp/fmp_models.dart';
 import '../../../services/fmp/fmp_providers.dart' show tickerNextEarningsProvider;
 import '../../../services/schwab/schwab_providers.dart';
 import '../../trades/models/trade.dart';

@@ -157,9 +157,9 @@ class PythonApiClient {
       _post('/sabr/calibrate', {
         'points': points,
         'spot_price': spotPrice,
-        if (r case var r?) 'r': r,
-        if (ticker case var ticker?) 'ticker': ticker,
-        if (obsDate case var obsDate?) 'obs_date': obsDate,
+        'r': ?r,
+        'ticker': ?ticker,
+        'obs_date': ?obsDate,
       });
 
   // ── Fair Value ─────────────────────────────────────────────────────────────
@@ -175,8 +175,8 @@ class PythonApiClient {
       _post('/fair-value/compute', {
         'contract': contract,
         'underlying_price': underlyingPrice,
-        if (r case var r?) 'r': r,
-        if (sabrParams case var sabrParams?) 'sabr_params': sabrParams,
+        'r': ?r,
+        'sabr_params': ?sabrParams,
       });
 
   // ── IV Analytics ───────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ class PythonApiClient {
       _post('/iv/analytics', {
         'chain': chain,
         'spot_price': spotPrice,
-        if (history case var history?) 'history': history,
+        'history': ?history,
       });
 
   /// Same as ivAnalytics but also persists to Supabase iv_snapshots table.
@@ -205,8 +205,8 @@ class PythonApiClient {
         'chain': chain,
         'spot_price': spotPrice,
         'ticker': ticker,
-        if (history case var history?) 'history': history,
-        if (obsDate case var obsDate?) 'obs_date': obsDate,
+        'history': ?history,
+        'obs_date': ?obsDate,
       });
 
   // ── Realized Vol ───────────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ class PythonApiClient {
   }) =>
       _post('/realized-vol/compute', {
         'closes': closes,
-        if (history case var history?) 'history': history,
+        'history': ?history,
       });
 
   // ── Arbitrage Check ────────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ class PythonApiClient {
       _post('/arb/check', {
         'points': points,
         'spot_price': spotPrice,
-        if (r case var r?) 'r': r,
+        'r': ?r,
       });
 
   // ── Scoring ────────────────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ class PythonApiClient {
       _post('/scoring/score', {
         'contract': contract,
         'underlying_price': underlyingPrice,
-        if (ivAnalysis case var ivAnalysis?) 'iv_analysis': ivAnalysis,
+        'iv_analysis': ?ivAnalysis,
       });
 
   static Future<List<dynamic>> scoringRank({
@@ -255,7 +255,7 @@ class PythonApiClient {
       _postList('/scoring/rank', {
         'chain': chain,
         'underlying_price': underlyingPrice,
-        if (ivAnalysis case var ivAnalysis?) 'iv_analysis': ivAnalysis,
+        'iv_analysis': ?ivAnalysis,
         'top_n': topN,
       });
 
@@ -277,7 +277,7 @@ class PythonApiClient {
         'price_target': priceTarget,
         'max_budget': maxBudget,
         'contracts': contracts,
-        if (ivAnalysis case var ivAnalysis?) 'iv_analysis': ivAnalysis,
+        'iv_analysis': ?ivAnalysis,
       });
 
   static Future<List<dynamic>> decisionRankAll({
@@ -295,7 +295,7 @@ class PythonApiClient {
         'price_target': priceTarget,
         'max_budget': maxBudget,
         'contracts': contracts,
-        if (ivAnalysis case var ivAnalysis?) 'iv_analysis': ivAnalysis,
+        'iv_analysis': ?ivAnalysis,
         'top_n': topN,
       });
 
@@ -308,7 +308,7 @@ class PythonApiClient {
   }) =>
       _post('/greek-grid/ingest', {
         'chain': chain,
-        if (obsDate case var obsDate?) 'obs_date': obsDate,
-        if (ticker case var ticker?) 'ticker': ticker,
+        'obs_date': ?obsDate,
+        'ticker': ?ticker,
       });
 }

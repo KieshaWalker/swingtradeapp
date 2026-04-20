@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 # =============================================================================
 # services/iv_analytics.py
 # =============================================================================
@@ -17,7 +15,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone
 
-from core.chain_utils import normalize_chain
+from scipy.stats import norm
+
 from core.constants import (
     DEFAULT_R,
     IV_OTM_MIN_PCT,
@@ -80,9 +79,12 @@ class GexStrike:
     put_oi: float
     call_gamma: float
     put_gamma: float
-
+        
     def dealer_gex(self, spot: float) -> float:
-        """GEX in $M: (callOI*callGamma - putOI*putGamma) * 100 * spot / 1e6."""
+        """GEX in $M: (callOI*callGamma - putOI*putGamma) * 100 * spot / 1e6.
+        For every $1 move in the stock price, market makers must hedge $[Result] million worth of the underlying.
+        Positive Result (Long Gamma Regime): Market makers need to sell as the price goes up and buy as it goes down. This acts as a "buffer," dampening volatility and keeping the price range-bound. 
+        Negative Result (Short Gamma Regime): Market makers must buy as the price goes up and sell as it goes down. This creates a feedback loop that accelerates price moves, leading to higher volatility"""
         return (self.call_oi * self.call_gamma - self.put_oi * self.put_gamma) * 100 * spot / 1_000_000
 
 
@@ -100,12 +102,33 @@ class SecondOrderStrike:
 
     @property
     def dealer_vex(self) -> float:
-        """Dealer Vanna Exposure: (callOI*callVanna - putOI*putVanna) * 100."""
+        """Dealer Vanna Exposure: (callOI*callVanna - putOI*putVanna) * 100. 
+        While Gamma is the sensitivity of Delta to Price, Vanna is the sensitivity of Delta to Volatility
+        If the market is in a "Long Vanna" state (positive result), and implied volatility drops (a "vol crush"),
+        dealers' deltas change in a way that forces them to buy the underlying. This is often why the market rallies after a major risk event—not because the news was "good,"
+        but because the drop in IV forced dealers to buy back their hedges.
+        Result = 50,000: This means if implied volatility increases by 1 point (e.g., from 20% to 21%), 
+        market makers would need to buy 50,000 shares of the underlying asset to remain delta-neutral.
+        Result = -50,000: If IV increases by 1 point, market makers would need to sell 50,000 shares."""
         return (self.call_oi * self.call_vanna - self.put_oi * self.put_vanna) * 100
 
     @property
     def dealer_cex(self) -> float:
-        """Dealer Charm Exposure."""
+        """Dealer Charm Exposure.
+        Call Charm: As time passes, the Delta of OTM (Out-of-the-Money) calls decays toward 0. For ITM (In-the-Money) calls, Delta decays toward 1.00.
+        Put Charm: Similarly, OTM put Deltas decay toward 0, while ITM put Deltas decay toward -1.00.
+        In a "Long Charm" state (positive result), the passage of time causes dealers' deltas to move in a way that forces them to buy the underlying. 
+        This can lead to price support as expiration approaches.
+            Result = 20,000: This means that, all else equal, the passage of one day would require market makers to buy 20,000 shares to maintain a delta-neutral position.
+            The result represents the number of shares a dealer must buy or sell at the end of each day to remain delta-neutral, assuming price and volatility stay constant.
+            Positive Result: Dealers have "Positive Charm." As time passes, their net delta becomes more positive, requiring them to sell shares to re-hedge.
+            Negative Result: Dealers have "Negative Charm." As time passes, they must buy shares to remain neutral.
+           Weekend Effect" and OPEXCharm is most influential in the final days before an option expiration (OPEX).
+           The "Charm Rally": In a typical "Long Gamma" environment where investors have bought puts to hedge, dealers are Short Puts.
+             As those puts decay toward zero (Charm), dealers are forced to "un-hedge" by buying back the underlying. This is a major contributor to the "upward drift" often seen during expiration weeks.
+           Weekend Bleed: Because Charm is a function of time ($t$), a three-day weekend can represent a massive jump in delta decay, leading to significant re-hedging flows on Monday morning (or Friday afternoon in anticipation). 
+            
+            """
         return (self.call_oi * self.call_charm - self.put_oi * self.put_charm) * 100
 
     @property
@@ -175,8 +198,6 @@ def analyse(
     Returns:
         IvAnalysisResult with all computed analytics.
     """
-    chain = normalize_chain(chain)
-
     raw_rate = risk_free_rate if risk_free_rate is not None else DEFAULT_R
     r = raw_rate / 100 if raw_rate > 0.5 else raw_rate
 
@@ -321,12 +342,12 @@ def _compute_skew_curve(exp: dict, spot: float) -> list[SkewPoint]:
     put_map: dict[float, float] = {}
 
     for c in exp.get("calls", []):
-        iv = float(c.get("impliedVolatility", 0))
+        iv = float(c.get("volatility") or c.get("impliedVolatility") or 0)
         if iv > 0:
             call_map[float(c["strikePrice"])] = iv
 
     for p in exp.get("puts", []):
-        iv = float(p.get("impliedVolatility", 0))
+        iv = float(p.get("volatility") or p.get("impliedVolatility") or 0)
         if iv > 0:
             put_map[float(p["strikePrice"])] = iv
 
@@ -346,12 +367,19 @@ def _compute_skew_curve(exp: dict, spot: float) -> list[SkewPoint]:
 
 
 def _summarise_skew(curve: list[SkewPoint]) -> float | None:
-    otm_puts = [p for p in curve if p.moneyness < -IV_OTM_MIN_PCT * 100 and p.put_iv is not None]
-    otm_calls = [p for p in curve if p.moneyness > IV_OTM_MIN_PCT * 100 and p.call_iv is not None]
+    # 1. Use filter/list comprehensions with clear boundaries
+    # Note: Ensure IV_OTM_MIN_PCT is defined in your scope
+    otm_puts = [p.put_iv for p in curve if p.moneyness < -IV_OTM_MIN_PCT * 100 and p.put_iv is not None]
+    otm_calls = [p.call_iv for p in curve if p.moneyness > IV_OTM_MIN_PCT * 100 and p.call_iv is not None]
+
+    # 2. Guard clause for empty lists to prevent DivisionByZero
     if not otm_puts or not otm_calls:
         return None
-    avg_put_iv = sum(p.put_iv for p in otm_puts) / len(otm_puts)
-    avg_call_iv = sum(p.call_iv for p in otm_calls) / len(otm_calls)
+
+    # 3. Calculate averages and return the spread
+    avg_put_iv = sum(otm_puts) / len(otm_puts)
+    avg_call_iv = sum(otm_calls) / len(otm_calls)
+    
     return avg_put_iv - avg_call_iv
 
 
@@ -374,22 +402,24 @@ def _compute_gex(expirations: list[dict], spot: float) -> list[GexStrike]:
     for strike in all_strikes:
         if abs(strike - spot) / spot > IV_GEX_WINDOW_PCT:
             continue
+
         calls = calls_by_strike.get(strike, [])
         puts = puts_by_strike.get(strike, [])
 
         call_oi = sum(float(c.get("openInterest", 0)) for c in calls)
         put_oi = sum(float(p.get("openInterest", 0)) for p in puts)
-        call_gamma = sum(float(c.get("gamma", 0)) for c in calls)
-        put_gamma = sum(float(p.get("gamma", 0)) for p in puts)
-
-        # Average gamma across expirations at same strike (matches Dart)
-        if len(calls) > 1:
-            call_gamma /= len(calls)
-        if len(puts) > 1:
-            put_gamma /= len(puts)
 
         if call_oi == 0 and put_oi == 0:
             continue
+
+        call_gamma = 0.0
+        if call_oi > 0:
+            call_gamma = sum(float(c.get("gamma", 0)) * float(c.get("openInterest", 0)) for c in calls) / call_oi
+
+        put_gamma = 0.0
+        if put_oi > 0:
+            put_gamma = sum(float(p.get("gamma", 0)) * float(p.get("openInterest", 0)) for p in puts) / put_oi
+
 
         results.append(GexStrike(
             strike=strike,
@@ -525,7 +555,7 @@ def _second_order_greeks(
     vanna = -gamma * spot * sqrt_T * d2
 
     # Charm = gamma * S * (r*d1/σ - d2/(2T)) / 365
-    charm = (gamma * spot * (r * d1 / sigma - d2 / (2 * T)) / 365) if T > 0 else 0.0
+    charm = (-gamma * spot * (2 * r * T - d2 * sigma * sqrt_T) / (2 * 365)) if T > 0 else 0.0
 
     # Volga = vega * d1 * d2 / σ
     volga = vega * d1 * d2 / sigma
@@ -559,62 +589,68 @@ def _compute_second_order(
 
         calls = calls_by_strike.get(strike, [])
         puts = puts_by_strike.get(strike, [])
-        if not calls and not puts:
-            continue
-
-        call_oi = call_vanna = call_charm = call_volga = 0.0
+        
+        # 1. Initialize weighted sums
+        call_oi = 0.0
+        c_vanna_sum = c_charm_sum = c_volga_sum = 0.0
+        
+        # 2. Process Calls
         for c in calls:
-            call_oi += float(c.get("openInterest", 0))
+            oi = float(c.get("openInterest", 0))
+            if oi <= 0: continue
+            
             vn, ch, vg = _second_order_greeks(
                 spot, strike,
-                float(c.get("impliedVolatility", 0)),
+                float(c.get("volatility") or c.get("impliedVolatility") or 0),
                 int(c.get("daysToExpiration", 0)),
                 float(c.get("gamma", 0)),
                 float(c.get("vega", 0)),
                 r,
                 c.get("expirationDate"),
             )
-            call_vanna += vn
-            call_charm += ch
-            call_volga += vg
+            call_oi += oi
+            c_vanna_sum += (vn * oi)
+            c_charm_sum += (ch * oi)
+            c_volga_sum += (vg * oi)
 
-        put_oi = put_vanna = put_charm = put_volga = 0.0
+        # 3. Process Puts
+        put_oi = 0.0
+        p_vanna_sum = p_charm_sum = p_volga_sum = 0.0
         for p in puts:
-            put_oi += float(p.get("openInterest", 0))
+            oi = float(p.get("openInterest", 0))
+            if oi <= 0: continue
+            
             vn, ch, vg = _second_order_greeks(
                 spot, strike,
-                float(p.get("impliedVolatility", 0)),
+                float(p.get("volatility") or p.get("impliedVolatility") or 0),
                 int(p.get("daysToExpiration", 0)),
                 float(p.get("gamma", 0)),
                 float(p.get("vega", 0)),
                 r,
                 p.get("expirationDate"),
             )
-            put_vanna += vn
-            put_charm += ch
-            put_volga += vg
+            put_oi += oi
+            p_vanna_sum += (vn * oi)
+            p_charm_sum += (ch * oi)
+            p_volga_sum += (vg * oi)
 
-        # Average across expirations at same strike (matches Dart)
-        if len(calls) > 1:
-            call_vanna /= len(calls)
-            call_charm /= len(calls)
-            call_volga /= len(calls)
-        if len(puts) > 1:
-            put_vanna /= len(puts)
-            put_charm /= len(puts)
-            put_volga /= len(puts)
+        if call_oi == 0 and put_oi == 0:
+            continue
 
+        # 4. Final Weighted Averages
+        # We divide the sum of (Greek * OI) by the Total OI for that strike
         results.append(SecondOrderStrike(
             strike=strike,
             call_oi=call_oi,
             put_oi=put_oi,
-            call_vanna=call_vanna,
-            put_vanna=put_vanna,
-            call_charm=call_charm,
-            put_charm=put_charm,
-            call_volga=call_volga,
-            put_volga=put_volga,
+            call_vanna=c_vanna_sum / call_oi if call_oi > 0 else 0.0,
+            put_vanna=p_vanna_sum / put_oi if put_oi > 0 else 0.0,
+            call_charm=c_charm_sum / call_oi if call_oi > 0 else 0.0,
+            put_charm=p_charm_sum / put_oi if put_oi > 0 else 0.0,
+            call_volga=c_volga_sum / call_oi if call_oi > 0 else 0.0,
+            put_volga=p_volga_sum / put_oi if put_oi > 0 else 0.0,
         ))
+        
     return results
 
 

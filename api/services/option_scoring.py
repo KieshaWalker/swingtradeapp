@@ -66,8 +66,9 @@ def score(
     """
     flags: list[str] = []
 
-    bid = float(contract.get("bid", 0))
-    ask = float(contract.get("ask", 0))
+    bid = float(contract.get("bid") or 0)
+    ask = float(contract.get("ask") or 0)
+    delta = float(contract.get("delta") or 0)
 
     # Zero-liquidity guard
     if bid == 0 and ask == 0:
