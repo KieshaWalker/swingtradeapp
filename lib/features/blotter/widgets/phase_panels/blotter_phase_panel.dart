@@ -1203,24 +1203,7 @@ class _GexRegimeCard extends StatelessWidget {
         regimeIcon  = Icons.help_outline_rounded;
     }
 
-    // Impact on this trade
-    final String tradeImpact;
-    if (regime == GammaRegime.negative) {
-      tradeImpact = isCall
-          ? 'Negative gamma amplifies moves in both directions — realized vol will '
-            'likely exceed the model\'s σ. Your ${isCall ? 'call' : 'put'} benefits '
-            'from the vol pickup, but whipsaws are wider. Widen stops by ≥1 ATR.'
-          : 'Negative gamma amplifies downside moves — good for puts. '
-            'But gamma squeezes can snap back hard. Use a defined-risk structure '
-            'and set stops at least 1 ATR above your max pain level.';
-    } else if (regime == GammaRegime.positive) {
-      tradeImpact = 'Positive gamma dampens moves — market makers buy dips and sell '
-          'rallies, compressing realized vol. Model σ should be reliable. '
-          'Tighter stop placement is acceptable.';
-    } else {
-      tradeImpact = 'GEX regime unknown — no IV analytics data for $ticker. '
-          'Run the IV screen for this ticker to get GEX data.';
-    }
+    
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1292,28 +1275,7 @@ class _GexRegimeCard extends StatelessWidget {
               color:        AppTheme.elevatedColor,
               borderRadius: BorderRadius.circular(6),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline_rounded,
-                    size: 13,
-                    color: regime == GammaRegime.negative
-                        ? const Color(0xFFFBBF24)
-                        : AppTheme.neutralColor),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    tradeImpact,
-                    style: TextStyle(
-                        color: regime == GammaRegime.negative
-                            ? const Color(0xFFFBBF24)
-                            : Colors.white54,
-                        fontSize: 11,
-                        height: 1.4),
-                  ),
-                ),
-              ],
-            ),
+           
           ),
         ],
       ),

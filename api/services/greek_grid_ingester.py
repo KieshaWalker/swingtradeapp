@@ -32,11 +32,11 @@ class StrikeBand(str, Enum):
 
 
 class ExpiryBucket(str, Enum):
-    weekly = "weekly"       # dte <= 7
-    biweekly = "biweekly"  # dte <= 14
-    monthly = "monthly"    # dte <= 45
-    quarterly = "quarterly" # dte <= 90
-    leaps = "leaps"        # dte > 90
+    weekly = "weekly"           # dte <= 7
+    near_monthly = "near_monthly"  # dte <= 30
+    monthly = "monthly"         # dte <= 60
+    far_monthly = "far_monthly"  # dte <= 90
+    quarterly = "quarterly"     # dte > 90
 
 
 def classify_strike_band(moneyness_pct: float) -> StrikeBand:
@@ -60,13 +60,13 @@ def classify_expiry_bucket(dte: int) -> ExpiryBucket:
     """
     if dte <= 7:
         return ExpiryBucket.weekly
-    if dte <= 14:
-        return ExpiryBucket.biweekly
-    if dte <= 45:
+    if dte <= 30:
+        return ExpiryBucket.near_monthly
+    if dte <= 60:
         return ExpiryBucket.monthly
     if dte <= 90:
-        return ExpiryBucket.quarterly
-    return ExpiryBucket.leaps
+        return ExpiryBucket.far_monthly
+    return ExpiryBucket.quarterly
 
 
 def _median(vals: list[float]) -> float:

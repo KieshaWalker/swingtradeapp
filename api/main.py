@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import black_scholes, sabr, fair_value, iv_analytics, realized_vol, arb, scoring, decision, greek_grid, scheduler_trigger
+from routers import black_scholes, sabr, fair_value, iv_analytics, realized_vol, arb, scoring, decision, greek_grid, scheduler_trigger, regime
 
 
 @asynccontextmanager
@@ -40,6 +40,7 @@ app.include_router(scoring.router, prefix="/scoring", tags=["Scoring"])
 app.include_router(decision.router, prefix="/decision", tags=["Decision"])
 app.include_router(greek_grid.router, prefix="/greek-grid", tags=["Greek Grid"])
 app.include_router(scheduler_trigger.router, prefix="/jobs", tags=["Scheduled Jobs"])
+app.include_router(regime.router, prefix="/regime", tags=["Regime"])
 
 
 @app.get("/health")

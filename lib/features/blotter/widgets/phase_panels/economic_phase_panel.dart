@@ -520,7 +520,7 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
         } else {
           gammaWarn = true;
           hardFlags.add(
-              'Gamma headwind: spot is ${flipStr} below the gamma flip point — '
+              'Gamma headwind: spot is $flipStr below the gamma flip point — '
               'Short Gamma regime opposes bullish thesis. '
               'Dealers amplify downside; resistance above spot.');
         }
@@ -663,6 +663,7 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
         'Crude stocks: ${_fmtMbbl(d.crudeNow!)} — ${gate.oilBearish ? "Surplus (bearish)" : "Tightening (bullish)"}',
       ...gate.hardFlags,
       ...gate.gammaSignals,
+      ...gate.vixSignals,
     ];
 
     // ── Headline ───────────────────────────────────────────────────────────────
@@ -724,7 +725,13 @@ class _PanelBody extends StatelessWidget {
 
         // 2. VIX strip
         if (d.vixNow != null) ...[
-          _VixStrip(vixNow: d.vixNow!, vixPrev: d.vixPrev),
+          _VixStrip(
+            vixNow:    d.vixNow!,
+            vixPrev:   d.vixPrev,
+            vix10dma:  d.vix10dma,
+            vixDevPct: d.vixDevPct,
+            vixRsi:    d.vixRsi,
+          ),
           const SizedBox(height: 12),
         ],
 
@@ -817,15 +824,58 @@ class _PhaseHeader extends StatelessWidget {
 class _VixStrip extends StatelessWidget {
   final double  vixNow;
   final double? vixPrev;
-  const _VixStrip({required this.vixNow, required this.vixPrev});
+  final double? vix10dma;
+  final double? vixDevPct;
+  final double? vixRsi;
+  const _VixStrip({
+    required this.vixNow,
+    required this.vixPrev,
+    this.vix10dma,
+    this.vixDevPct,
+    this.vixRsi,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final color    = _vixColor(vixNow);
-    final isUp     = vixPrev != null && vixNow > vixPrev!;
-    final isDown   = vixPrev != null && vixNow < vixPrev!;
-    final arrow    = isUp ? '↑' : isDown ? '↓' : '→';
-    final premLbl  = _vixPremiumLabel(vixNow);
+    final color   = _vixColor(vixNow);
+    final isUp    = vixPrev != null && vixNow > vixPrev!;
+    final isDown  = vixPrev != null && vixNow < vixPrev!;
+    final arrow   = isUp ? '↑' : isDown ? '↓' : '→';
+    final premLbl = _vixPremiumLabel(vixNow);
+
+    // MA deviation color: >10% spike = amber/red, <−10% compressed = blue
+    Color? devColor;
+    String? devLabel;
+    if (vixDevPct != null) {
+      final d = vixDevPct!;
+      if (d > 10) {
+        devColor = const Color(0xFFFBBF24);
+        devLabel = '+${d.toStringAsFixed(1)}% vs MA';
+      } else if (d < -10) {
+        devColor = const Color(0xFF60A5FA);
+        devLabel = '${d.toStringAsFixed(1)}% vs MA';
+      } else {
+        devColor = AppTheme.neutralColor;
+        devLabel = '${d >= 0 ? "+" : ""}${d.toStringAsFixed(1)}% vs MA';
+      }
+    }
+
+    // RSI signal
+    Color? rsiColor;
+    String? rsiLabel;
+    if (vixRsi != null) {
+      final r = vixRsi!;
+      if (r > 70) {
+        rsiColor = AppTheme.profitColor;
+        rsiLabel = 'RSI ${r.toStringAsFixed(0)} OB→crush';
+      } else if (r < 30) {
+        rsiColor = AppTheme.lossColor;
+        rsiLabel = 'RSI ${r.toStringAsFixed(0)} OS→spike';
+      } else {
+        rsiColor = AppTheme.neutralColor;
+        rsiLabel = 'RSI ${r.toStringAsFixed(0)}';
+      }
+    }
 
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -834,84 +884,151 @@ class _VixStrip extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         border:       Border.all(color: color.withValues(alpha: 0.45)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          Row(
             children: [
-              const Text(
-                'VIX',
-                style: TextStyle(
-                  color:      AppTheme.neutralColor,
-                  fontSize:   10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.0,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    vixNow.toStringAsFixed(1),
+                  const Text(
+                    'VIX',
                     style: TextStyle(
-                      color:      color,
-                      fontSize:   30,
-                      fontWeight: FontWeight.w900,
+                      color:      AppTheme.neutralColor,
+                      fontSize:   10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.0,
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: Text(
-                      arrow,
+                  const SizedBox(height: 2),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        vixNow.toStringAsFixed(1),
+                        style: TextStyle(
+                          color:      color,
+                          fontSize:   30,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 5),
+                        child: Text(
+                          arrow,
+                          style: TextStyle(
+                            color:    color,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _vixLabel(vixNow).toUpperCase(),
                       style: TextStyle(
-                        color:    color,
-                        fontSize: 16,
+                        color:      color,
+                        fontSize:   11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      premLbl,
+                      style: const TextStyle(
+                        color:    AppTheme.neutralColor,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // VIX progress bar (0–50 scale)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value:           (vixNow / 50.0).clamp(0.0, 1.0),
+                        minHeight:       5,
+                        backgroundColor: AppTheme.borderColor.withValues(alpha: 0.3),
+                        valueColor:      AlwaysStoppedAnimation(color),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          // MA deviation + RSI row
+          if (devLabel != null || rsiLabel != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (vix10dma != null) ...[
+                  const Text(
+                    'MA10 ',
+                    style: TextStyle(
+                      color: AppTheme.neutralColor,
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    vix10dma!.toStringAsFixed(1),
+                    style: const TextStyle(
+                      color:      AppTheme.neutralColor,
+                      fontSize:   11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                if (devLabel != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color:        devColor!.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(5),
+                      border:       Border.all(color: devColor.withValues(alpha: 0.35)),
+                    ),
+                    child: Text(
+                      devLabel,
+                      style: TextStyle(
+                        color:      devColor,
+                        fontSize:   10,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
                 ],
-              ),
-            ],
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _vixLabel(vixNow).toUpperCase(),
-                  style: TextStyle(
-                    color:      color,
-                    fontSize:   11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
+                if (rsiLabel != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color:        rsiColor!.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(5),
+                      border:       Border.all(color: rsiColor.withValues(alpha: 0.35)),
+                    ),
+                    child: Text(
+                      rsiLabel,
+                      style: TextStyle(
+                        color:      rsiColor,
+                        fontSize:   10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  premLbl,
-                  style: const TextStyle(
-                    color:    AppTheme.neutralColor,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // VIX progress bar (0–50 scale)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(3),
-                  child: LinearProgressIndicator(
-                    value:           (vixNow / 50.0).clamp(0.0, 1.0),
-                    minHeight:       5,
-                    backgroundColor: AppTheme.borderColor.withValues(alpha: 0.3),
-                    valueColor:      AlwaysStoppedAnimation(color),
-                  ),
-                ),
               ],
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1765,7 +1882,7 @@ double? _computeVixRsi(List<dynamic> obs, {int period = 14}) {
   double lossSum = 0;
   for (int i = 1; i <= period; i++) {
     final delta = recent[i] - recent[i - 1];
-    if (delta > 0) gainSum += delta; else lossSum -= delta;
+    if (delta > 0) { gainSum += delta; } else { lossSum -= delta; }
   }
 
   final avgGain = gainSum / period;

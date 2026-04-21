@@ -33,6 +33,8 @@ from services.iv_analytics import analyse as iv_analyse
 from services.greek_grid_ingester import ingest as grid_ingest
 from services.realized_vol import compute as rv_compute
 from services.vvol_analytics import compute as vvol_compute
+from services.regime_service import classify_regime, compute_wilder_rsi
+from services.hmm_regime import classify_vix_regime
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +63,34 @@ async def run_schwab_pull() -> dict:
     results: dict[str, str] = {}
 
     async with httpx.AsyncClient(timeout=60.0) as client:
+        # ── Fetch VIX closes once for the whole pipeline run ──────────────────
+        # VIX is market-wide — no need to fetch per-ticker.
+        # FMP timeseries=65 returns 65 trading-day records (oldest→newest after reverse).
+        vix_closes: list[float] = []
+        vix_current: float | None = None
+        vix_10ma: float | None = None
+        vix_dev_pct: float | None = None
+        vix_rsi: float | None = None
+        hmm_result = None
+        if fmp_key:
+            vix_closes = await _fetch_fmp_closes(client, "^VIX", fmp_key, days=65)
+            if vix_closes:
+                vix_current = vix_closes[-1]
+                ma10_data = vix_closes[-10:] if len(vix_closes) >= 10 else []
+                vix_10ma = sum(ma10_data) / len(ma10_data) if ma10_data else None
+                if vix_10ma and vix_10ma > 0 and vix_current is not None:
+                    vix_dev_pct = (vix_current - vix_10ma) / vix_10ma * 100
+                vix_rsi = compute_wilder_rsi(vix_closes)
+                hmm_result = classify_vix_regime(vix_closes)
+                log.info(
+                    "vix_computed current=%.2f 10ma=%s dev_pct=%s rsi=%s hmm=%s",
+                    vix_current,
+                    f"{vix_10ma:.2f}" if vix_10ma else "—",
+                    f"{vix_dev_pct:.1f}%" if vix_dev_pct else "—",
+                    f"{vix_rsi:.1f}" if vix_rsi else "—",
+                    hmm_result.state.value if hmm_result else "—",
+                )
+
         for row in rows:
             ticker  = row["ticker"]
             user_id = row["user_id"]
@@ -109,17 +139,53 @@ async def run_schwab_pull() -> dict:
                 obs_dt = datetime.now(timezone.utc)
                 cells = grid_ingest(chain, obs_dt)
                 if cells:
-                    _upsert_greek_grid(db, ticker, today, cells, spot)
+                    _upsert_greek_grid(db, ticker, today, cells, spot, user_id)
 
                 # ── Step 6: ATM greek snapshots (greek chart time-series) ─────
                 _upsert_greek_snapshots(db, ticker, today, spot, chain, user_id)
 
                 # ── Step 7: Realized vol (FMP historical prices) ──────────────
+                closes: list[float] = []
                 if fmp_key:
                     closes = await _fetch_fmp_closes(client, ticker, fmp_key, days=65)
                     if closes:
                         rv = rv_compute(closes)
                         log.info("rv_computed ticker=%s rv20d=%s rv60d=%s", ticker, rv.rv20d, rv.rv60d)
+
+                # ── Step 8: SMA + current regime classification ───────────────
+                # SMA computed from already-fetched FMP closes (trading days).
+                # Filter out zero/None values to guard against bad FMP entries.
+                clean_closes = [c for c in closes if c and c > 0]
+                sma10: float | None = (
+                    sum(clean_closes[-10:]) / 10 if len(clean_closes) >= 10 else None
+                )
+                sma50: float | None = (
+                    sum(clean_closes[-50:]) / 50 if len(clean_closes) >= 50 else None
+                )
+                sma_crossed: bool | None = (
+                    sma10 > sma50 if (sma10 is not None and sma50 is not None) else None
+                )
+
+                regime = classify_regime(
+                    ticker=ticker,
+                    gamma_regime=iv_result.gamma_regime.value,
+                    iv_gex_signal=iv_result.iv_gex_signal.value,
+                    spot_to_zgl_pct=iv_result.spot_to_zero_gamma_pct,
+                    iv_percentile=iv_result.iv_percentile,
+                    sma10=sma10,
+                    sma50=sma50,
+                    vix_current=vix_current,
+                    vix_10ma=vix_10ma,
+                    vix_dev_pct=vix_dev_pct,
+                    vix_rsi=vix_rsi,
+                    hmm_result=hmm_result,
+                )
+                _upsert_regime_snapshot(db, today, regime)
+                log.info(
+                    "regime_classified ticker=%s bias=%s hmm=%s sma_cross=%s",
+                    ticker, regime.strategy_bias.value,
+                    regime.hmm_state, sma_crossed,
+                )
 
                 results[ticker] = "ok"
                 log.info("ticker_pulled ticker=%s", ticker)
@@ -370,11 +436,11 @@ def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvo
     db.table("iv_snapshots").upsert(row, on_conflict="ticker,date").execute()
 
 
-def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float) -> None:
+def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float, user_id: str) -> None:
     for cell in cells:
         db.table("greek_grid_snapshots").upsert(
             {
-                "ticker": ticker, "obs_date": today,
+                "user_id": user_id, "ticker": ticker, "obs_date": today,
                 "strike_band": cell.strike_band.value,
                 "expiry_bucket": cell.expiry_bucket.value,
                 "strike": cell.strike, "delta": cell.delta, "gamma": cell.gamma,
@@ -385,6 +451,31 @@ def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float) -> None:
             },
             on_conflict="user_id,ticker,obs_date,strike_band,expiry_bucket",
         ).execute()
+
+
+def _upsert_regime_snapshot(db, today: str, regime) -> None:
+    db.table("regime_snapshots").upsert(
+        {
+            "ticker":           regime.ticker,
+            "obs_date":         today,
+            "gamma_regime":     regime.gamma_regime,
+            "iv_gex_signal":    regime.iv_gex_signal,
+            "sma10":            regime.sma10,
+            "sma50":            regime.sma50,
+            "sma_crossed":      regime.sma_crossed,
+            "vix_current":      regime.vix_current,
+            "vix_10ma":         regime.vix_10ma,
+            "vix_dev_pct":      regime.vix_dev_pct,
+            "vix_rsi":          regime.vix_rsi,
+            "spot_to_zgl_pct":  regime.spot_to_zgl_pct,
+            "iv_percentile":    regime.iv_percentile,
+            "hmm_state":        regime.hmm_state,
+            "hmm_probability":  regime.hmm_probability,
+            "strategy_bias":    regime.strategy_bias.value,
+            "signals":          regime.signals,
+        },
+        on_conflict="ticker,obs_date",
+    ).execute()
 
 
 async def _fetch_fmp_closes(
