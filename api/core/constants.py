@@ -95,10 +95,6 @@ GRID_BAND_NEAR_LOWER: float = -10.0  # ±5-10% = Near
 GRID_BAND_NEAR_UPPER: float = 10.0
 # Outside ±10% = OTM
 
-# ── Greek grid forward approximation (greek_grid_ingester.dart) ───────────────
-# Uses rough forward estimate: f = K * exp(iv * sqrtT * 0.5)
-# This is the same approximation as the Dart code for grid cells only.
-GRID_APPROX_FORWARD_FACTOR: float = 0.5
 
 # ── Schwab pull scheduler ──────────────────────────────────────────────────────
 SCHWAB_PULL_INTERVAL_HOURS: int = 8

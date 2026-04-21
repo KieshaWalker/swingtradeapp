@@ -299,6 +299,14 @@ class PythonApiClient {
         'top_n': topN,
       });
 
+  // ── Regime ML ──────────────────────────────────────────────────────────────
+
+  /// POST /regime/ml-analyze
+  /// Reads historical regime_snapshots from Supabase, computes ML transition
+  /// features, and returns 4-bucket categorised results for all tracked tickers.
+  static Future<Map<String, dynamic>> regimeMlAnalyze() =>
+      _post('/regime/ml-analyze', {});
+
   // ── Greek Grid ─────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> greekGridIngest({

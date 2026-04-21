@@ -62,6 +62,7 @@ import '../features/vol_surface/screens/vol_surface_screen.dart';
 import '../features/ideas/screens/trade_ideas_screen.dart';
 import '../features/greek_grid/screens/greek_grid_screen.dart';
 import '../features/settings/screens/schwab_bootstrap_screen.dart';
+import '../features/current_regime/screens/current_regime_screen.dart';
 
 // =============================================================================
 // _RouterNotifier
@@ -217,6 +218,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/ideas',
         pageBuilder: (context, state) => const NoTransitionPage(
           child: _AppShell(child: TradeIdeasScreen()),
+        ),
+      ),
+      GoRoute(
+        path: '/current-regime',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: CurrentRegimeScreen()),
         ),
       ),
 

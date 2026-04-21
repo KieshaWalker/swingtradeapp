@@ -97,6 +97,7 @@ class GexChart extends StatelessWidget {
               child: _GexBarChart(
                 strikes:      strikes,
                 maxGexStrike: analysis.maxGexStrike,
+                spot:         analysis.underlyingPrice,
               ),
             ),
           ],
@@ -142,21 +143,23 @@ class GexChart extends StatelessWidget {
 class _GexBarChart extends StatelessWidget {
   final List<GexStrike> strikes;
   final double? maxGexStrike;
+  final double? spot;
 
   const _GexBarChart({
     required this.strikes,
     required this.maxGexStrike,
+    this.spot,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Use a fixed underlying price of 1.0 for the chart since we're displaying
-    // relative GEX values. The actual $ million values need the real spot.
-    // We'll compute dealer GEX with a proxy — take ratio from OI × gamma.
-    // For display, just use the raw callOi*callGamma - putOi*putGamma proportion.
+    // Use real spot for dealerGex() → values in $ millions.
+    // Falls back to OI×gamma ratio (no dollar scaling) when spot unavailable.
+    final s0 = spot;
     final gexValues = strikes.map((s) {
-      final raw = s.callOi * s.callGamma - s.putOi * s.putGamma;
-      return raw;
+      return (s0 != null && s0 > 0)
+          ? s.dealerGex(s0)
+          : (s.callOi * s.callGamma - s.putOi * s.putGamma);
     }).toList();
 
     if (gexValues.isEmpty) return const SizedBox.shrink();

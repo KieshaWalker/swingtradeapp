@@ -1,16 +1,24 @@
 # =============================================================================
 # routers/regime.py
 # =============================================================================
-# POST /regime/classify — on-demand regime classification.
-# Same pattern as /iv/analytics (compute + return, no DB write).
-# The pipeline (schwab_pull.py) runs the persisted version every 8 hours.
+# POST /regime/classify    — on-demand single-ticker classification.
+# POST /regime/ml-analyze  — ML-enhanced multi-ticker analysis from Supabase
+#                            history; returns 4-bucket categorisation.
 # =============================================================================
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from typing import Any
 
 from services.regime_service import classify_regime, CurrentRegime, StrategyBias
 from services.hmm_regime import classify_vix_regime
+from services.regime_ml_service import (
+    analyze_all_tickers,
+    MlAnalysisResult,
+    TickerRegimeResult,
+    RegimeFeatures,
+    MarketContext,
+)
 
 router = APIRouter()
 
@@ -47,6 +55,87 @@ class RegimeResponse(BaseModel):
     hmm_probability:    float | None
     strategy_bias:      str
     signals:            list[str]
+
+
+class RegimeFeaturesOut(BaseModel):
+    spot_to_zgl_pct:       float | None
+    spot_to_zgl_trend:     float | None
+    ivp:                   float | None
+    ivp_trend:             float | None
+    hmm_state:             str   | None
+    hmm_probability:       float | None
+    sma_aligned:           bool  | None
+    vix_dev_pct:           float | None
+    regime_duration_days:  int
+
+
+class TickerRegimeOut(BaseModel):
+    ticker:          str
+    current_regime:  str
+    bucket:          str
+    ml_score:        float
+    transition_prob: float
+    confidence:      float
+    features:        RegimeFeaturesOut
+    strategy_bias:   str
+    signals:         list[str]
+    last_updated:    str | None
+
+
+class MarketContextOut(BaseModel):
+    spy_regime:  dict[str, Any] | None
+    vix_state:   str | None
+    vix_current: float | None
+    vix_dev_pct: float | None
+
+
+class MlAnalyzeResponse(BaseModel):
+    as_of:          str
+    market_context: MarketContextOut
+    tickers:        list[TickerRegimeOut]
+
+
+@router.post("/ml-analyze", response_model=MlAnalyzeResponse)
+async def ml_analyze() -> MlAnalyzeResponse:
+    from core.supabase_client import get_supabase
+    sb = get_supabase()
+    result = analyze_all_tickers(sb)
+
+    tickers_out = [
+        TickerRegimeOut(
+            ticker=t.ticker,
+            current_regime=t.current_regime,
+            bucket=t.bucket,
+            ml_score=t.ml_score,
+            transition_prob=t.transition_prob,
+            confidence=t.confidence,
+            features=RegimeFeaturesOut(
+                spot_to_zgl_pct=t.features.spot_to_zgl_pct,
+                spot_to_zgl_trend=t.features.spot_to_zgl_trend,
+                ivp=t.features.ivp,
+                ivp_trend=t.features.ivp_trend,
+                hmm_state=t.features.hmm_state,
+                hmm_probability=t.features.hmm_probability,
+                sma_aligned=t.features.sma_aligned,
+                vix_dev_pct=t.features.vix_dev_pct,
+                regime_duration_days=t.features.regime_duration_days,
+            ),
+            strategy_bias=t.strategy_bias,
+            signals=t.signals,
+            last_updated=t.last_updated,
+        )
+        for t in result.tickers
+    ]
+    return MlAnalyzeResponse(
+        as_of=result.as_of,
+        market_context=MarketContextOut(
+            spy_regime=result.market_context.spy_regime,
+            vix_state=result.market_context.vix_state,
+            vix_current=result.market_context.vix_current,
+            vix_dev_pct=result.market_context.vix_dev_pct,
+        ),
+        tickers=tickers_out,
+    )
 
 
 @router.post("/classify", response_model=RegimeResponse)

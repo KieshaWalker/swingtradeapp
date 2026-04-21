@@ -31,7 +31,7 @@ class _CellAccumulator {
   final List<int>    vols    = [];
   DateTime?          nearestExpiry;
 
-  void add(SchwabOptionContract c, DateTime expiry) {
+  void add(SchwabOptionContract c, DateTime expiry, double spot) {
     if (c.delta.abs() > 0)       deltas.add(c.delta);
     if (c.gamma.abs() > 0)       gammas.add(c.gamma);
     if (c.vega.abs() > 0)        vegas.add(c.vega);
@@ -48,8 +48,8 @@ class _CellAccumulator {
       final T      = dte / 365.0;
       final sqrtT  = math.sqrt(T);
       final K      = c.strikePrice;
-      // Approximate forward from strike + delta (rough but usable for grid)
-      final f      = K * math.exp(iv * sqrtT * 0.5);
+      // True BS forward: F = S * e^(r*T), r = 4.33% SOFR
+      final f      = spot * math.exp(0.0433 * T);
       final sigSqT = iv * sqrtT;
 
       if (sigSqT > 1e-8) {
@@ -130,7 +130,7 @@ class GreekGridIngester {
         final moneynessPct = (c.strikePrice - spot) / spot * 100;
         final band = StrikeBand.fromMoneynessPct(moneynessPct);
         accumulators.putIfAbsent((band, bucket), _CellAccumulator.new)
-            .add(c, expiry);
+            .add(c, expiry, spot);
       }
     }
 

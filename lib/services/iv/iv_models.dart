@@ -434,6 +434,9 @@ class IvAnalysis {
   // < 0.5 = thin wall (washout risk). > 2.0 = strong structural support.
   final double? putWallDensity;
 
+  // Underlying spot price at analysis time — required for dealerGex() scaling.
+  final double? underlyingPrice;
+
   const IvAnalysis({
     required this.ticker,
     required this.currentIv,
@@ -464,6 +467,7 @@ class IvAnalysis {
     this.gammaSlope   = GammaSlope.flat,
     this.ivGexSignal  = IvGexSignal.unknown,
     this.putWallDensity,
+    this.underlyingPrice,
   });
 
   bool get hasHistory => historyDays >= 10;

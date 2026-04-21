@@ -249,6 +249,7 @@ class IvAnalyticsService {
       gammaSlope:       gammaSlope,
       ivGexSignal:      ivGexSignal,
       putWallDensity:   putWallDensity,
+      underlyingPrice:  spot,
     );
   }
 
@@ -384,23 +385,21 @@ class IvAnalyticsService {
       // Only consider strikes within ±20% of spot (relevant gamma range)
       if ((strike - spot).abs() / spot > 0.20) continue;
 
-      double callOi    = 0, putOi = 0;
-      double callGamma = 0, putGamma = 0;
+      double callOi = 0, putOi = 0;
+      double callGammaOiSum = 0, putGammaOiSum = 0;
 
       for (final c in callsByStrike[strike] ?? []) {
-        callOi    += c.openInterest;
-        callGamma += c.gamma;
+        callOi          += c.openInterest;
+        callGammaOiSum  += c.gamma * c.openInterest;
       }
       for (final p in putsByStrike[strike] ?? []) {
-        putOi    += p.openInterest;
-        putGamma += p.gamma;
+        putOi           += p.openInterest;
+        putGammaOiSum   += p.gamma * p.openInterest;
       }
 
-      // Average gamma per expiration (if multiple expirations at same strike)
-      final callCount = (callsByStrike[strike] ?? []).length;
-      final putCount  = (putsByStrike[strike]  ?? []).length;
-      if (callCount > 1) callGamma /= callCount;
-      if (putCount  > 1) putGamma  /= putCount;
+      // OI-weighted average gamma: matches Python api/services/iv_analytics.py
+      final callGamma = callOi > 0 ? callGammaOiSum / callOi : 0.0;
+      final putGamma  = putOi  > 0 ? putGammaOiSum  / putOi  : 0.0;
 
       if (callOi == 0 && putOi == 0) continue;
 
@@ -588,40 +587,38 @@ class IvAnalyticsService {
       if (calls.isEmpty && puts.isEmpty) continue;
 
       double callOi = 0, putOi = 0;
-      double callVanna = 0, putVanna = 0;
-      double callCharm = 0, putCharm = 0;
-      double callVolga = 0, putVolga = 0;
+      double callVannaOiSum = 0, putVannaOiSum = 0;
+      double callCharmOiSum = 0, putCharmOiSum = 0;
+      double callVolgaOiSum = 0, putVolgaOiSum = 0;
 
       for (final c in calls) {
-        callOi += c.openInterest;
+        final oi = c.openInterest;
+        callOi += oi;
         final g = _secondOrderGreeks(spot, strike, c.impliedVolatility / 100,
             c.daysToExpiration, c.gamma, c.vega, r,
             DateTime.tryParse(c.expirationDate));
-        callVanna += g.$1;
-        callCharm += g.$2;
-        callVolga += g.$3;
+        callVannaOiSum += g.$1 * oi;
+        callCharmOiSum += g.$2 * oi;
+        callVolgaOiSum += g.$3 * oi;
       }
       for (final p in puts) {
-        putOi += p.openInterest;
+        final oi = p.openInterest;
+        putOi += oi;
         final g = _secondOrderGreeks(spot, strike, p.impliedVolatility / 100,
             p.daysToExpiration, p.gamma, p.vega, r,
             DateTime.tryParse(p.expirationDate));
-        putVanna += g.$1;
-        putCharm += g.$2;
-        putVolga += g.$3;
+        putVannaOiSum += g.$1 * oi;
+        putCharmOiSum += g.$2 * oi;
+        putVolgaOiSum += g.$3 * oi;
       }
 
-      // Average across expirations at same strike
-      if (calls.length > 1) {
-        callVanna /= calls.length;
-        callCharm /= calls.length;
-        callVolga /= calls.length;
-      }
-      if (puts.length > 1) {
-        putVanna /= puts.length;
-        putCharm /= puts.length;
-        putVolga /= puts.length;
-      }
+      // OI-weighted average per-strike: matches Python api/services/iv_analytics.py
+      final callVanna = callOi > 0 ? callVannaOiSum / callOi : 0.0;
+      final callCharm = callOi > 0 ? callCharmOiSum / callOi : 0.0;
+      final callVolga = callOi > 0 ? callVolgaOiSum / callOi : 0.0;
+      final putVanna  = putOi  > 0 ? putVannaOiSum  / putOi  : 0.0;
+      final putCharm  = putOi  > 0 ? putCharmOiSum  / putOi  : 0.0;
+      final putVolga  = putOi  > 0 ? putVolgaOiSum  / putOi  : 0.0;
 
       results.add(SecondOrderStrike(
         strike:    strike,

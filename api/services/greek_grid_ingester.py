@@ -6,8 +6,8 @@ from __future__ import annotations
 # Aggregate a Schwab options chain into (StrikeBand × ExpiryBucket) grid cells.
 # Exact port of GreekGridIngester from greek_grid_ingester.dart.
 #
-# Second-order greeks use the same BS approximations as the Dart code,
-# including the rough forward estimate: f = K * exp(iv * sqrtT * 0.5)
+# Second-order greeks use true BS forward: F = S * exp(r * T).
+# Matches greek_grid_ingester.dart after the same fix was applied.
 # =============================================================================
 
 import math
@@ -17,10 +17,7 @@ from enum import Enum
 from statistics import median as py_median
 
 from core.chain_utils import normalize_chain
-from core.constants import (
-    GRID_APPROX_FORWARD_FACTOR,
-    DEFAULT_R,
-)
+from core.constants import DEFAULT_R
 
 
 class StrikeBand(str, Enum):
@@ -82,13 +79,12 @@ def _second_order_approx(
     iv_decimal: float,
     dte: int,
 ) -> tuple[float, float, float]:
-    """Compute vanna, charm, volga using the same rough forward approximation
-    as greek_grid_ingester.dart _CellAccumulator.add().
+    """Compute vanna, charm, volga using the true Black-Scholes forward.
 
-    forward = K * exp(iv * sqrtT * 0.5)  (rough, not true forward)
-    Uses hardcoded r=0.0433 for charm (matches Dart).
+    forward = S * exp(r * T)  where r = DEFAULT_R
+    Matches greek_grid_ingester.dart after the same fix was applied there.
     """
-    if iv_decimal <= 0 or dte <= 0 or strike <= 0:
+    if iv_decimal <= 0 or dte <= 0 or strike <= 0 or spot <= 0:
         return 0.0, 0.0, 0.0
 
     T = dte / 365.0
@@ -97,8 +93,8 @@ def _second_order_approx(
     if sig_sqt <= 1e-8:
         return 0.0, 0.0, 0.0
 
-    # Rough forward (matches Dart exactly)
-    f = strike * math.exp(iv_decimal * sqrt_T * GRID_APPROX_FORWARD_FACTOR)
+    # True BS forward
+    f = spot * math.exp(DEFAULT_R * T)
 
     d1 = (math.log(f / strike) + 0.5 * iv_decimal * iv_decimal * T) / sig_sqt
     d2 = d1 - sig_sqt
