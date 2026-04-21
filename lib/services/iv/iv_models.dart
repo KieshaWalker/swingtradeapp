@@ -294,6 +294,27 @@ extension IvGexSignalX on IvGexSignal {
       'Dealers are stabilising. Iron condors and credit spreads thrive here.',
     IvGexSignal.unknown => 'Insufficient data to classify the IV/GEX signal.',
   };
+  // Strategy guidance derived from regime research:
+  // "losses curtailed in low-vol regime; straddles only profitable in high-vol"
+  String get strategyHint => switch (this) {
+    IvGexSignal.stableGamma =>
+      'Low-vol stabilizing regime. Best for: directional (call buying, credit spreads). '
+      'Losses curtailed in this environment. Avoid straddles — theta erodes premium.',
+    IvGexSignal.classicShortGamma =>
+      'High-vol amplifying regime. Best for: straddles or bearish directional (puts). '
+      'Straddles are only profitable in this regime. Signal: SHORT the market.',
+    IvGexSignal.regimeShift =>
+      'Stealth danger zone: negative gamma + suppressed IV. '
+      'Avoid undefined-risk trades. Use defined-risk structures only. '
+      'Volatility expansion is likely underpriced by models.',
+    IvGexSignal.eventOverPosGamma =>
+      'Post-event with positive gamma cushion. IV mean-reversion likely. '
+      'Best for: defined-risk bullish plays or premium selling. '
+      'Avoid naked premium buying — IV crush risk elevated.',
+    IvGexSignal.unknown =>
+      'Insufficient history to classify regime. '
+      'Load more chain data before sizing up.',
+  };
   bool get isDangerous => this == IvGexSignal.classicShortGamma ||
       this == IvGexSignal.regimeShift;
 }
@@ -306,12 +327,23 @@ extension GammaRegimeX on GammaRegime {
   };
   String get description => switch (this) {
     GammaRegime.positive =>
-      'Dealers are long gamma — they sell into rallies and buy dips. '
-      'Expect range-bound, mean-reverting price action.',
+      'Spot is ABOVE the gamma flip point — dealers are net LONG gamma (often from calls). '
+      'They buy dips and sell rips, stabilizing the market and lowering volatility. '
+      'Creates support on the downside; allows gradual upward drift. '
+      'Trading signal: LONG the market.',
     GammaRegime.negative =>
-      'Dealers are short gamma — they must buy into rallies and sell dips. '
-      'Moves can accelerate; watch for gamma squeezes.',
+      'Spot is BELOW the gamma flip point — dealers are net SHORT gamma (often from puts). '
+      'They sell as prices fall and buy as prices rise, amplifying moves and increasing volatility. '
+      'Creates resistance on the upside; leads to accelerated downside moves. '
+      'When net gamma turns negative, conditions are at least temporarily bearish '
+      'until the trend stabilizes. Near zero = potential reversal watch. '
+      'Trading signal: SHORT the market.',
     GammaRegime.unknown  => 'Insufficient data to determine regime.',
+  };
+  String get tradingSignal => switch (this) {
+    GammaRegime.positive => 'LONG',
+    GammaRegime.negative => 'SHORT',
+    GammaRegime.unknown  => '—',
   };
 }
 

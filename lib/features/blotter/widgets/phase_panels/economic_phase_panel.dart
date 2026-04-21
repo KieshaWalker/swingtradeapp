@@ -38,6 +38,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme.dart';
+import '../../../../services/iv/iv_models.dart';
+import '../../../../services/iv/iv_providers.dart';
 import '../../../../services/macro/macro_score_model.dart';
 import '../../../../services/macro/macro_score_provider.dart';
 import '../../../../services/fred/fred_providers.dart';
@@ -138,9 +140,14 @@ class _GateScore {
   final bool          fedRule;         // hard FAIL: hawkish + inverted + long > 30d
   final bool          vixCrisis;       // VIX > 30 — size reduction mandate
   final bool          deeplyInverted;  // yield < −0.50
-  final bool          contradiction;   // direction vs regime mismatch
+  final bool          contradiction;   // direction vs macro regime mismatch
   final bool          oilBearish;
+  final bool          gammaFail;       // spot >5% below flip + isCall → FAIL
+  final bool          gammaWarn;       // gamma headwind present → WARN
+  final bool          vixSpiking;      // VIX >+10% above 10-day MA → WARN
   final List<String>  hardFlags;
+  final List<String>  gammaSignals;    // gamma regime alignment/tailwind bullets
+  final List<String>  vixSignals;      // VIX MA-dev + RSI regime bullets
 
   const _GateScore({
     required this.total,
@@ -154,7 +161,12 @@ class _GateScore {
     required this.deeplyInverted,
     required this.contradiction,
     required this.oilBearish,
+    required this.gammaFail,
+    required this.gammaWarn,
+    required this.vixSpiking,
     required this.hardFlags,
+    required this.gammaSignals,
+    required this.vixSignals,
   });
 }
 
@@ -164,6 +176,9 @@ class _EcoData {
   final MacroScore?   macro;
   final double?       vixNow;
   final double?       vixPrev;
+  final double?       vix10dma;    // 10-day moving average of VIX
+  final double?       vixDevPct;   // (vixNow − vix10dma) / vix10dma × 100
+  final double?       vixRsi;      // Wilder RSI(14) of VIX daily closes
   final double?       yieldNow;
   final double?       fedNow;
   final double?       fedSixMo;
@@ -172,6 +187,7 @@ class _EcoData {
   final _Sector       sector;
   final String        ticker;
   final ContractType  contractType;
+  final IvAnalysis?   ivAnalysis;
   // Oil overlay
   final double?       crudeNow;
   final double?       crudeAvg;
@@ -191,6 +207,10 @@ class _EcoData {
     required this.sector,
     required this.ticker,
     required this.contractType,
+    this.vix10dma,
+    this.vixDevPct,
+    this.vixRsi,
+    this.ivAnalysis,
     this.crudeNow,
     this.crudeAvg,
     this.crudeProdNow,
@@ -235,6 +255,9 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
     final crudeStocksAsync  = ref.watch(eiaCrudeStocksProvider);
     final crudeProdAsync    = ref.watch(eiaCrudeProdProvider);
     final refineryAsync     = ref.watch(eiaRefineryUtilProvider);
+    // IV analysis provides the gamma regime (flip point) — loaded async,
+    // null while loading (gate still evaluates without it).
+    final ivAnalysis        = ref.watch(ivAnalysisProvider(widget.ticker)).valueOrNull;
 
     final sector = _classifyTicker(widget.ticker);
 
@@ -257,6 +280,25 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
     // VIX (FRED observations are chronological — last = most recent)
     final vixNow  = vixObs.isNotEmpty ? vixObs.last.value : null;
     final vixPrev = vixObs.length >= 2 ? vixObs[vixObs.length - 2].value : null;
+
+    // VIX 10-day MA deviation — >±10% from MA signals significant regime change
+    final vix10dmaValues = vixObs.length >= 10
+        ? vixObs
+            .sublist(vixObs.length - 10)
+            .map((o) => o.value)
+            .whereType<double>()
+            .toList()
+        : <double>[];
+    final vix10dma = vix10dmaValues.length == 10
+        ? vix10dmaValues.reduce((a, b) => a + b) / 10
+        : null;
+    final vixDevPct = (vixNow != null && vix10dma != null && vix10dma > 0)
+        ? (vixNow - vix10dma) / vix10dma * 100
+        : null;
+
+    // VIX RSI(14) — RSI > 70: VIX overbought → vol crush incoming → buy equities
+    //               RSI < 30: VIX dangerously suppressed → spike risk → fade rally
+    final vixRsi = _computeVixRsi(vixObs);
 
     // 2s10s yield curve spread
     final yieldNow = spreadObs.isNotEmpty ? spreadObs.last.value : null;
@@ -294,6 +336,9 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
       macro:        macro,
       vixNow:       vixNow,
       vixPrev:      vixPrev,
+      vix10dma:     vix10dma,
+      vixDevPct:    vixDevPct,
+      vixRsi:       vixRsi,
       yieldNow:     yieldNow,
       fedNow:       fedNow,
       fedSixMo:     fedSixMo,
@@ -302,6 +347,7 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
       sector:       sector,
       ticker:       widget.ticker,
       contractType: widget.contractType,
+      ivAnalysis:   ivAnalysis,
       crudeNow:     crudeNow,
       crudeAvg:     crudeAvg,
       crudeProdNow:  crudeProdNow,
@@ -445,6 +491,116 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
       if (isCall && oilBearish) contradiction = true;
     }
 
+    // ── Gamma regime direction check ───────────────────────────────────────────
+    // "WHEN PRICE IS ABOVE THE GAMMA FLIP POINT — dealers are net LONG gamma"
+    // "when price is BELOW the flip point — dealers are net SHORT gamma"
+    // "if neg gamma, short the market; if pos gamma, long the market"
+    bool gammaFail    = false;
+    bool gammaWarn    = false;
+    final gammaSignals = <String>[];
+    final iv = d.ivAnalysis;
+
+    if (iv != null && iv.gammaRegime != GammaRegime.unknown) {
+      final gr      = iv.gammaRegime;
+      final flipPct = iv.spotToZeroGammaPct;
+      final flipStr = flipPct != null
+          ? '${flipPct.abs().toStringAsFixed(1)}%'
+          : '?%';
+
+      if (gr == GammaRegime.negative && isCall) {
+        // Spot below gamma flip: amplifying downside — wrong direction for calls.
+        // FAIL if deeply below flip (>5%), WARN if marginal.
+        if (flipPct != null && flipPct < -5.0) {
+          gammaFail = true;
+          hardFlags.add(
+              'GAMMA REGIME FAIL: Spot is $flipStr below the gamma flip point — '
+              'dealers are net SHORT gamma, amplifying downside moves. '
+              'Bullish call thesis has strong structural resistance. '
+              'Per research: negative gamma → SHORT the market.');
+        } else {
+          gammaWarn = true;
+          hardFlags.add(
+              'Gamma headwind: spot is ${flipStr} below the gamma flip point — '
+              'Short Gamma regime opposes bullish thesis. '
+              'Dealers amplify downside; resistance above spot.');
+        }
+      } else if (gr == GammaRegime.positive && !isCall) {
+        // Spot above gamma flip: dealers stabilize = headwind for puts.
+        gammaWarn = true;
+        gammaSignals.add(
+            'Gamma headwind: spot is $flipStr above gamma flip point — '
+            'Long Gamma regime; dealers buy dips and stabilize price. '
+            'Bearish thesis has dealer support working against it.');
+      } else if (gr == GammaRegime.negative && !isCall) {
+        // Short gamma + bearish = aligned.
+        gammaSignals.add(
+            '✓ Gamma tailwind: Short Gamma regime ($flipStr below ZGL) aligns '
+            'with bearish thesis — dealers amplify downside moves.');
+      } else if (gr == GammaRegime.positive && isCall) {
+        // Long gamma + bullish = aligned.
+        gammaSignals.add(
+            '✓ Gamma support: Long Gamma regime ($flipStr above ZGL) aligns '
+            'with bullish thesis — dealers provide downside support, '
+            'gradual upward drift favored.');
+      }
+
+      // Near-flip zone warning (≤1.5% from flip, either side)
+      if (flipPct != null && flipPct.abs() <= 1.5 && !gammaFail) {
+        gammaWarn = true;
+        gammaSignals.add(
+            'Near gamma flip (${flipPct.toStringAsFixed(2)}% from ZGL) — '
+            'regime shift probability elevated. Temporarily bearish until '
+            'gamma stabilizes; watch for potential reversal.');
+      }
+    }
+
+    // ── VIX regime signals (10-day MA deviation + RSI) ────────────────────────
+    // Research: >10% deviation from 10-day MA = significant regime change.
+    // RSI > 70 = VIX overbought → vol crush coming → go long equities (calls).
+    // RSI < 30 = VIX dangerously suppressed → spike risk → fade rally (puts).
+    final vixSignals = <String>[];
+    bool vixSpiking  = false;
+
+    if (d.vixDevPct != null) {
+      if (d.vixDevPct! > 10) {
+        vixSpiking = true;
+        vixSignals.add(
+            'VIX Spike: +${d.vixDevPct!.toStringAsFixed(1)}% above 10-day MA '
+            '(${d.vix10dma?.toStringAsFixed(1) ?? "—"}) — '
+            'significant regime-shift signal. Vol is mean-reverting; '
+            'compression likely → supports equities / calls near-term.');
+      } else if (d.vixDevPct! < -10) {
+        vixSignals.add(
+            'VIX Compression: ${d.vixDevPct!.toStringAsFixed(1)}% below 10-day MA '
+            '(${d.vix10dma?.toStringAsFixed(1) ?? "—"}) — '
+            'vol dangerously suppressed. Mean-reversion spike risk elevated; '
+            'watch for put-buying opportunity as VIX reverts.');
+      } else {
+        vixSignals.add(
+            'VIX vs 10-day MA: ${d.vixDevPct! >= 0 ? "+" : ""}${d.vixDevPct!.toStringAsFixed(1)}% '
+            '(MA ${d.vix10dma?.toStringAsFixed(1) ?? "—"}) — within normal range.');
+      }
+    }
+
+    if (d.vixRsi != null) {
+      final rsi = d.vixRsi!;
+      if (rsi > 70) {
+        vixSignals.add(
+            'VIX RSI ${rsi.toStringAsFixed(0)} — OVERBOUGHT (>70): '
+            'VIX likely to compress from here. '
+            'Historically: go long equities when VIX RSI extreme. Supports calls.');
+      } else if (rsi < 30) {
+        vixSignals.add(
+            'VIX RSI ${rsi.toStringAsFixed(0)} — OVERSOLD (<30): '
+            'VIX dangerously low — spike risk. '
+            'Short equity when VIX is this suppressed. Supports puts / fade the rally.');
+      } else {
+        vixSignals.add(
+            'VIX RSI ${rsi.toStringAsFixed(0)} — normal range (30–70); '
+            'no extreme vol signal.');
+      }
+    }
+
     return _GateScore(
       total:          total,
       monetaryScore:  monetaryScore,
@@ -457,7 +613,12 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
       deeplyInverted: deeplyInverted,
       contradiction:  contradiction,
       oilBearish:     oilBearish,
+      gammaFail:      gammaFail,
+      gammaWarn:      gammaWarn,
+      vixSpiking:     vixSpiking,
       hardFlags:      hardFlags,
+      gammaSignals:   gammaSignals,
+      vixSignals:     vixSignals,
     );
   }
 
@@ -470,12 +631,13 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
 
     // ── Status ────────────────────────────────────────────────────────────────
     final PhaseStatus status;
-    if (gate.fedRule || gate.contradiction) {
+    if (gate.fedRule || gate.contradiction || gate.gammaFail) {
       status = PhaseStatus.fail;
     } else if (gate.total < 35 || gate.quadrant == _EcoQuadrant.stagflation) {
       status = PhaseStatus.fail;
     } else if (gate.vixCrisis ||
                gate.deeplyInverted ||
+               gate.gammaWarn ||
                gate.total < 55 ||
                gate.quadrant == _EcoQuadrant.deflationaryBust ||
                regime == MacroRegime.caution) {
@@ -500,6 +662,7 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
       if (d.sector == _Sector.oil && d.crudeNow != null)
         'Crude stocks: ${_fmtMbbl(d.crudeNow!)} — ${gate.oilBearish ? "Surplus (bearish)" : "Tightening (bullish)"}',
       ...gate.hardFlags,
+      ...gate.gammaSignals,
     ];
 
     // ── Headline ───────────────────────────────────────────────────────────────
@@ -507,7 +670,11 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
         ? '  ·  VIX ${d.vixNow!.toStringAsFixed(1)}'
         : '';
     final String headline;
-    if (gate.fedRule) {
+    if (gate.gammaFail) {
+      headline = isCall
+          ? 'Gamma FAIL — spot below flip point; Short Gamma opposes calls'
+          : 'Gamma FAIL — spot above flip; Long Gamma opposes puts';
+    } else if (gate.fedRule) {
       headline = 'Fed Rule FAIL — Hawkish + inverted curve, long delta blocked';
     } else if (gate.contradiction) {
       headline = isCall
@@ -515,6 +682,12 @@ class _EconomicPhasePanelState extends ConsumerState<EconomicPhasePanel> {
           : 'Risk-On regime — regime opposes puts';
     } else if (gate.quadrant == _EcoQuadrant.stagflation) {
       headline = 'Stagflation — Strict FAIL: Growth↓ + Inflation↑';
+    } else if (gate.gammaWarn) {
+      final iv = d.ivAnalysis;
+      final signal = iv != null
+          ? iv.gammaRegime.tradingSignal
+          : '—';
+      headline = 'Gamma warning · ${gate.quadrant.label} · ${gate.total}/100  Signal: $signal';
     } else {
       headline = '${gate.quadrant.label} · ${gate.total}/100$vixTag';
     }
@@ -1572,3 +1745,32 @@ Color _biasColor(MacroRegime regime, ContractType ct) {
 /// EIA crude stocks are in thousands of barrels — format as M bbl
 String _fmtMbbl(double thousandBbl) =>
     '${(thousandBbl / 1000).toStringAsFixed(1)}M bbl';
+
+// ── VIX RSI (Wilder 14-period) ────────────────────────────────────────────────
+// RSI > 70 → VIX overbought → vol crush expected → bullish for equities (calls)
+// RSI < 30 → VIX dangerously suppressed → spike risk → supports puts / fade rally
+// Observations must be chronological (oldest first), matching FRED response format.
+
+double? _computeVixRsi(List<dynamic> obs, {int period = 14}) {
+  final values = obs
+      .map((o) => o.value)
+      .whereType<double>()
+      .toList();
+  if (values.length < period + 1) return null;
+
+  // Use the most-recent (period + 1) closes for a one-shot Wilder average.
+  final recent = values.sublist(values.length - (period + 1));
+
+  double gainSum = 0;
+  double lossSum = 0;
+  for (int i = 1; i <= period; i++) {
+    final delta = recent[i] - recent[i - 1];
+    if (delta > 0) gainSum += delta; else lossSum -= delta;
+  }
+
+  final avgGain = gainSum / period;
+  final avgLoss = lossSum / period;
+  if (avgLoss == 0) return 100;
+  final rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
+}

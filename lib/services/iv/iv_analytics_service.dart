@@ -165,11 +165,6 @@ class IvAnalyticsService {
           .strike;
     }
 
-    if (totalGex != null) {
-      gammaRegime = totalGex >= 0
-          ? GammaRegime.positive
-          : GammaRegime.negative;
-    }
     if (totalVex != null) {
       vannaRegime = totalVex >= 0
           ? VannaRegime.bullishOnVolCrush   // vol drop → dealers buy delta
@@ -178,11 +173,29 @@ class IvAnalyticsService {
 
     // ── Advanced GEX metrics ───────────────────────────────────────────────
 
-    // Zero Gamma Level — strike where per-strike GEX crosses from − to +
+    // Zero Gamma Level — strike nearest to spot where per-strike GEX crosses
+    // from − to + (the "gamma flip point").
+    // Must be computed BEFORE gammaRegime so regime can use ZGL comparison.
     final zeroGammaLevel = _computeZeroGammaLevel(gexStrikes, spot);
     double? spotToZeroGammaPct;
     if (zeroGammaLevel != null && spot > 0) {
+      // Positive = spot above flip = Long Gamma (calls dominate)
+      // Negative = spot below flip = Short Gamma (puts dominate)
       spotToZeroGammaPct = (spot - zeroGammaLevel) / spot * 100;
+    }
+
+    // Gamma regime — ZGL-based primary signal per todo research spec:
+    //   "WHEN PRICE IS ABOVE THE GAMMA FLIP POINT dealers are net LONG gamma"
+    //   "when price is BELOW the flip point dealers are net SHORT gamma"
+    // Falls back to totalGex sign when no clean ZGL exists.
+    if (zeroGammaLevel != null) {
+      gammaRegime = spot > zeroGammaLevel
+          ? GammaRegime.positive   // above flip = long gamma (calls dominate)
+          : GammaRegime.negative;  // below flip = short gamma (puts dominate)
+    } else if (totalGex != null) {
+      gammaRegime = totalGex >= 0
+          ? GammaRegime.positive
+          : GammaRegime.negative;
     }
 
     // ΔGEX — day-over-day change in total GEX
@@ -412,19 +425,30 @@ class IvAnalyticsService {
     if (strikes.isEmpty) return null;
     final sorted = [...strikes]..sort((a, b) => a.strike.compareTo(b.strike));
 
+    // Collect ALL negative-to-positive zero crossings in the strike ladder.
+    // The GEX profile can have multiple crossings; we want the one nearest
+    // to spot (not necessarily the first), which is the active flip point.
+    final crossings = <double>[];
     for (int i = 0; i < sorted.length - 1; i++) {
       final gA = sorted[i].dealerGex(spot);
       final gB = sorted[i + 1].dealerGex(spot);
       if (gA <= 0 && gB >= 0) {
-        // Linear interpolation to the exact zero crossing
         final dg = gB - gA;
-        if (dg == 0) return (sorted[i].strike + sorted[i + 1].strike) / 2;
-        final t = -gA / dg;
-        return sorted[i].strike + t * (sorted[i + 1].strike - sorted[i].strike);
+        final zgl = dg == 0
+            ? (sorted[i].strike + sorted[i + 1].strike) / 2
+            : sorted[i].strike + (-gA / dg) * (sorted[i + 1].strike - sorted[i].strike);
+        crossings.add(zgl);
       }
     }
 
-    // No zero crossing — return nearest-to-zero GEX strike within ±10% of spot
+    if (crossings.isNotEmpty) {
+      // Return the crossing nearest to current spot — the active flip point.
+      return crossings.reduce((a, b) =>
+          (a - spot).abs() < (b - spot).abs() ? a : b);
+    }
+
+    // No zero crossing — return the strike within ±10% of spot with
+    // the smallest absolute GEX (closest approximation to a flip point).
     final near = sorted
         .where((s) => (s.strike - spot).abs() / spot < 0.10)
         .toList();

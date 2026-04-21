@@ -150,7 +150,7 @@ class _IdeaCardState extends ConsumerState<_IdeaCard> {
   @override
   Widget build(BuildContext context) {
     final idea    = widget.idea;
-    final results = [_p1, _p2, _p3, _p4, _p5];
+    final results = [_p1, _p2, _p3, _p4, _p5, _p5];
     final allPass = results.every((r) => r.status == PhaseStatus.pass);
     final anyFail = results.any((r) => r.status == PhaseStatus.fail);
     final anyWarn = results.any((r) => r.status == PhaseStatus.warn);

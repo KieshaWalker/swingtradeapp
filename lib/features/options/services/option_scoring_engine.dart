@@ -12,20 +12,33 @@
 //   Moneyness          0–15   OTM 1–7% sweet spot
 //
 // ── Regime Multiplier (Final Score = Base × Gm × Vm) ─────────────────────────
-//   Gm — GEX Multiplier  (requires IvAnalysis)
-//     Deep Long Gamma + rising        → 1.20
-//     Long Gamma + rising             → 1.10
-//     Long Gamma + flat               → 1.00
-//     Long Gamma + falling            → 0.85
-//     Near Zero Gamma flip (≤±0.5%)   → 0.70
-//     Short Gamma                     → 0.50
+//   Gm — GEX Multiplier  (DIRECTION-AWARE: call vs put)
+//
+//   CALL (bullish):
+//     Positive gamma, deep (>$1B)   → 1.20  (strong dealer support)
+//     Positive gamma, rising slope  → 1.10
+//     Positive gamma, flat slope    → 1.00
+//     Positive gamma, falling slope → 0.85
+//     Near flip from above (0–0.5%) → 0.70  (approaching danger)
+//     Near flip from below (0–-0.5%)→ 0.65 + REGIME FAIL
+//     Negative gamma                → 0.50 + REGIME FAIL (capped at 35)
+//
+//   PUT (bearish) — inverted, "if neg gamma short the market":
+//     Negative gamma, deep/falling  → 1.20  (dealer amplification tailwind)
+//     Negative gamma, other         → 1.10
+//     Near flip from below (0–-0.5%)→ 0.90  (put thesis intact, recovery near)
+//     Near flip from above (0–0.5%) → 0.85  (flip may strengthen bearish)
+//     Positive gamma, falling slope → 0.95  (dealer support eroding)
+//     Positive gamma, flat slope    → 0.85
+//     Positive gamma, rising slope  → 0.70  (dealer support headwind)
+//     Positive gamma, deep (>$1B)   → 0.60  (very strong put headwind)
 //
 //   Vm — Vanna Multiplier  (requires IvAnalysis)
 //     Standard regime (IV falling on rally) → 1.0
 //     Vanna Divergence (IV rising on rally,
 //       gammaSlope falling + bearish vanna) → 0.6
 //
-//   Hard Gate: Short Gamma regime → add REGIME FAIL flag; score capped at 35.
+//   Hard Gate: Short Gamma + CALL → add REGIME FAIL flag; score capped at 35.
 //   Hard Gate: Slippage (ask–theo)/mid > 2% → SLIPPAGE GATE flag; –5 pts.
 // =============================================================================
 import '../../../services/schwab/schwab_models.dart';
@@ -238,47 +251,112 @@ class OptionScoringEngine {
             liquidityScore + moneynessScore)
         .clamp(0, 100);
 
-    // ── Regime Multiplier ─────────────────────────────────────────────────────
+    // ── Regime Multiplier (direction-aware) ───────────────────────────────────
     double gexMultiplier   = 1.0;
     double vannaMultiplier = 1.0;
     bool   regimeFail      = false;
 
+    // Determine call vs put from OCC symbol: UNDERLYING+YYMMDD+C/P+STRIKE
+    final occMatch = RegExp(r'\d{6}([CP])\d').firstMatch(contract.symbol);
+    final isCall   = occMatch?.group(1) != 'P'; // default call when unresolvable
+
     if (ivAnalysis != null) {
-      final gr              = ivAnalysis.gammaRegime;
-      final slope           = ivAnalysis.gammaSlope;
-      final flipPct         = ivAnalysis.spotToZeroGammaPct;
-      final totalGex        = ivAnalysis.totalGex;
-      final vr              = ivAnalysis.vannaRegime;
+      final gr       = ivAnalysis.gammaRegime;
+      final slope    = ivAnalysis.gammaSlope;
+      final flipPct  = ivAnalysis.spotToZeroGammaPct;  // + = above flip; − = below
+      final totalGex = ivAnalysis.totalGex;
+      final vr       = ivAnalysis.vannaRegime;
 
       // ── Gm — GEX Multiplier ────────────────────────────────────────────────
-      if (gr == GammaRegime.negative) {
-        regimeFail    = true;
-        gexMultiplier = 0.50;
-        flags.add(
-            'REGIME FAIL: Short Gamma — dealers amplify moves; '
-            'structural support absent');
-      } else if (flipPct != null && flipPct.abs() <= 0.5) {
-        gexMultiplier = 0.70;
-        flags.add(
-            'Near Zero Gamma flip (${flipPct.toStringAsFixed(2)}% from flip) '
-            '— high regime-shift probability');
-      } else if (gr == GammaRegime.positive) {
-        // Deep Long Gamma check: totalGex > $1B → Gm 1.2
-        if (totalGex != null && totalGex >= 1000) {
-          gexMultiplier = 1.20;
-        } else if (slope == GammaSlope.rising) {
-          gexMultiplier = 1.10;
-        } else if (slope == GammaSlope.flat) {
-          gexMultiplier = 1.00;
-        } else {
-          // falling
+      // Research finding: "if neg gamma, short the market; if pos gamma, long."
+      // Multiplier is therefore INVERTED for puts vs calls:
+      //   CALL benefits from positive gamma (dealers buy dips = support).
+      //   PUT benefits from negative gamma (dealers amplify downside = tailwind).
+
+      if (isCall) {
+        // ── CALL: benefits from positive gamma ───────────────────────────────
+        if (gr == GammaRegime.negative) {
+          regimeFail    = true;
+          gexMultiplier = 0.50;
+          final depthStr = flipPct != null
+              ? '${flipPct.abs().toStringAsFixed(1)}% below ZGL'
+              : 'below zero-gamma level';
+          flags.add(
+              'REGIME FAIL: Short Gamma ($depthStr) — dealers amplify '
+              'downside; structural support absent for bullish thesis');
+        } else if (flipPct != null && flipPct > 0 && flipPct <= 0.5) {
+          // Near flip from above: approaching danger zone
+          gexMultiplier = 0.70;
+          flags.add(
+              'Near Gamma Flip (${flipPct.toStringAsFixed(2)}% above ZGL) '
+              '— approaching Short Gamma danger zone; call headwind building');
+        } else if (flipPct != null && flipPct < 0 && flipPct >= -0.5) {
+          // Just entered short gamma but near recovery
+          regimeFail    = true;
+          gexMultiplier = 0.65;
+          flags.add(
+              'REGIME FAIL: Marginally Short Gamma '
+              '(${flipPct.abs().toStringAsFixed(2)}% below ZGL) — '
+              'structural support not yet restored');
+        } else if (gr == GammaRegime.positive) {
+          if (totalGex != null && totalGex >= 1000) {
+            gexMultiplier = 1.20; // deep long gamma: very strong call tailwind
+          } else if (slope == GammaSlope.rising) {
+            gexMultiplier = 1.10;
+          } else if (slope == GammaSlope.flat) {
+            gexMultiplier = 1.00;
+          } else {
+            gexMultiplier = 0.85; // falling: dealer support eroding
+          }
+        }
+      } else {
+        // ── PUT: benefits from negative gamma ────────────────────────────────
+        if (gr == GammaRegime.negative) {
+          // Spot below gamma flip → dealers amplify downside = PUT tailwind
+          final isDeep = totalGex != null && totalGex < -500;
+          gexMultiplier = (isDeep || slope == GammaSlope.falling) ? 1.20 : 1.10;
+          final depthStr = flipPct != null
+              ? '${flipPct.abs().toStringAsFixed(1)}% below ZGL'
+              : 'below zero-gamma level';
+          flags.add(
+              'Short Gamma tailwind ($depthStr): dealer amplification '
+              'supports bearish thesis — downside moves accelerate');
+        } else if (flipPct != null && flipPct < 0 && flipPct >= -0.5) {
+          // Marginally below flip: put thesis intact but recovery near
+          gexMultiplier = 0.90;
+          flags.add(
+              'Near Gamma Recovery (${flipPct.abs().toStringAsFixed(2)}% below ZGL) '
+              '— put thesis intact; gamma may flip back to positive');
+        } else if (flipPct != null && flipPct > 0 && flipPct <= 0.5) {
+          // Near flip from above: regime may turn bearish soon — put opportunity
           gexMultiplier = 0.85;
+          flags.add(
+              'Near Gamma Flip (${flipPct.toStringAsFixed(2)}% above ZGL) '
+              '— flip may strengthen bearish thesis if regime shifts');
+        } else if (gr == GammaRegime.positive) {
+          // Spot above gamma flip → dealers stabilise = PUT headwind
+          if (totalGex != null && totalGex >= 1000) {
+            gexMultiplier = 0.60; // deep long gamma: very strong put headwind
+            flags.add(
+                'Deep Long Gamma headwind: strong dealer mean-reversion '
+                'resistance against bearish thesis');
+          } else if (slope == GammaSlope.rising) {
+            gexMultiplier = 0.70;
+            flags.add(
+                'Rising gamma slope: dealer support strengthening — '
+                'headwind for bearish thesis');
+          } else if (slope == GammaSlope.flat) {
+            gexMultiplier = 0.85;
+          } else {
+            // Falling gamma: dealer support eroding → put setup improving
+            gexMultiplier = 0.95;
+          }
         }
       }
 
       // ── Vm — Vanna Multiplier ──────────────────────────────────────────────
       // Vanna Divergence: slope falling + dealer delta turning bearish on vol change
-      // signals that a rally is fragile and a reversal will be violent.
+      // signals a fragile rally / violent reversal risk.
       final vannaDivergence = slope == GammaSlope.falling &&
           (vr == VannaRegime.bearishOnVolCrush ||
            vr == VannaRegime.bearishOnVolSpike);
