@@ -146,7 +146,7 @@ class _CellAccumulator:
         gamma = float(contract.get("gamma", 0))
         vega = float(contract.get("vega", 0))
         theta = float(contract.get("theta", 0))
-        iv_pct = float(contract.get("impliedVolatility", 0))
+        iv_pct = float(contract.get("volatility", contract.get("impliedVolatility", 0)))
         strike = float(contract.get("strikePrice", 0))
         oi = int(contract.get("openInterest", 0))
         vol = int(contract.get("totalVolume", 0))
