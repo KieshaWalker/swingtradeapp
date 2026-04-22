@@ -60,3 +60,8 @@ notes/api_notes.md
 # Vol Surface Tool (React/Vite)
 vol_surface_tool/node_modules/
 vol_surface_tool/dist/
+
+# Python virtualenv
+api/.venv/
+**/__pycache__/
+*.pyc
