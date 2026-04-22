@@ -24,6 +24,7 @@ flutter pub get
 
 # Build --dart-define flags only for env vars that are actually set
 DART_DEFINES=""
+[ -n "${PYTHON_API_URL}" ]    && DART_DEFINES="$DART_DEFINES --dart-define=PYTHON_API_URL=${PYTHON_API_URL}"
 [ -n "${SUPABASE_URL}" ]      && DART_DEFINES="$DART_DEFINES --dart-define=SUPABASE_URL=${SUPABASE_URL}"
 [ -n "${SUPABASE_ANON_KEY}" ] && DART_DEFINES="$DART_DEFINES --dart-define=SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
 [ -n "${FMP_API_KEY}" ]       && DART_DEFINES="$DART_DEFINES --dart-define=FMP_API_KEY=${FMP_API_KEY}"
