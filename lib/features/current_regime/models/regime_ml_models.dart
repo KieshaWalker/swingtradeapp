@@ -125,19 +125,25 @@ class MlMarketContext {
   final String?  vixState;
   final double?  vixCurrent;
   final double?  vixDevPct;
+  final double?  vixHmmProb;   // HMM posterior probability for current state (0–1)
+  final double?  vixRsi;       // Wilder RSI(14) on VIX closes
 
   const MlMarketContext({
     this.spyRegime,
     this.vixState,
     this.vixCurrent,
     this.vixDevPct,
+    this.vixHmmProb,
+    this.vixRsi,
   });
 
   factory MlMarketContext.fromJson(Map<String, dynamic> j) => MlMarketContext(
-    spyRegime:  j['spy_regime']  as Map<String, dynamic>?,
-    vixState:   j['vix_state']   as String?,
+    spyRegime:  j['spy_regime']   as Map<String, dynamic>?,
+    vixState:   j['vix_state']    as String?,
     vixCurrent: (j['vix_current'] as num?)?.toDouble(),
     vixDevPct:  (j['vix_dev_pct'] as num?)?.toDouble(),
+    vixHmmProb: (j['vix_hmm_prob'] as num?)?.toDouble(),
+    vixRsi:     (j['vix_rsi']     as num?)?.toDouble(),
   );
 }
 

@@ -129,10 +129,12 @@ class ModelMetadata:
 
 @dataclass
 class MarketContext:
-    spy_regime:   dict[str, Any] | None
-    vix_state:    str | None
-    vix_current:  float | None
-    vix_dev_pct:  float | None
+    spy_regime:        dict[str, Any] | None
+    vix_state:         str | None
+    vix_current:       float | None
+    vix_dev_pct:       float | None
+    vix_hmm_prob:      float | None   # HMM posterior probability for current state
+    vix_rsi:           float | None   # Wilder RSI(14) on VIX closes
 
 
 @dataclass
@@ -164,15 +166,19 @@ def analyze_all_tickers(supabase_client) -> MlAnalysisResult:
         by_ticker[t].sort(key=lambda r: r.get("obs_date", ""))
 
     results: list[TickerRegimeResult] = []
-    spy_row: dict | None = None
+    spy_row:  dict | None = None
+    any_row:  dict | None = None   # fallback for VIX fields when SPY not watched
 
     for ticker, history in by_ticker.items():
         result = _score_ticker(ticker, history, _inference_fn)
         results.append(result)
+        latest = history[-1] if history else None
         if ticker.upper() == "SPY":
-            spy_row = history[-1] if history else None
+            spy_row = latest
+        if latest and any_row is None:
+            any_row = latest
 
-    market_ctx    = _build_market_context(spy_row)
+    market_ctx    = _build_market_context(spy_row, vix_row=any_row)
     model_meta    = _build_model_metadata()
 
     return MlAnalysisResult(
@@ -485,19 +491,20 @@ def _ml_signals(
 # Market context
 # ---------------------------------------------------------------------------
 
-def _build_market_context(spy_row: dict | None) -> MarketContext:
-    if not spy_row:
-        return MarketContext(
-            spy_regime=None,
-            vix_state=None,
-            vix_current=None,
-            vix_dev_pct=None,
-        )
+def _build_market_context(
+    spy_row: dict | None,
+    vix_row: dict | None = None,
+) -> MarketContext:
+    # VIX fields are market-wide — stored identically on every ticker row.
+    # Prefer SPY for them; fall back to any available ticker when SPY isn't watched.
+    vix_source = spy_row or vix_row
     return MarketContext(
         spy_regime=spy_row,
-        vix_state=spy_row.get("hmm_state"),
-        vix_current=_safe_float(spy_row, "vix_current"),
-        vix_dev_pct=_safe_float(spy_row, "vix_dev_pct"),
+        vix_state=vix_source.get("hmm_state")         if vix_source else None,
+        vix_current=_safe_float(vix_source, "vix_current") if vix_source else None,
+        vix_dev_pct=_safe_float(vix_source, "vix_dev_pct") if vix_source else None,
+        vix_hmm_prob=_safe_float(vix_source, "hmm_probability") if vix_source else None,
+        vix_rsi=_safe_float(vix_source, "vix_rsi")    if vix_source else None,
     )
 
 

@@ -136,7 +136,7 @@ class _Body extends StatelessWidget {
         const SizedBox(height: 20),
         Center(
           child: Text(
-            'Last updated ${DateFormat('MMM d, HH:mm').format(analysis.asOf.toLocal())} UTC',
+            'Last updated ${DateFormat('MMM d, HH:mm').format(analysis.asOf.toLocal())}',
             style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
           ),
         ),
@@ -218,6 +218,8 @@ class _MarketContextStrip extends StatelessWidget {
           subtitle: ctx.vixCurrent != null
               ? 'VIX ${ctx.vixCurrent!.toStringAsFixed(1)}'
                 '  Dev ${_pct(ctx.vixDevPct, decimals: 1)}'
+                '  RSI ${ctx.vixRsi?.toStringAsFixed(0) ?? '—'}'
+                '  Conf ${ctx.vixHmmProb != null ? '${(ctx.vixHmmProb! * 100).toStringAsFixed(0)}%' : '—'}'
               : null,
         ),
 

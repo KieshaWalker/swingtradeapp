@@ -86,10 +86,12 @@ class TickerRegimeOut(BaseModel):
 
 
 class MarketContextOut(BaseModel):
-    spy_regime:  dict[str, Any] | None
-    vix_state:   str | None
-    vix_current: float | None
-    vix_dev_pct: float | None
+    spy_regime:   dict[str, Any] | None
+    vix_state:    str | None
+    vix_current:  float | None
+    vix_dev_pct:  float | None
+    vix_hmm_prob: float | None
+    vix_rsi:      float | None
 
 
 class ModelMetadataOut(BaseModel):
@@ -169,6 +171,8 @@ def ml_analyze() -> MlAnalyzeResponse:
             vix_state=result.market_context.vix_state,
             vix_current=result.market_context.vix_current,
             vix_dev_pct=result.market_context.vix_dev_pct,
+            vix_hmm_prob=result.market_context.vix_hmm_prob,
+            vix_rsi=result.market_context.vix_rsi,
         ),
         model_metadata=ModelMetadataOut(
             available=m.available,
