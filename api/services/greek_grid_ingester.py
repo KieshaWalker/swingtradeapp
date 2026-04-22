@@ -29,6 +29,7 @@ class StrikeBand(str, Enum):
 
 
 class ExpiryBucket(str, Enum):
+    daily = "daily"           # dte <= 4
     weekly = "weekly"           # dte <= 7
     near_monthly = "near_monthly"  # dte <= 30
     monthly = "monthly"         # dte <= 60
@@ -55,6 +56,8 @@ def classify_expiry_bucket(dte: int) -> ExpiryBucket:
     """Classify DTE into an expiry bucket.
     Matches ExpiryBucket.fromDte() in Dart greek_grid_models.dart.
     """
+    if dte <= 4:
+        return ExpiryBucket.daily
     if dte <= 7:
         return ExpiryBucket.weekly
     if dte <= 30:

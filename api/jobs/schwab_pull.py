@@ -39,7 +39,7 @@ from services.hmm_regime import classify_vix_regime
 log = logging.getLogger(__name__)
 
 # DTE targets that mirror the Flutter app's greek chart buckets
-_DTE_BUCKETS = [4, 7, 31]
+_DTE_BUCKETS = [4, 7, 30, 60, 90]
 
 
 async def run_schwab_pull() -> dict:
@@ -56,6 +56,22 @@ async def run_schwab_pull() -> dict:
     # Fetch watched tickers + user_id (needed for user-scoped tables like greek_snapshots)
     tickers_resp = db.table("watched_tickers").select("ticker,user_id").execute()
     rows = tickers_resp.data or []
+
+    # Also include tickers from open trades that aren't already watched.
+    # A traded ticker needs greek grid data even if the user never added it to watched_tickers.
+    trades_resp = (
+        db.table("trades")
+        .select("ticker,user_id")
+        .eq("status", "open")
+        .execute()
+    )
+    watched_keys = {(r["ticker"], r["user_id"]) for r in rows}
+    for r in (trades_resp.data or []):
+        key = (r["ticker"], r["user_id"])
+        if key not in watched_keys:
+            rows.append(r)
+            watched_keys.add(key)
+
     if not rows:
         log.warning("No watched tickers found — nothing to pull")
         return {"status": "no_tickers"}
@@ -64,7 +80,6 @@ async def run_schwab_pull() -> dict:
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         # ── Fetch VIX closes once for the whole pipeline run ──────────────────
-        # VIX is market-wide — no need to fetch per-ticker.
         # FMP timeseries=65 returns 65 trading-day records (oldest→newest after reverse).
         vix_closes: list[float] = []
         vix_current: float | None = None
@@ -98,7 +113,7 @@ async def run_schwab_pull() -> dict:
                 # ── Step 1: Fetch chain from Schwab via Edge Function ──────────
                 chain_resp = await client.post(
                     f"{edge_base}/get-schwab-chains",
-                    json={"symbol": ticker, "contractType": "ALL", "strikeCount": 40},
+                    json={"symbol": ticker, "contractType": "ALL", "strikeCount": 40}, 
                     headers=headers,
                 )
                 if chain_resp.status_code != 200:
