@@ -74,6 +74,13 @@ gcloud run services add-iam-policy-binding "${SERVICE}" \
   --role="roles/run.invoker" \
   --project="${PROJECT_ID}"
 
+# Allow unauthenticated browser access (Flutter web app calls the API directly)
+gcloud run services add-iam-policy-binding "${SERVICE}" \
+  --region="${REGION}" \
+  --member="allUsers" \
+  --role="roles/run.invoker" \
+  --project="${PROJECT_ID}"
+
 # ── Fetch Cloud Run service URL ───────────────────────────────────────────────
 SERVICE_URL=$(gcloud run services describe "${SERVICE}" \
   --region="${REGION}" \

@@ -130,7 +130,9 @@ class _FivePhaseBlotterScreenState
     });
   }
 
-  // Extract the specific contract from the chain
+  // Extract the specific contract from the chain.
+  // Returns null if no contract within $1 of the entered strike is found,
+  // preventing silently using a wrong contract when the strike is far OTM.
   SchwabOptionContract? _findContract(SchwabOptionsChain? chain) {
     if (chain == null || _expiryStr == null || _strike == null) return null;
     final exp = chain.expirations.where(
@@ -138,10 +140,13 @@ class _FivePhaseBlotterScreenState
     if (exp == null) return null;
     final contracts = _contractType == ContractType.call ? exp.calls : exp.puts;
     if (contracts.isEmpty) return null;
-    return contracts.reduce((a, b) =>
+    final best = contracts.reduce((a, b) =>
         (a.strikePrice - _strike!).abs() < (b.strikePrice - _strike!).abs()
             ? a
             : b);
+    // Reject if the closest strike is more than $1 away — chain didn't include
+    // the target strike (strikeCount too small or strike doesn't exist).
+    return (best.strikePrice - _strike!).abs() <= 1.0 ? best : null;
   }
 
   Future<void> _pickExpiry() async {
@@ -272,7 +277,7 @@ class _FivePhaseBlotterScreenState
         ? ref.watch(schwabOptionsChainProvider(OptionsChainParams(
             symbol:         _ticker,
             contractType:   _contractType == ContractType.call ? 'CALL' : 'PUT',
-            strikeCount:    20,
+            strikeCount:    60,   // wide enough to cover OTM strikes
             expirationDate: _expiryStr,
           )))
         : null;
@@ -389,9 +394,11 @@ class _FivePhaseBlotterScreenState
                   result:    _p3,
                   expanded:  _exp3,
                   onChanged: (v) => setState(() => _exp3 = v),
-                  child: (spot == 0.0 && chainAsync?.isLoading == true)
+                  child: (chainAsync?.isLoading == true)
                       ? const _LoadingPlaceholder('Loading contract data…')
-                      : BlotterPhasePanel(
+                      : (chainAsync?.hasValue == true && contract == null)
+                          ? _StrikeNotFoundBanner(strike: _strike!)
+                          : BlotterPhasePanel(
                           key:          ValueKey('p3-$_ticker-$_strike-$_expiryStr-${_contractType.name}'),
                           ticker:       _ticker,
                           spot:         spot > 0 ? spot : _strike!,
@@ -903,6 +910,29 @@ class _StatusChip extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── Strike not found banner ───────────────────────────────────────────────────
+
+class _StrikeNotFoundBanner extends StatelessWidget {
+  final double strike;
+  const _StrikeNotFoundBanner({required this.strike});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(20),
+    child: Row(children: [
+      const Icon(Icons.warning_amber_rounded, color: Color(0xFFFBBF24), size: 20),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Text(
+          '\$$strike is not available in the chain. '
+          'Check the strike is a valid listed expiry, or adjust the strike.',
+          style: const TextStyle(color: Color(0xFFFBBF24), fontSize: 13),
+        ),
+      ),
+    ]),
+  );
 }
 
 // ── Loading placeholder ────────────────────────────────────────────────────────
