@@ -85,6 +85,7 @@ class TickerRegimeResult {
   final String          strategyBias;
   final List<String>    signals;
   final DateTime?       lastUpdated;
+  final String          scoringMethod;   // "supervised_lr" | "supervised_xgb" | "heuristic"
 
   const TickerRegimeResult({
     required this.ticker,
@@ -97,6 +98,7 @@ class TickerRegimeResult {
     required this.strategyBias,
     required this.signals,
     this.lastUpdated,
+    this.scoringMethod = 'heuristic',
   });
 
   factory TickerRegimeResult.fromJson(Map<String, dynamic> j) =>
@@ -114,6 +116,7 @@ class TickerRegimeResult {
         lastUpdated:    j['last_updated'] != null
                             ? DateTime.tryParse(j['last_updated'] as String)
                             : null,
+        scoringMethod:  j['scoring_method']  as String? ?? 'heuristic',
       );
 }
 
@@ -138,14 +141,52 @@ class MlMarketContext {
   );
 }
 
+class MlModelMetadata {
+  final bool    available;
+  final String? modelType;   // "logistic" | "xgboost" | null
+  final String? trainedAt;
+  final int     nSamples;
+  final int     nPositive;
+  final double  aucRoc;
+  final double  accuracy;
+  final double  precision;
+  final double  recall;
+
+  const MlModelMetadata({
+    required this.available,
+    this.modelType,
+    this.trainedAt,
+    required this.nSamples,
+    required this.nPositive,
+    required this.aucRoc,
+    required this.accuracy,
+    required this.precision,
+    required this.recall,
+  });
+
+  factory MlModelMetadata.fromJson(Map<String, dynamic> j) => MlModelMetadata(
+    available:  j['available']  as bool? ?? false,
+    modelType:  j['model_type'] as String?,
+    trainedAt:  j['trained_at'] as String?,
+    nSamples:   (j['n_samples']  as num?)?.toInt() ?? 0,
+    nPositive:  (j['n_positive'] as num?)?.toInt() ?? 0,
+    aucRoc:     (j['auc_roc']   as num?)?.toDouble() ?? 0,
+    accuracy:   (j['accuracy']  as num?)?.toDouble() ?? 0,
+    precision:  (j['precision'] as num?)?.toDouble() ?? 0,
+    recall:     (j['recall']    as num?)?.toDouble() ?? 0,
+  );
+}
+
 class RegimeMlAnalysis {
   final DateTime                asOf;
   final MlMarketContext         marketContext;
+  final MlModelMetadata         modelMetadata;
   final List<TickerRegimeResult> tickers;
 
   const RegimeMlAnalysis({
     required this.asOf,
     required this.marketContext,
+    required this.modelMetadata,
     required this.tickers,
   });
 
@@ -153,6 +194,8 @@ class RegimeMlAnalysis {
     asOf:          DateTime.parse(j['as_of'] as String),
     marketContext: MlMarketContext.fromJson(
                        j['market_context'] as Map<String, dynamic>? ?? {}),
+    modelMetadata: MlModelMetadata.fromJson(
+                       j['model_metadata'] as Map<String, dynamic>? ?? {}),
     tickers:       (j['tickers'] as List?)
                        ?.map((e) => TickerRegimeResult.fromJson(
                            e as Map<String, dynamic>))

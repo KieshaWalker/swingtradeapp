@@ -111,12 +111,14 @@ class _Body extends StatelessWidget {
         _SectionHeader('ML Intelligence'),
         const SizedBox(height: 4),
         Text(
-          'Scoring uses 6 feature dimensions derived from rolling regime history. '
+          'Scoring uses 9 feature dimensions derived from rolling regime history. '
           'Each ticker is scored −1 (strongly negative gamma) to +1 (strongly positive gamma).',
           style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
         ),
         const SizedBox(height: 10),
-        _FeatureWeightLegend(),
+        _ModelInfoCard(meta: analysis.modelMetadata),
+        const SizedBox(height: 10),
+        _FeatureWeightLegend(meta: analysis.modelMetadata),
 
         const SizedBox(height: 20),
 
@@ -188,7 +190,7 @@ class _MarketContextStrip extends StatelessWidget {
             value: '…',
             color: AppTheme.neutralColor,
           ),
-          error: (_, __) => _ContextChip(
+          error: (e, st) => _ContextChip(
             label: 'Macro',
             value: 'Error',
             color: AppTheme.lossColor,
@@ -299,9 +301,116 @@ class _ContextChip extends StatelessWidget {
   );
 }
 
+// ── Model Info Card ───────────────────────────────────────────────────────────
+
+class _ModelInfoCard extends StatelessWidget {
+  final MlModelMetadata meta;
+  const _ModelInfoCard({required this.meta});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!meta.available) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.cardColor,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Row(children: [
+          const Icon(Icons.info_outline_rounded, color: Colors.white38, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'No trained model — using heuristic scoring. '
+              'Call POST /regime/train to fit a supervised model.',
+              style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+            ),
+          ),
+        ]),
+      );
+    }
+
+    final trainedAt = meta.trainedAt != null
+        ? DateTime.tryParse(meta.trainedAt!)
+        : null;
+    final typeLabel = switch (meta.modelType) {
+      'xgboost'  => 'XGBoost',
+      'logistic' => 'Logistic Regression',
+      _          => meta.modelType ?? 'Unknown',
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppTheme.profitColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppTheme.profitColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(typeLabel,
+                style: TextStyle(
+                  color: AppTheme.profitColor, fontSize: 11,
+                  fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 8),
+            if (trainedAt != null)
+              Text(
+                'Trained ${DateFormat('MMM d, HH:mm').format(trainedAt.toLocal())}',
+                style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+              ),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            _MetricBadge('AUC-ROC', meta.aucRoc.toStringAsFixed(3)),
+            const SizedBox(width: 12),
+            _MetricBadge('Accuracy', '${(meta.accuracy * 100).toStringAsFixed(1)}%'),
+            const SizedBox(width: 12),
+            _MetricBadge('Precision', '${(meta.precision * 100).toStringAsFixed(1)}%'),
+            const SizedBox(width: 12),
+            _MetricBadge('Recall', '${(meta.recall * 100).toStringAsFixed(1)}%'),
+          ]),
+          const SizedBox(height: 6),
+          Text(
+            '${meta.nSamples} samples · ${meta.nPositive} flip events '
+            '(${meta.nSamples > 0 ? (meta.nPositive / meta.nSamples * 100).toStringAsFixed(1) : "—"}% base rate)',
+            style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricBadge extends StatelessWidget {
+  final String label;
+  final String value;
+  const _MetricBadge(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: TextStyle(color: AppTheme.neutralColor, fontSize: 10)),
+      Text(value,  style: const TextStyle(
+        color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+    ],
+  );
+}
+
 // ── Feature Weight Legend ─────────────────────────────────────────────────────
 
 class _FeatureWeightLegend extends StatelessWidget {
+  final MlModelMetadata meta;
   static const _features = [
     ('ZGL Level',   0.25, 'Distance above/below zero-gamma level'),
     ('ZGL Trend',   0.20, 'Momentum of ZGL distance over 5 obs'),
@@ -311,7 +420,7 @@ class _FeatureWeightLegend extends StatelessWidget {
     ('VIX Stress',  0.10, 'VIX deviation from 10-day MA'),
   ];
 
-  const _FeatureWeightLegend();
+  const _FeatureWeightLegend({required this.meta});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -323,9 +432,17 @@ class _FeatureWeightLegend extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Feature Weights',
-          style: TextStyle(color: Colors.white70, fontSize: 12,
-            fontWeight: FontWeight.w600)),
+        Row(children: [
+          Text(
+            meta.available ? 'Model Features (9)' : 'Heuristic Features (6)',
+            style: const TextStyle(color: Colors.white70, fontSize: 12,
+              fontWeight: FontWeight.w600)),
+          const SizedBox(width: 6),
+          Text(
+            meta.available ? '— weights learned from data' : '— hand-tuned weights',
+            style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+          ),
+        ]),
         const SizedBox(height: 10),
         ..._features.map((f) => Padding(
           padding: const EdgeInsets.only(bottom: 6),
@@ -503,14 +620,43 @@ class _TickerChip extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 2),
-            // Transition prob
-            Text(
-              'flip ${(result.transitionProb * 100).toStringAsFixed(0)}%',
-              style: TextStyle(color: AppTheme.neutralColor, fontSize: 10),
-            ),
+            // Transition prob + scoring method
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(
+                'flip ${(result.transitionProb * 100).toStringAsFixed(0)}%',
+                style: TextStyle(color: AppTheme.neutralColor, fontSize: 10),
+              ),
+              const SizedBox(width: 5),
+              _ScoringBadge(result.scoringMethod),
+            ]),
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Scoring method badge ──────────────────────────────────────────────────────
+
+class _ScoringBadge extends StatelessWidget {
+  final String method;
+  const _ScoringBadge(this.method);
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color) = switch (method) {
+      String s when s.startsWith('supervised_xgb') => ('XGB', const Color(0xFF60A5FA)),
+      String s when s.startsWith('supervised_lr')  => ('LR',  const Color(0xFF818CF8)),
+      _                                             => ('H',   Colors.white24),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Text(label,
+        style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w700)),
     );
   }
 }

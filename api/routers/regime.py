@@ -2,11 +2,11 @@
 # routers/regime.py
 # =============================================================================
 # POST /regime/classify    — on-demand single-ticker classification.
-# POST /regime/ml-analyze  — ML-enhanced multi-ticker analysis from Supabase
-#                            history; returns 4-bucket categorisation.
+# POST /regime/ml-analyze  — ML-enhanced multi-ticker analysis; 4-bucket.
+# POST /regime/train       — trigger supervised training from Supabase history.
 # =============================================================================
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Any
 
@@ -14,10 +14,12 @@ from services.regime_service import classify_regime, CurrentRegime, StrategyBias
 from services.hmm_regime import classify_vix_regime
 from services.regime_ml_service import (
     analyze_all_tickers,
+    load_trained_model,
     MlAnalysisResult,
     TickerRegimeResult,
     RegimeFeatures,
     MarketContext,
+    ModelMetadata,
 )
 
 router = APIRouter()
@@ -80,6 +82,7 @@ class TickerRegimeOut(BaseModel):
     strategy_bias:   str
     signals:         list[str]
     last_updated:    str | None
+    scoring_method:  str
 
 
 class MarketContextOut(BaseModel):
@@ -89,17 +92,49 @@ class MarketContextOut(BaseModel):
     vix_dev_pct: float | None
 
 
+class ModelMetadataOut(BaseModel):
+    available:   bool
+    model_type:  str | None
+    trained_at:  str | None
+    n_samples:   int
+    n_positive:  int
+    auc_roc:     float
+    accuracy:    float
+    precision:   float
+    recall:      float
+
+
 class MlAnalyzeResponse(BaseModel):
     as_of:          str
     market_context: MarketContextOut
+    model_metadata: ModelMetadataOut
     tickers:        list[TickerRegimeOut]
 
 
+class TrainRequest(BaseModel):
+    model_type:   str = "logistic"   # "logistic" | "xgboost"
+    history_days: int = 180
+
+
+class TrainResponse(BaseModel):
+    model_type:      str
+    trained_at:      str
+    n_samples:       int
+    n_positive:      int
+    accuracy:        float
+    auc_roc:         float
+    precision:       float
+    recall:          float
+    sufficient_data: bool
+    message:         str
+
+
 @router.post("/ml-analyze", response_model=MlAnalyzeResponse)
-async def ml_analyze() -> MlAnalyzeResponse:
+def ml_analyze() -> MlAnalyzeResponse:
     from core.supabase_client import get_supabase
-    sb = get_supabase()
+    sb     = get_supabase()
     result = analyze_all_tickers(sb)
+    m      = result.model_metadata
 
     tickers_out = [
         TickerRegimeOut(
@@ -123,6 +158,7 @@ async def ml_analyze() -> MlAnalyzeResponse:
             strategy_bias=t.strategy_bias,
             signals=t.signals,
             last_updated=t.last_updated,
+            scoring_method=t.scoring_method,
         )
         for t in result.tickers
     ]
@@ -134,7 +170,62 @@ async def ml_analyze() -> MlAnalyzeResponse:
             vix_current=result.market_context.vix_current,
             vix_dev_pct=result.market_context.vix_dev_pct,
         ),
+        model_metadata=ModelMetadataOut(
+            available=m.available,
+            model_type=m.model_type,
+            trained_at=m.trained_at,
+            n_samples=m.n_samples,
+            n_positive=m.n_positive,
+            auc_roc=m.auc_roc,
+            accuracy=m.accuracy,
+            precision=m.precision,
+            recall=m.recall,
+        ),
         tickers=tickers_out,
+    )
+
+
+@router.post("/train", response_model=TrainResponse)
+def train_model(req: TrainRequest) -> TrainResponse:
+    """Trigger supervised training from Supabase history.
+
+    Trains on labeled regime flip data, stores the model in regime_ml_models,
+    then hot-reloads it into the in-memory inference cache.
+    """
+    from core.supabase_client import get_supabase
+    from services.regime_ml_trainer import train_and_store
+
+    if req.model_type not in ("logistic", "xgboost"):
+        raise HTTPException(status_code=400, detail="model_type must be 'logistic' or 'xgboost'")
+
+    sb     = get_supabase()
+    result = train_and_store(sb, model_type=req.model_type, history_days=req.history_days)
+
+    if result.sufficient_data:
+        # Hot-reload the newly trained model into the inference cache
+        load_trained_model(sb)
+        msg = (
+            f"Trained {result.model_type} on {result.n_samples} samples "
+            f"({result.n_positive} flips). AUC-ROC {result.auc_roc:.3f}. "
+            f"Model loaded and active."
+        )
+    else:
+        msg = (
+            f"Insufficient training data — need ≥80 labeled samples, "
+            f"got {result.n_samples}. Accumulate more regime history and retry."
+        )
+
+    return TrainResponse(
+        model_type=result.model_type,
+        trained_at=result.trained_at,
+        n_samples=result.n_samples,
+        n_positive=result.n_positive,
+        accuracy=result.accuracy,
+        auc_roc=result.auc_roc,
+        precision=result.precision,
+        recall=result.recall,
+        sufficient_data=result.sufficient_data,
+        message=msg,
     )
 
 

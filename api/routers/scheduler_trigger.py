@@ -37,3 +37,49 @@ async def schwab_pull_trigger(request: Request):
     from jobs.schwab_pull import run_schwab_pull
     result = await run_schwab_pull()
     return result
+
+
+@router.post("/regime-train")
+def regime_train_trigger(request: Request):
+    """Triggered by Cloud Scheduler weekly (recommended: Sunday 00:00 UTC).
+    Retrains the regime ML model on the latest 180 days of Supabase history
+    and hot-reloads it into the inference cache.
+
+    Cloud Scheduler job config:
+      URL:      https://<your-cloud-run-url>/jobs/regime-train
+      Method:   POST
+      Schedule: 0 0 * * 0   (weekly, Sunday midnight UTC)
+      Headers:  X-CloudScheduler-JobName: regime-train-weekly
+    """
+    _verify_scheduler(request)
+
+    from core.supabase_client import get_supabase
+    from services.regime_ml_trainer import train_and_store
+    from services.regime_ml_service import load_trained_model
+
+    sb     = get_supabase()
+    result = train_and_store(sb, model_type="logistic", history_days=180)
+
+    if result.sufficient_data:
+        load_trained_model(sb)
+        log.info(
+            "regime_train_weekly: trained %s on %d samples (%d flips) "
+            "AUC-ROC=%.3f — model hot-reloaded",
+            result.model_type, result.n_samples, result.n_positive, result.auc_roc,
+        )
+    else:
+        log.warning(
+            "regime_train_weekly: insufficient data (%d samples) — "
+            "need ≥80 labeled samples; skipping model update",
+            result.n_samples,
+        )
+
+    return {
+        "model_type":      result.model_type,
+        "trained_at":      result.trained_at,
+        "n_samples":       result.n_samples,
+        "n_positive":      result.n_positive,
+        "auc_roc":         result.auc_roc,
+        "accuracy":        result.accuracy,
+        "sufficient_data": result.sufficient_data,
+    }

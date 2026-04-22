@@ -267,11 +267,11 @@ def _score_ticker(
             scoring_method   = f"supervised_{mt}"
         else:
             ml_score, transition_prob, confidence, scoring_method = (
-                *_heuristic_score(features, current_regime), "heuristic"
+                *_heuristic_score(features, current_regime, len(history)), "heuristic"
             )
     else:
         ml_score, transition_prob, confidence, scoring_method = (
-            *_heuristic_score(features, current_regime), "heuristic"
+            *_heuristic_score(features, current_regime, len(history)), "heuristic"
         )
 
     bucket     = _classify_bucket(current_regime, ml_score)
@@ -340,12 +340,12 @@ def _extract_features(history: list[dict], current_regime: str) -> RegimeFeature
 # ---------------------------------------------------------------------------
 
 def _heuristic_score(
-    f: RegimeFeatures, current_regime: str
+    f: RegimeFeatures, current_regime: str, n_obs: int = 0
 ) -> tuple[float, float, float]:
     """Hand-tuned fallback. Returns (ml_score, transition_prob, confidence)."""
-    score       = _compute_score(f, current_regime)
-    trans_prob  = _transition_prob_from_score(current_regime, score)
-    conf        = _confidence(f, 0)   # n_obs unknown here; caller already has it
+    score      = _compute_score(f, current_regime)
+    trans_prob = _transition_prob_from_score(current_regime, score)
+    conf       = _confidence(f, n_obs)
     return score, trans_prob, conf
 
 

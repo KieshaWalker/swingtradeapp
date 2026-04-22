@@ -307,6 +307,18 @@ class PythonApiClient {
   static Future<Map<String, dynamic>> regimeMlAnalyze() =>
       _post('/regime/ml-analyze', {});
 
+  /// POST /regime/train
+  /// Triggers supervised model training from Supabase history.
+  /// [modelType]: "logistic" | "xgboost"
+  static Future<Map<String, dynamic>> regimeMlTrain({
+    String modelType = 'logistic',
+    int historyDays = 180,
+  }) =>
+      _post('/regime/train', {
+        'model_type':   modelType,
+        'history_days': historyDays,
+      });
+
   // ── Greek Grid ─────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> greekGridIngest({

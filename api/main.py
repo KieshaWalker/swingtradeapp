@@ -13,7 +13,16 @@ from routers import black_scholes, sabr, fair_value, iv_analytics, realized_vol,
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    yield  # No persistent scheduler — Cloud Scheduler triggers Cloud Functions instead
+    # Attempt to load the latest trained regime ML model into the in-memory
+    # inference cache.  Non-fatal: falls back to heuristic scoring if no model
+    # is stored or Supabase is unreachable at startup.
+    try:
+        from core.supabase_client import get_supabase
+        from services.regime_ml_service import load_trained_model
+        load_trained_model(get_supabase())
+    except Exception:
+        pass
+    yield
 
 
 app = FastAPI(
