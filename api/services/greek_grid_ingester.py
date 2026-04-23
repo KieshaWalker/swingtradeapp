@@ -29,21 +29,20 @@ class StrikeBand(str, Enum):
 
 
 class ExpiryBucket(str, Enum):
-    daily = "daily"           # dte <= 4
-    weekly = "weekly"           # dte <= 7
-    near_monthly = "near_monthly"  # dte <= 30
-    monthly = "monthly"         # dte <= 60
-    far_monthly = "far_monthly"  # dte <= 90
-    quarterly = "quarterly"     # dte > 90
+    weekly = "weekly"             # dte <= 7
+    near_monthly = "near_monthly" # dte <= 30
+    monthly = "monthly"           # dte <= 60
+    far_monthly = "far_monthly"   # dte <= 90
+    quarterly = "quarterly"       # dte > 90
 
 
 def classify_strike_band(moneyness_pct: float) -> StrikeBand:
     """Classify a strike into a band based on moneyness %.
     Matches StrikeBand.fromMoneynessPct() in Dart greek_grid_models.dart.
     """
-    if moneyness_pct <= -15.0:
+    if moneyness_pct < -15.0:
         return StrikeBand.deep_itm
-    if moneyness_pct <= -5.0:
+    if moneyness_pct < -5.0:
         return StrikeBand.itm
     if moneyness_pct <= 5.0:
         return StrikeBand.atm
@@ -56,8 +55,6 @@ def classify_expiry_bucket(dte: int) -> ExpiryBucket:
     """Classify DTE into an expiry bucket.
     Matches ExpiryBucket.fromDte() in Dart greek_grid_models.dart.
     """
-    if dte <= 4:
-        return ExpiryBucket.daily
     if dte <= 7:
         return ExpiryBucket.weekly
     if dte <= 30:
@@ -116,6 +113,7 @@ class GridCell:
     strike_band: StrikeBand
     expiry_bucket: ExpiryBucket
     strike: float           # median strike
+    expiry_date: datetime | None
     delta: float | None
     gamma: float | None
     vega: float | None
@@ -185,6 +183,7 @@ class _CellAccumulator:
             strike_band=band,
             expiry_bucket=bucket,
             strike=_median(self.strikes),
+            expiry_date=self.nearest_expiry,
             delta=_median(self.deltas) if self.deltas else None,
             gamma=_median(self.gammas) if self.gammas else None,
             vega=_median(self.vegas) if self.vegas else None,

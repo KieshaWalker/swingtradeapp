@@ -116,12 +116,12 @@ class PythonApiClient {
     required String optionType,
   }) =>
       _post('/bs/greeks', {
-        's': s,
-        'k': k,
-        't': t,
-        'sigma': sigma,
+        'spot': s,
+        'strike': k,
+        'days_to_expiry': (t * 365).round().clamp(1, 9999),
+        'implied_vol': sigma,
         'r': r,
-        'option_type': optionType,
+        'is_call': optionType == 'call',
       });
 
   // ── SABR ───────────────────────────────────────────────────────────────────

@@ -529,25 +529,26 @@ def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float, user_id:
     for cell in cells:
         db.table("greek_grid_snapshots").upsert(
             {
+                
                 "user_id": user_id,
                 "ticker": ticker, 
                 "obs_date": today,
                 "strike_band": cell.strike_band.value,
                 "expiry_bucket": cell.expiry_bucket.value,
-                "strike": cell.strike, 
-                "expiry_date": cell.expiry_date,
+                "strike": cell.strike,
+                "expiry_date": cell.expiry_date.date().isoformat() if cell.expiry_date else None,
                 "delta": cell.delta,
                 "gamma": cell.gamma,
-                "vega": cell.vega, 
-                "theta": cell.theta, 
+                "vega": cell.vega,
+                "theta": cell.theta,
                 "iv": cell.iv,
                 "vanna": cell.vanna,
                 "charm": cell.charm,
                 "volga": cell.volga,
-                "open_interest": cell.open_interest, 
+                "open_interest": cell.open_interest,
                 "volume": cell.volume,
                 "spot_at_obs": spot,
-                "contract_count": cell.contract_count, 
+                "contract_count": cell.contract_count,
 
             },
             on_conflict="user_id,ticker,obs_date,strike_band,expiry_bucket",

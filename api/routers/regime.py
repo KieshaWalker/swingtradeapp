@@ -252,7 +252,13 @@ async def classify(body: RegimeRequest) -> RegimeResponse:
     vix_dev_pct = body.vix_dev_pct
     vix_current = body.vix_current
     hmm_result = None
-
+    
+## is this section missing hmm_state and hmm_probability? 
+# we need to compute those from the closes if they are provided, 
+# and then pass them to classify_regime so they get stored in the regime_snapshot. 
+# if the closes are not provided, then hmm_result will be None and
+#  classify_regime should handle that case (probably by setting hmm_state 
+# and hmm_probability to None in the snapshot)  
     if body.vix_closes:
         from services.regime_service import compute_wilder_rsi
         closes = [c for c in body.vix_closes if c and c > 0]

@@ -130,7 +130,7 @@ class _GreekGridScreenState extends ConsumerState<GreekGridScreen> {
   Future<void> _fetchInterpretation(List<dynamic> allPoints) async {
     try {
       final cells = allPoints
-          .map((p) => (p as dynamic).toJson() as Map<String, dynamic>)
+          .map((p) => (p as GreekGridPoint).toJson())
           .toList();
       final raw = await PythonApiClient.greekGridInterpretGrid(gridCells: cells);
       if (!mounted) return;

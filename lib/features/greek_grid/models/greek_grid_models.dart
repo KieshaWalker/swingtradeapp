@@ -197,7 +197,30 @@ class GreekGridPoint {
     volume:        (j['volume']        as num?)?.toInt(),
     spotAtObs:     (j['spot_at_obs']   as num).toDouble(),
     contractCount: (j['contract_count'] as num? ?? 1).toInt(),
+    
   );
+
+  Map<String, dynamic> toJson() => {
+    if (id != null)            'id':             id,
+    'ticker':                  ticker,
+    'obs_date':                obsDate.toIso8601String().substring(0, 10),
+    'strike_band':             strikeBand.dbValue,
+    'expiry_bucket':           expiryBucket.dbValue,
+    'strike':                  strike,
+    if (expiryDate != null)    'expiry_date':    expiryDate!.toIso8601String().substring(0, 10),
+    if (delta != null)         'delta':          delta,
+    if (gamma != null)         'gamma':          gamma,
+    if (vega  != null)         'vega':           vega,
+    if (theta != null)         'theta':          theta,
+    if (iv    != null)         'iv':             iv,
+    if (vanna != null)         'vanna':          vanna,
+    if (charm != null)         'charm':          charm,
+    if (volga != null)         'volga':          volga,
+    if (openInterest != null)  'open_interest':  openInterest,
+    if (volume != null)        'volume':         volume,
+    'spot_at_obs':             spotAtObs,
+    'contract_count':          contractCount,
+  };
 
   Map<String, dynamic> toUpsertRow(String userId) => {
     'user_id':        userId,
