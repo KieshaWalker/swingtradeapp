@@ -145,6 +145,10 @@ def score(
             iv_score = int(max(0, min(8, round(8 * (iv - 5) / 15))))
         else:
             iv_score = 0
+            flags.append(
+            f"IV scored by raw volatility level ({iv:.0f}%) — no IVP history available. "
+            "High raw IV scores higher (movement potential), opposite to IVP logic."
+        )
 
     # ── 5. Liquidity (0-15) ───────────────────────────────────────────────────
     oi = int(contract.get("openInterest", 0))

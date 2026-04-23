@@ -222,16 +222,31 @@ def interpret_greek_grid(
                 "Vol expansion supports long call positions.",
                 BULLISH,
             ))
+        elif vanna < 0:
+            today.append(_line(
+                "Vanna",
+                f"Mild negative vanna ({vanna:.3f}) — modest IV sensitivity; "
+                "slight headwind for calls if vol expands.",
+                NEUTRAL,
+            ))
+        else:
+            today.append(_line(
+                "Vanna",
+                f"Mild positive vanna (+{vanna:.3f}) — modest IV sensitivity; "
+                "slight tailwind for calls if vol expands.",
+                NEUTRAL,
+            ))
+            
 
     # 5. Charm (Weekly)
     weekly_c = cell(ATM, WEEKLY)
     charm = weekly_c.get("charm") if weekly_c else None
     if charm is not None and abs(charm) > 0.01:
-        direction = "decaying toward" if charm < 0 else "drifting away from"
+        direction = "delta is declining toward OTM" if charm < 0 else "delta is rising toward ITM"
         accel     = "Expiry dynamics accelerating." if abs(charm) > 0.05 else "Normal near-expiry erosion."
         today.append(_line(
             "Charm (Weekly)",
-            f"ATM weekly charm {charm:.3f} — delta {direction} ATM at "
+            f"ATM weekly charm {charm:.3f} — {direction}  at "
             f"{abs(charm):.3f}/day. {accel}",
             CAUTION if abs(charm) > 0.05 else NEUTRAL,
         ))

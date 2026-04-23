@@ -10,7 +10,9 @@
 //  GexStrike       — per-strike gamma exposure entry
 // =============================================================================
 
-/// Cheapness/expensiveness rating derived from IVR + IVP
+/// Cheapness/expensiveness rating derived from IVR + IVP      
+/// IVR means "IV Rank" — where current IV sits in the 52-week range (0–100%)
+/// IVP means "IV Percentile" — percentage of past days with IV below current
 enum IvRating {
   extreme,   // IVR > 80 — historically very expensive, premium selling zone
   expensive, // IVR 50–80
@@ -29,10 +31,10 @@ extension IvRatingX on IvRating {
   };
 
   String get description => switch (this) {
-    IvRating.extreme   => 'IV is in the top 20% of its 52w range — premium selling favored',
-    IvRating.expensive => 'IV elevated — consider spreads or credit strategies',
+    IvRating.extreme   => 'IV is in the top 20% of its 52w range — premium selling favored. additionally- high iv percentiles, can often predict a coming market reversal in price',
+    IvRating.expensive => 'IV elevated above historical average — consider spreads or credit strategies over naked longs',
     IvRating.fair      => 'IV near historical average — neutral conditions',
-    IvRating.cheap     => 'IV compressed — debit spreads and long options favored',
+    IvRating.cheap     => 'IV compressed relative to 52-week range — debit spreads and long options favored',
     IvRating.noData    => 'Insufficient history — check back after more chain loads',
   };
 }
@@ -53,10 +55,6 @@ class GexStrike {
     required this.putGamma,
   });
 
-  /// Dealer GEX ($ millions):
-  ///   dealers long call gamma → positive (stabilising)
-  ///   dealers short put gamma → negative (destabilising / amplifies moves)
-  /// GEX = (callOI × callGamma - putOI × putGamma) × 100 × underlyingPrice / 1e6
   double dealerGex(double underlyingPrice) {
     final callGex = callOi * callGamma * 100 * underlyingPrice;
     final putGex  = putOi  * putGamma  * 100 * underlyingPrice;
@@ -255,11 +253,30 @@ extension GammaSlopeX on GammaSlope {
     GammaSlope.falling => '↘ Falling',
   };
   String get description => switch (this) {
-    GammaSlope.rising  => 'Dealer cushion strengthening — mean-reversion support is building.',
-    GammaSlope.flat    => 'GEX profile stable near spot. No structural change imminent.',
-    GammaSlope.falling => 'GEX declining as price moves up — glide path toward Short Gamma danger zone.',
-  };
+  GammaSlope.rising =>
+    'GEX increases at strikes above spot — price moving up enters '
+    'deeper positive-gamma territory. Dealer cushion strengthens '
+    'with each tick higher; mean-reversion support is building.',
+  GammaSlope.flat =>
+    'GEX profile stable across strikes near spot. '
+    'No structural regime change imminent.',
+  GammaSlope.falling =>
+    'GEX decreases at strikes above spot — price moving up erodes '
+    'the positive-gamma cushion. Glide path toward the zero-gamma '
+    'flip level; dealers provide progressively less stabilisation.',
+};
 }
+
+
+//Scenario 1: Stability Around $590
+//Heavy positive Gamma exposure suggests SPY may remain anchored near $590. Traders could take advantage of this stability by deploying low-volatility strategies, such as credit spreads or iron condors, to capture premium in a range-bound environment.
+//Scenario 2: A Drop Below $589
+//If SPY breaks below $589, the negative Gamma exposure signals heightened volatility risk. This could present an opportunity for bearish trades, such as buying puts or using debit spreads, to profit from an acceleration in the downward move. Watch for confirming signals, such as increasing volume or sustained price breaks below $589.
+//Why Gamma Exposure Matters
+//Gamma Exposure helps traders see beyond traditional technical analysis by revealing how hedging dynamics influence price behavior. Here are the key takeaways:
+
+//Support and Resistance Levels: Strikes with high positive Gamma exposure often act as magnets, stabilizing price movements as expiration nears.
+//Volatility Indicators: Strikes with heavy negative Gamma exposure point to areas where volatility may spike, especially during breakouts or trending markets.
 
 /// Single-snapshot IV / GEX combined regime classification
 enum IvGexSignal {
@@ -327,17 +344,18 @@ extension GammaRegimeX on GammaRegime {
   };
   String get description => switch (this) {
     GammaRegime.positive =>
-      'Spot is ABOVE the gamma flip point — dealers are net LONG gamma (often from calls). '
-      'They buy dips and sell rips, stabilizing the market and lowering volatility. '
-      'Creates support on the downside; allows gradual upward drift. '
-      'Trading signal: LONG the market.',
+      'Dealers are net LONG gamma (total GEX ≥ 0) — call gamma across the chain outweighs put gamma. '
+    'They buy dips and sell rips, dampening volatility and stabilising price. '
+    'Creates support on the downside; allows gradual upward drift. '
+    'See Spot-to-Flip % for proximity to the gamma flip level. '
+    'Trading signal: LONG the market.',
     GammaRegime.negative =>
-      'Spot is BELOW the gamma flip point — dealers are net SHORT gamma (often from puts). '
-      'They sell as prices fall and buy as prices rise, amplifying moves and increasing volatility. '
-      'Creates resistance on the upside; leads to accelerated downside moves. '
-      'When net gamma turns negative, conditions are at least temporarily bearish '
-      'until the trend stabilizes. Near zero = potential reversal watch. '
-      'Trading signal: SHORT the market.',
+      'Dealers are net SHORT gamma (total GEX < 0) — put gamma across the chain outweighs call gamma. '
+    'They sell as prices fall and buy as prices rise, amplifying moves and increasing volatility. '
+    'Creates resistance on the upside; leads to accelerated downside moves. '
+    'When net gamma turns negative, conditions are at least temporarily bearish '
+    'until the trend stabilises. Near zero = potential reversal watch. '
+    'Trading signal: SHORT the market.',
     GammaRegime.unknown  => 'Insufficient data to determine regime.',
   };
   String get tradingSignal => switch (this) {
@@ -487,10 +505,10 @@ class IvAnalysis {
     };
     final vrStr = j['vanna_regime'] as String? ?? 'unknown';
     final vannaRegime = switch (vrStr) {
-      'bullish_on_vol_crush' => VannaRegime.bullishOnVolCrush,
-      'bearish_on_vol_crush' => VannaRegime.bearishOnVolCrush,
-      'bullish_on_vol_spike' => VannaRegime.bullishOnVolSpike,
-      'bearish_on_vol_spike' => VannaRegime.bearishOnVolSpike,
+      'bullishOnVolCrush' => VannaRegime.bullishOnVolCrush,
+      'bearishOnVolCrush' => VannaRegime.bearishOnVolCrush,
+      'bullishOnVolSpike' => VannaRegime.bullishOnVolSpike,
+      'bearishOnVolSpike' => VannaRegime.bearishOnVolSpike,
       _                     => VannaRegime.unknown,
     };
     final gsStr = j['gamma_slope'] as String? ?? 'flat';
@@ -557,6 +575,7 @@ class IvAnalysis {
     final s = skew!;
     if (s > 10) return 'Steep (${s.toStringAsFixed(1)}pp)';
     if (s > 5)  return 'Elevated (${s.toStringAsFixed(1)}pp)';
+    if (s > 1)  return 'Mild (${s.toStringAsFixed(1)}pp)';
     if (s > 0)  return 'Normal (${s.toStringAsFixed(1)}pp)';
     return 'Flat/Inverted (${s.toStringAsFixed(1)}pp)';
   }

@@ -115,14 +115,20 @@ class SecondOrderStrike:
     @property
     def dealer_cex(self) -> float:
         """Dealer Charm Exposure.
-        Call Charm: As time passes, the Delta of OTM (Out-of-the-Money) calls decays toward 0. For ITM (In-the-Money) calls, Delta decays toward 1.00.
-        Put Charm: Similarly, OTM put Deltas decay toward 0, while ITM put Deltas decay toward -1.00.
-        In a "Long Charm" state (positive result), the passage of time causes dealers' deltas to move in a way that forces them to buy the underlying. 
-        This can lead to price support as expiration approaches.
-            Result = 20,000: This means that, all else equal, the passage of one day would require market makers to buy 20,000 shares to maintain a delta-neutral position.
-            The result represents the number of shares a dealer must buy or sell at the end of each day to remain delta-neutral, assuming price and volatility stay constant.
-            Positive Result: Dealers have "Positive Charm." As time passes, their net delta becomes more positive, requiring them to sell shares to re-hedge.
-            Negative Result: Dealers have "Negative Charm." As time passes, they must buy shares to remain neutral.
+        
+        Call Charm: OTM call deltas decay toward 0 over time; ITM call deltas decay toward 1.00.
+        Put Charm:  OTM put deltas decay toward 0 over time; ITM put deltas decay toward -1.00.
+
+        Positive CEX: dealers' aggregate delta is growing over time (net calls dominate).
+            To stay delta-neutral they must BUY the underlying each day.
+            Example — Result = 20,000: market makers must buy ~20,000 shares today to remain neutral.
+            This creates a passive upward drift as expiration approaches ("Charm Rally").
+        Negative CEX: dealers' aggregate delta is shrinking over time (net puts dominate).
+            To stay delta-neutral they must SELL the underlying each day.
+        
+        Weekend / OPEX effect: Charm accelerates sharply in the final days before expiration
+                        (OPEX). A three-day weekend compresses three days of decay into one session,
+                         producing outsized re-hedging flows on Friday afternoon or Monday morning.
            Weekend Effect" and OPEXCharm is most influential in the final days before an option expiration (OPEX).
            The "Charm Rally": In a typical "Long Gamma" environment where investors have bought puts to hedge, dealers are Short Puts.
              As those puts decay toward zero (Charm), dealers are forced to "un-hedge" by buying back the underlying. This is a major contributor to the "upward drift" often seen during expiration weeks.
