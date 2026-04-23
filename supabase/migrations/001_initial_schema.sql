@@ -36,9 +36,9 @@ create table if not exists trades (
   updated_at   timestamptz not null default now()
 );
 
-alter table trades enable row level security;
+alter table if not exists trades  enable row level security;
 
-create policy "Users can manage their own trades"
+create if not exists policy "Users can manage their own trades"
   on trades for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);

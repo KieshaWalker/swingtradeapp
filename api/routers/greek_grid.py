@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from typing import Any
 
 from services.greek_interpreter import interpret_greek_grid, interpret_greek_chart

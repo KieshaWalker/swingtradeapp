@@ -328,7 +328,7 @@ def _upsert_greek_snapshots(
                     "call_theta":  atm_call.get("theta"),
                     "call_vega":   atm_call.get("vega"),
                     "call_rho":    atm_call.get("rho"),
-                    "call_iv":     _pct_to_dec(atm_call.get("volatility")),
+                    "call_iv":     _pct_to_dec(atm_call.get("impliedVolatility")),
                     "call_oi":     atm_call.get("openInterest"),
                 })
 
@@ -341,7 +341,7 @@ def _upsert_greek_snapshots(
                     "put_theta":  atm_put.get("theta"),
                     "put_vega":   atm_put.get("vega"),
                     "put_rho":    atm_put.get("rho"),
-                    "put_iv":     _pct_to_dec(atm_put.get("volatility")),
+                    "put_iv":     _pct_to_dec(atm_put.get("impliedVolatility")),
                     "put_oi":     atm_put.get("openInterest"),
                 })
 
