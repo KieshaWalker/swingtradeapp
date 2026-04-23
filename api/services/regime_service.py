@@ -28,7 +28,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -59,6 +58,8 @@ class CurrentRegime:
     iv_percentile:      float | None  # IVP 0–100
     hmm_state:          str   | None  # "low_vol" | "high_vol" | None
     hmm_probability:    float | None  # posterior probability of current HMM state
+    vol_sma3:           float | None  # 3-day average volume
+    vol_sma20:          float | None  # 20-day average volume
     strategy_bias:      StrategyBias
     signals:            list[str] = field(default_factory=list)
 
@@ -76,6 +77,8 @@ def classify_regime(
     vix_dev_pct:         float | None,
     vix_rsi:             float | None,
     hmm_result:          HmmRegimeResult | None = None,
+    vol_sma3:            float | None = None,
+    vol_sma20:           float | None = None,
 ) -> CurrentRegime:
     """Classify the current market regime and return a StrategyBias."""
     signals: list[str] = []
@@ -84,35 +87,127 @@ def classify_regime(
     hmm_state   = hmm_result.state.value if hmm_result else None
     hmm_prob    = hmm_result.state_probability if hmm_result else None
 
-    # ── Gate 1: HMM high-vol state → straddle ────────────────────────────────
+    # ── Gate 1: HMM vol state → Risk-on / Risk-off regime ────────────────────
+    # Risk-off (high-vol): high volatility, low returns, high cross-asset
+    # correlation, low return/vol ratio. VIX is inversely correlated with
+    # S&P and is mean-reverting — when VIX spikes to an extreme it eventually
+    # reverts, creating a go-long opportunity on the mean-reversion.
+    # Risk-on (low-vol): low volatility, low correlation, high returns.
+    # When VIX is suppressed too far, spike risk rises — caution on the long side.
     if hmm_result and hmm_result.state == HmmVolState.high_vol:
         prob_pct = f"{hmm_result.state_probability * 100:.0f}%"
         signals.append(
-            f"HMM: High-vol state ({prob_pct} confidence, mean VIX "
-            f"{hmm_result.high_vol_mean:.1f}) — straddle regime"
+            f"HMM: Risk-off regime ({prob_pct} confidence) — "
+            f"high-vol state (mean VIX {hmm_result.high_vol_mean:.1f}); "
+            "high cross-asset correlation, low expected returns"
         )
-        if vix_dev_pct is not None and vix_dev_pct > 10:
+
+        # Sub-case: VIX at extreme high → mean-reversion imminent → go long / sell premium
+        vix_extreme = vix_rsi is not None and vix_rsi > 70
+        vix_spike   = vix_dev_pct is not None and vix_dev_pct > 10
+
+        if vix_extreme:
             signals.append(
-                f"VIX is +{vix_dev_pct:.1f}% above 10-day MA — "
-                f"vol spike confirmed, mean-reversion likely near-term"
+                f"VIX RSI {vix_rsi:.0f} (overbought) in Risk-off — "
+                "VIX mean-reversion imminent; vol crush expected → "
+                "go long / sell premium on the fade (Lehman 2018)"
             )
+            if vix_spike:
+                signals.append(
+                    f"VIX +{vix_dev_pct:.1f}% above 10-day MA — "
+                    "spike confirmed; near-term mean-reversion high-probability"
+                )
+            return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                         sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                         spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                         vol_sma3, vol_sma20, StrategyBias.premium_sell, signals)
+
+        # Default high-vol: not yet at mean-reversion extreme → straddle
+        if vix_spike:
+            signals.append(
+                f"VIX +{vix_dev_pct:.1f}% above 10-day MA — "
+                "vol expanding; mean-reversion likely but not yet extreme → straddle"
+            )
+        else:
+            signals.append("Risk-off vol expanding — straddle; monitor VIX RSI for mean-reversion entry")
+
         return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
-                     StrategyBias.straddle_only, signals)
+                     vol_sma3, vol_sma20, StrategyBias.straddle_only, signals)
+
+    # ── Gate 1b: HMM low-vol state → Risk-on, but flag suppression spike risk ──
+    if hmm_result and hmm_result.state == HmmVolState.low_vol:
+        vix_suppressed = vix_rsi is not None and vix_rsi < 30
+        if vix_suppressed:
+            signals.append(
+                f"HMM: Risk-on regime but VIX RSI {vix_rsi:.0f} (oversold) — "
+                "vol dangerously suppressed; spike risk elevated → "
+                "hedge long exposure, avoid naked calls (Lehman 2018)"
+            )
 
     # ── Gate 2: Near gamma flip zone ─────────────────────────────────────────
+    # Rather than always returning unclear, we use two signals to determine
+    # direction: which side of ZGL spot is on, and whether SMA trend confirms.
+    #   Below ZGL → already crossed into negative gamma (bearish per research)
+    #   Above ZGL → approaching flip from positive gamma territory
+    # If side + SMA agree → directional bias at reduced confidence.
+    # If they conflict → unclear (genuinely no edge).
     near_flip = spot_to_zgl_pct is not None and abs(spot_to_zgl_pct) <= 1.5
     if near_flip:
-        flip_dir = "above" if spot_to_zgl_pct > 0 else "below"  # type: ignore[operator]
-        signals.append(
-            f"Near gamma flip ({spot_to_zgl_pct:.2f}% {flip_dir} ZGL) — "
-            "regime unstable; wait for stabilization. Temporarily bearish per research."
-        )
-        return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
-                     sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
-                     spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
-                     StrategyBias.unclear, signals)
+        below_zgl = spot_to_zgl_pct < 0  # type: ignore[operator]
+
+        if below_zgl:
+            # Crossed into negative gamma — research confirms temporarily bearish
+            signals.append(
+                f"Near gamma flip: spot {abs(spot_to_zgl_pct):.2f}% BELOW ZGL — "  # type: ignore[arg-type]
+                "crossed into negative gamma; dealers now amplify moves (bearish per research)"
+            )
+            if not sma_crossed:
+                # SMA confirms bearish — lean directional despite ZGL proximity
+                signals.append(
+                    f"SMA10 ({_fmt(sma10)}) ≤ SMA50 ({_fmt(sma50)}) confirms bearish trend — "
+                    "directional_bearish at reduced confidence (near ZGL)"
+                )
+                return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                             sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                             spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                             vol_sma3, vol_sma20, StrategyBias.directional_bearish, signals)
+            else:
+                signals.append(
+                    f"SMA10 ({_fmt(sma10)}) > SMA50 ({_fmt(sma50)}) conflicts with negative gamma — "
+                    "price trend bullish but structure bearish; no edge"
+                )
+                return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                             sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                             spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                             vol_sma3, vol_sma20, StrategyBias.unclear, signals)
+        else:
+            # Still above ZGL — approaching the flip from positive gamma territory
+            signals.append(
+                f"Near gamma flip: spot {spot_to_zgl_pct:.2f}% ABOVE ZGL — "  # type: ignore[arg-type]
+                "approaching flip from positive gamma; regime unstable"
+            )
+            if not sma_crossed:
+                # SMA bearish + approaching ZGL from above → likely to cross down
+                signals.append(
+                    f"SMA10 ({_fmt(sma10)}) ≤ SMA50 ({_fmt(sma50)}) — "
+                    "price trending toward ZGL crossing; lean bearish, monitor for confirmed flip"
+                )
+                return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                             sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                             spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                             vol_sma3, vol_sma20, StrategyBias.directional_bearish, signals)
+            else:
+                # SMA bullish + still above ZGL → possibly bouncing away from flip
+                signals.append(
+                    f"SMA10 ({_fmt(sma10)}) > SMA50 ({_fmt(sma50)}) — "
+                    "price may be bouncing away from ZGL; wait for spot to extend before committing"
+                )
+                return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                             sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                             spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                             vol_sma3, vol_sma20, StrategyBias.unclear, signals)
 
     # ── Gate 3: IvGexSignal overrides ────────────────────────────────────────
     if iv_gex_signal == "classicShortGamma":
@@ -123,7 +218,7 @@ def classify_regime(
         return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
-                     StrategyBias.straddle_only, signals)
+                     vol_sma3, vol_sma20, StrategyBias.straddle_only, signals)
 
     if iv_gex_signal == "eventOverPosGamma":
         signals.append(
@@ -134,7 +229,7 @@ def classify_regime(
         return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
-                     StrategyBias.premium_sell, signals)
+                     vol_sma3, vol_sma20, StrategyBias.premium_sell, signals)
 
     # ── Gate 4: VIX RSI extreme signals (additive to directional bias) ────────
     if vix_rsi is not None:
@@ -150,6 +245,9 @@ def classify_regime(
             )
 
     # ── Gate 5: Directional bias from gamma regime + SMA cross ───────────────
+    # Volume SMA3 > SMA20 = recent volume surge, added as an alert on all paths.
+    _append_volume_signal(signals, vol_sma3, vol_sma20)
+
     if gamma_regime == "negative":
         zgl_str = f"({spot_to_zgl_pct:.1f}% from ZGL)" if spot_to_zgl_pct is not None else ""
         signals.append(
@@ -164,7 +262,7 @@ def classify_regime(
             return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                          sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                          spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
-                         StrategyBias.unclear, signals)
+                         vol_sma3, vol_sma20, StrategyBias.unclear, signals)
         signals.append(
             f"SMA10 ({_fmt(sma10)}) ≤ SMA50 ({_fmt(sma50)}) — "
             "price trend confirms bearish directional bias"
@@ -172,7 +270,7 @@ def classify_regime(
         return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
-                     StrategyBias.directional_bearish, signals)
+                     vol_sma3, vol_sma20, StrategyBias.directional_bearish, signals)
 
     if gamma_regime == "positive":
         zgl_str = f"({spot_to_zgl_pct:.1f}% from ZGL)" if spot_to_zgl_pct is not None else ""
@@ -188,7 +286,7 @@ def classify_regime(
             return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                          sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                          spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
-                         StrategyBias.unclear, signals)
+                         vol_sma3, vol_sma20, StrategyBias.unclear, signals)
         signals.append(
             f"SMA10 ({_fmt(sma10)}) > SMA50 ({_fmt(sma50)}) — "
             "price trend confirms bullish directional bias"
@@ -196,22 +294,38 @@ def classify_regime(
         return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
-                     StrategyBias.directional_bullish, signals)
+                     vol_sma3, vol_sma20, StrategyBias.directional_bullish, signals)
 
     # Fallback
     signals.append("Insufficient regime data — no strong directional edge")
     return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                  sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                  spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
-                 StrategyBias.unclear, signals)
+                 vol_sma3, vol_sma20, StrategyBias.unclear, signals)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _append_volume_signal(signals: list[str], vol_sma3: float | None, vol_sma20: float | None) -> None:
+    """Append a volume surge alert when SMA3 > SMA20."""
+    if vol_sma3 is not None and vol_sma20 is not None and vol_sma20 > 0:
+        ratio = vol_sma3 / vol_sma20
+        if vol_sma3 > vol_sma20:
+            signals.append(
+                f"Volume surge: SMA3 ({vol_sma3:,.0f}) > SMA20 ({vol_sma20:,.0f}) "
+                f"[{ratio:.2f}x] — above-average participation; confirms move conviction"
+            )
+        else:
+            signals.append(
+                f"Volume light: SMA3 ({vol_sma3:,.0f}) < SMA20 ({vol_sma20:,.0f}) "
+                f"[{ratio:.2f}x] — below-average participation; treat directional bias with caution"
+            )
+
+
 def _make(
     ticker, gamma_regime, iv_gex_signal, sma10, sma50, sma_crossed,
     vix_current, vix_10ma, vix_dev_pct, vix_rsi, spot_to_zgl_pct,
-    iv_percentile, hmm_state, hmm_prob, bias, signals,
+    iv_percentile, hmm_state, hmm_prob, vol_sma3, vol_sma20, bias, signals,
 ) -> CurrentRegime:
     return CurrentRegime(
         ticker=ticker,
@@ -228,6 +342,8 @@ def _make(
         iv_percentile=iv_percentile,
         hmm_state=hmm_state,
         hmm_probability=hmm_prob,
+        vol_sma3=vol_sma3,
+        vol_sma20=vol_sma20,
         strategy_bias=bias,
         signals=signals,
     )

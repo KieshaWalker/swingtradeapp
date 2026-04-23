@@ -189,12 +189,6 @@ def calibrate_snapshot(
     return slices
 
 
-def slice_for_dte(slices: list[SabrSlice], target_dte: int) -> SabrSlice | None:
-    """Return the calibrated slice closest to target_dte."""
-    if not slices:
-        return None
-    return min(slices, key=lambda s: abs(s.dte - target_dte))
-
 
 def _select_iv(point: dict, spot: float) -> float | None:
     """OTM convention: call IV for strike >= spot, put IV otherwise.

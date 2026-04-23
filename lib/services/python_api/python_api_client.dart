@@ -165,18 +165,28 @@ class PythonApiClient {
   // ── Fair Value ─────────────────────────────────────────────────────────────
 
   /// Returns {bs_fair_value, sabr_fair_value, model_fair_value, edge_bps,
-  ///          sabr_vol, vanna, charm, volga}
+  ///          sabr_vol, implied_vol, vanna, charm, volga}
   static Future<Map<String, dynamic>> fairValueCompute({
-    required Map<String, dynamic> contract,
-    required double underlyingPrice,
+    required double spot,
+    required double strike,
+    required double impliedVol,   // decimal, e.g. 0.21
+    required int    daysToExpiry,
+    required bool   isCall,
+    required double brokerMid,
     double? r,
-    Map<String, dynamic>? sabrParams,
+    double? calibratedRho,
+    double? calibratedNu,
   }) =>
       _post('/fair-value/compute', {
-        'contract': contract,
-        'underlying_price': underlyingPrice,
+        'spot':            spot,
+        'strike':          strike,
+        'implied_vol':     impliedVol,
+        'days_to_expiry':  daysToExpiry,
+        'is_call':         isCall,
+        'broker_mid':      brokerMid,
         'r': ?r,
-        'sabr_params': ?sabrParams,
+        'calibrated_rho': ?calibratedRho,
+        'calibrated_nu':  ?calibratedNu,
       });
 
   // ── IV Analytics ───────────────────────────────────────────────────────────
@@ -213,11 +223,13 @@ class PythonApiClient {
 
   static Future<Map<String, dynamic>> realizedVolCompute({
     required List<double> closes,
-    List<Map<String, dynamic>>? history,
+    List<double>? historyRv20d,
+    List<double>? historyRv60d,
   }) =>
       _post('/realized-vol/compute', {
         'closes': closes,
-        'history': ?history,
+        'history_rv20d': historyRv20d ?? [],
+        'history_rv60d': historyRv60d ?? [],
       });
 
   // ── Arbitrage Check ────────────────────────────────────────────────────────
@@ -319,6 +331,12 @@ class PythonApiClient {
         'history_days': historyDays,
       });
 
+  // ── Macro Score ────────────────────────────────────────────────────────────
+
+  /// Returns {total, regime, has_enough_data, used_z_scores, components: [...]}
+  static Future<Map<String, dynamic>> macroScore() =>
+      _post('/macro/score', {});
+
   // ── Greek Grid ─────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> greekGridIngest({
@@ -330,5 +348,21 @@ class PythonApiClient {
         'chain': chain,
         'obs_date': ?obsDate,
         'ticker': ?ticker,
+      });
+
+  /// Returns InterpretationResult dict: headline, headline_signal, today, period, period_obs
+  static Future<Map<String, dynamic>> greekGridInterpretGrid({
+    required List<Map<String, dynamic>> gridCells,
+  }) =>
+      _post('/greek-grid/interpret-grid', {'grid_cells': gridCells});
+
+  /// Returns InterpretationResult dict: headline, headline_signal, today, period, period_obs
+  static Future<Map<String, dynamic>> greekGridInterpretChart({
+    required List<Map<String, dynamic>> chartHistory,
+    required int dteBucket,
+  }) =>
+      _post('/greek-grid/interpret-chart', {
+        'chart_history': chartHistory,
+        'dte_bucket': dteBucket,
       });
 }

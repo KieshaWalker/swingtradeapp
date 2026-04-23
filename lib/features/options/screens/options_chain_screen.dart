@@ -14,6 +14,7 @@ import '../../../services/iv/iv_providers.dart';
 import '../../../services/kalshi/kalshi_providers.dart';
 import '../../../services/schwab/schwab_models.dart';
 import '../../../services/schwab/schwab_providers.dart';
+import '../../../services/python_api/python_api_client.dart';
 import '../services/option_scoring_engine.dart';
 import '../widgets/option_score_sheet.dart';
 
@@ -32,6 +33,26 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
   int _selectedExp = 0;
   bool _hasAutoSelected = false;
   bool _hasIngested = false;
+  Map<String, OptionScore> _scoreCache = {};
+
+  Future<void> _fetchScores(SchwabOptionsChain chain) async {
+    try {
+      final results = await PythonApiClient.scoringRank(
+        chain:           chain.rawJson,
+        underlyingPrice: chain.underlyingPrice,
+        topN:            200,
+      );
+      if (!mounted) return;
+      final map = <String, OptionScore>{};
+      for (final r in results) {
+        final m = r as Map<String, dynamic>;
+        final sym = m['contract'] as String? ?? '';
+        final s = m['score'] as Map<String, dynamic>?;
+        if (sym.isNotEmpty && s != null) map[sym] = OptionScore.fromJson(s);
+      }
+      setState(() => _scoreCache = map);
+    } catch (_) {}
+  }
 
   @override
   void initState() {
@@ -140,6 +161,7 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
             autoIngestVolSurface(widget.symbol).then((_) {
               if (mounted) ref.invalidate(volSurfaceProvider);
             });
+            _fetchScores(chain);
           }
 
           // Auto-select the expiration closest to 30 DTE on first load only.
@@ -193,12 +215,14 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
                       underlyingPrice: chain.underlyingPrice,
                       isCall:          true,
                       symbol:          widget.symbol,
+                      scoreCache:      _scoreCache,
                     ),
                     _ChainTable(
                       contracts:       exp.puts,
                       underlyingPrice: chain.underlyingPrice,
                       isCall:          false,
                       symbol:          widget.symbol,
+                      scoreCache:      _scoreCache,
                     ),
                   ],
                 ),
@@ -339,16 +363,18 @@ class _ControlsBar extends StatelessWidget {
 // ── Chain table ───────────────────────────────────────────────────────────────
 
 class _ChainTable extends StatelessWidget {
-  final List<SchwabOptionContract> contracts;
-  final double underlyingPrice;
-  final bool   isCall;
-  final String symbol;
+  final List<SchwabOptionContract>  contracts;
+  final double                      underlyingPrice;
+  final bool                        isCall;
+  final String                      symbol;
+  final Map<String, OptionScore>    scoreCache;
 
   const _ChainTable({
     required this.contracts,
     required this.underlyingPrice,
     required this.isCall,
     required this.symbol,
+    this.scoreCache = const {},
   });
 
   @override
@@ -388,6 +414,7 @@ class _ChainTable extends StatelessWidget {
               underlyingPrice: underlyingPrice,
               symbol:          symbol,
               isCall:          isCall,
+              score:           scoreCache[contracts[i].symbol],
             ),
           ),
         ),
@@ -419,20 +446,21 @@ class _Hdr extends StatelessWidget {
 
 class _ContractRow extends StatelessWidget {
   final SchwabOptionContract contract;
-  final double underlyingPrice;
-  final bool   isCall;
-  final String symbol;
+  final double               underlyingPrice;
+  final bool                 isCall;
+  final String               symbol;
+  final OptionScore?         score;
 
   const _ContractRow({
     required this.contract,
     required this.underlyingPrice,
     required this.isCall,
     required this.symbol,
+    this.score,
   });
 
   @override
   Widget build(BuildContext context) {
-    final score   = OptionScoringEngine.score(contract, underlyingPrice);
     final isAtm   = underlyingPrice > 0 &&
         (contract.strikePrice - underlyingPrice).abs() / underlyingPrice < 0.01;
     final isItm   = contract.inTheMoney;
@@ -654,12 +682,18 @@ class _KalshiEventBanner extends ConsumerWidget {
 // ── Score pill ────────────────────────────────────────────────────────────────
 
 class _ScorePill extends StatelessWidget {
-  final OptionScore score;
+  final OptionScore? score;
   const _ScorePill({required this.score});
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (score.grade) {
+    if (score == null) {
+      return const SizedBox(
+        width: 14, height: 14,
+        child: CircularProgressIndicator(strokeWidth: 1.5),
+      );
+    }
+    final color = switch (score!.grade) {
       'A' => AppTheme.profitColor,
       'B' => const Color(0xFF60A5FA),
       'C' => const Color(0xFFFBBF24),
@@ -673,7 +707,7 @@ class _ScorePill extends StatelessWidget {
         border:       Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(
-        '${score.total} ${score.grade}',
+        '${score!.total} ${score!.grade}',
         style: TextStyle(
           color:      color,
           fontSize:   11,

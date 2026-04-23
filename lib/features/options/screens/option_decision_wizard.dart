@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
+import '../../../services/python_api/python_api_client.dart';
 import '../../../services/schwab/schwab_models.dart';
 import '../../../services/schwab/schwab_providers.dart';
 import '../services/option_decision_engine.dart';
@@ -33,7 +34,8 @@ class _OptionDecisionWizardState extends ConsumerState<OptionDecisionWizard> {
   final _formKey = GlobalKey<FormState>();
 
   // ── State ───────────────────────────────────────────────────────────────────
-  bool _analyzed = false;
+  bool _analyzed  = false;
+  bool _analyzing = false;
   List<OptionDecisionResult> _results = [];
 
   @override
@@ -45,18 +47,44 @@ class _OptionDecisionWizardState extends ConsumerState<OptionDecisionWizard> {
   }
 
   // ── Run analysis ─────────────────────────────────────────────────────────────
-  void _analyze(SchwabOptionsChain chain) {
+  Future<void> _analyze(SchwabOptionsChain chain) async {
     if (!_formKey.currentState!.validate()) return;
-    final input = OptionDecisionInput(
-      direction:   _direction,
-      priceTarget: double.parse(_targetCtrl.text),
-      maxBudget:   double.parse(_budgetCtrl.text),
-      contracts:   int.tryParse(_contractsCtrl.text) ?? 1,
-    );
-    setState(() {
-      _results  = OptionDecisionEngine.rankAll(chain: chain, input: input, topN: 8);
-      _analyzed = true;
-    });
+    setState(() { _analyzing = true; _results = []; });
+
+    try {
+      final rawList = await PythonApiClient.decisionRankAll(
+        chain:       chain.rawJson,
+        direction:   _direction == TradeDirection.bullish ? 'bullish' : 'bearish',
+        priceTarget: double.parse(_targetCtrl.text),
+        maxBudget:   double.parse(_budgetCtrl.text),
+        contracts:   int.tryParse(_contractsCtrl.text) ?? 1,
+        topN:        8,
+      );
+
+      // Build symbol → contract lookup so fromJson can attach the full object
+      final contractMap = <String, SchwabOptionContract>{};
+      for (final exp in chain.expirations) {
+        for (final c in [...exp.calls, ...exp.puts]) {
+          contractMap[c.symbol] = c;
+        }
+      }
+
+      final results = <OptionDecisionResult>[];
+      for (final raw in rawList) {
+        final m        = raw as Map<String, dynamic>;
+        final sym      = m['symbol'] as String? ?? '';
+        final contract = contractMap[sym];
+        if (contract != null) {
+          results.add(OptionDecisionResult.fromJson(m, contract: contract));
+        }
+      }
+
+      if (mounted) setState(() { _results = results; _analyzed = true; });
+    } catch (_) {
+      if (mounted) setState(() => _analyzed = false);
+    } finally {
+      if (mounted) setState(() => _analyzing = false);
+    }
   }
 
   @override
@@ -106,6 +134,9 @@ class _OptionDecisionWizardState extends ConsumerState<OptionDecisionWizard> {
             _targetCtrl.text = suggested.toStringAsFixed(2);
           }
 
+          if (_analyzing) {
+            return const Center(child: CircularProgressIndicator());
+          }
           return _analyzed ? _ResultsView(
             results:    _results,
             chain:      chain,

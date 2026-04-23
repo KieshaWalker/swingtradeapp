@@ -329,19 +329,39 @@ class TradeDetailScreen extends ConsumerWidget {
 // Live Greeks card — recomputes BS Greeks from current spot + IV.
 // Only shown for open trades. Falls back gracefully when data is loading.
 // ----------------------------------------------------------------
-class _LiveGreeksCard extends ConsumerWidget {
+class _LiveGreeksCard extends ConsumerStatefulWidget {
   final Trade trade;
   const _LiveGreeksCard({required this.trade});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final quoteAsync = ref.watch(quoteProvider(trade.ticker));
-    final ivAsync = ref.watch(ivAnalysisProvider(trade.ticker));
-    final divAsync = ref.watch(dividendInfoProvider(trade.ticker));
+  ConsumerState<_LiveGreeksCard> createState() => _LiveGreeksCardState();
+}
 
-    // Need both spot and IV to compute Greeks.
-    final spot = quoteAsync.valueOrNull?.price;
-    final iv = ivAsync.valueOrNull?.currentIv; // decimal (e.g. 0.28)
+class _LiveGreeksCardState extends ConsumerState<_LiveGreeksCard> {
+  LiveGreeks? _greeks;
+  double?     _lastSpot;
+  double?     _lastIv;
+
+  void _maybeFetch(double spot, double iv, double dividendYield) {
+    if (spot == _lastSpot && iv == _lastIv) return;
+    _lastSpot = spot;
+    _lastIv   = iv;
+    fetchLiveGreeks(
+      trade:         widget.trade,
+      spot:          spot,
+      currentIv:     iv,
+      dividendYield: dividendYield,
+    ).then((g) { if (mounted && g != null) setState(() => _greeks = g); });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final quoteAsync = ref.watch(quoteProvider(widget.trade.ticker));
+    final ivAsync    = ref.watch(ivAnalysisProvider(widget.trade.ticker));
+    final divAsync   = ref.watch(dividendInfoProvider(widget.trade.ticker));
+
+    final spot          = quoteAsync.valueOrNull?.price;
+    final iv            = ivAsync.valueOrNull?.currentIv;
     final dividendYield = divAsync.valueOrNull?.annualYield ?? 0.0;
 
     if (spot == null || iv == null) {
@@ -366,12 +386,23 @@ class _LiveGreeksCard extends ConsumerWidget {
       );
     }
 
-    final g = LiveGreeksService.compute(
-      trade: trade,
-      spot: spot,
-      currentIv: iv,
-      dividendYield: dividendYield,
-    );
+    _maybeFetch(spot, iv, dividendYield);
+
+    final g = _greeks;
+    if (g == null) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(children: [
+            SizedBox(width: 14, height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+            SizedBox(width: 12),
+            Text('Computing Greeks…',
+                style: TextStyle(color: AppTheme.neutralColor, fontSize: 13)),
+          ]),
+        ),
+      );
+    }
 
     final deltaColor = g.delta >= 0 ? AppTheme.profitColor : AppTheme.lossColor;
 

@@ -16,10 +16,9 @@
 // =============================================================================
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/schwab/schwab_models.dart';
 import '../../services/schwab/schwab_providers.dart';
-import 'iv_analytics_service.dart';
+import '../python_api/python_api_client.dart';
 import 'iv_models.dart';
 import 'iv_storage_service.dart';
 
@@ -40,20 +39,33 @@ final ivAnalysisProvider =
     throw Exception('No options chain data for $symbol');
   }
 
-  // Load history and live risk-free rate in parallel
+  // Fetch history for Python's percentile calculations
   final storage = IvStorageService();
-  final snap    = IvAnalyticsService.snapshotFromChain(chain);
+  final history = await storage.getHistory(symbol);
+  final historyMaps = history.map((s) => s.toJson()).toList();
 
-  final historyFuture      = storage.getHistory(symbol);
-  final riskFreeRateFuture = _fetchRiskFreeRate();
-  final history            = await historyFuture;
-  final riskFreeRate       = await riskFreeRateFuture;
+  final raw = await PythonApiClient.ivAnalytics(
+    chain:    chain.rawJson,
+    spotPrice: chain.underlyingPrice,
+    history:  historyMaps,
+  );
+  final analysis = IvAnalysis.fromJson(raw);
 
-  // Persist today's snapshot (fire-and-forget, don't block UI)
-  storage.saveSnapshot(snap);
+  // Persist a local snapshot (fire-and-forget)
+  storage.saveSnapshot(IvSnapshot(
+    ticker:         symbol,
+    date:           DateTime.now().toUtc(),
+    atmIv:          analysis.currentIv,
+    skew:           analysis.skew,
+    totalGex:       analysis.totalGex,
+    maxGexStrike:   analysis.maxGexStrike,
+    putCallRatio:   analysis.putCallRatio,
+    underlyingPrice: analysis.underlyingPrice,
+    gexByStrike:    (raw['gex_strikes'] as List? ?? [])
+                        .cast<Map<String, dynamic>>(),
+  ));
 
-  return IvAnalyticsService.analyse(chain, history,
-      riskFreeRate: riskFreeRate);
+  return analysis;
 });
 
 // ── Raw snapshot history (for sparklines / table) ─────────────────────────────
@@ -73,32 +85,14 @@ final ivWatchlistProvider =
 
 // ── Auto-ingest helper (call from OptionsChainScreen on chain load) ───────────
 
-/// Fetches the latest FRED DFF (Fed Funds rate) from economy_indicator_snapshots.
-/// Returns null on any error so the caller can fall back to the hardcoded default.
-Future<double?> _fetchRiskFreeRate() async {
-  try {
-    final db = Supabase.instance.client;
-    final rows = await db
-        .from('economy_indicator_snapshots')
-        .select('value')
-        .eq('identifier', 'DFF')
-        .order('date', ascending: false)
-        .limit(1);
-    if (rows.isEmpty) return null;
-    final raw = rows.first['value'];
-    if (raw == null) return null;
-    return (raw as num).toDouble();
-  } catch (_) {
-    return null;
-  }
-}
-
-/// Called once per chain load to silently persist an IV snapshot.
-/// Does not block the UI — errors are swallowed to avoid disrupting chain view.
+/// Called once per chain load to silently persist an IV snapshot via Python.
 Future<void> autoIngestIv(SchwabOptionsChain chain) async {
   try {
-    final snap = IvAnalyticsService.snapshotFromChain(chain);
-    await IvStorageService().saveSnapshot(snap);
+    await PythonApiClient.ivSnapshot(
+      chain:    chain.rawJson,
+      spotPrice: chain.underlyingPrice,
+      ticker:   chain.symbol,
+    );
   } catch (_) {
     // Silent — IV ingestion should never crash the chain screen
   }

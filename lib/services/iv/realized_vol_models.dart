@@ -46,6 +46,28 @@ class RealizedVolResult {
     required this.computedAt,
   });
 
+  factory RealizedVolResult.fromJson(Map<String, dynamic> j) {
+    final ratingStr = j['rating'] as String? ?? 'no_data';
+    final rating = switch (ratingStr) {
+      'extreme'      => RealizedVolRating.extreme,
+      'elevated'     => RealizedVolRating.elevated,
+      'normal'       => RealizedVolRating.normal,
+      'suppressed'   => RealizedVolRating.suppressed,
+      'extreme_low'  => RealizedVolRating.extremeLow,
+      _              => RealizedVolRating.noData,
+    };
+    return RealizedVolResult(
+      rv20d:           (j['rv20d'] as num).toDouble(),
+      rv60d:           (j['rv60d'] as num).toDouble(),
+      rv20dPercentile: (j['rv20d_percentile'] as num?)?.toDouble(),
+      rv60dPercentile: (j['rv60d_percentile'] as num?)?.toDouble(),
+      rating:          rating,
+      rv20dHistory:    (j['rv20d_history'] as List? ?? []).map((v) => (v as num).toDouble()).toList(),
+      rv60dHistory:    (j['rv60d_history'] as List? ?? []).map((v) => (v as num).toDouble()).toList(),
+      computedAt:      DateTime.now().toUtc(),
+    );
+  }
+
   /// Check if we have enough historical data to be confident in the ranking
   bool get hasEnoughData => rv20dPercentile != null && rv60dPercentile != null;
 

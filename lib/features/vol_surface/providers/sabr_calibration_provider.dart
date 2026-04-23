@@ -16,7 +16,8 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../services/vol_surface/sabr_calibrator.dart';
+import '../../../services/python_api/python_api_client.dart';
+import '../models/vol_surface_models.dart';
 import 'vol_surface_provider.dart';
 
 // ── Repository ────────────────────────────────────────────────────────────────
@@ -120,7 +121,16 @@ class _SabrCalibrationNotifier
     }
 
     final latest = filtered.first;
-    final slices = await SabrCalibrator.calibrate(latest);
+    final points = latest.points.map((p) => p.toJson()).toList();
+    final raw = await PythonApiClient.sabrCalibrate(
+      points:    points,
+      spotPrice: latest.spotPrice ?? 0,
+      ticker:    ticker,
+      obsDate:   latest.obsDateStr,
+    );
+    final slices = (raw['slices'] as List? ?? [])
+        .map((s) => SabrSlice.fromJson(s as Map<String, dynamic>))
+        .toList();
 
     // Persist in background — don't await, never block the UI.
     ref.read(_sabrRepoProvider).upsertSlices(
@@ -141,6 +151,8 @@ final sabrSliceProvider =
   final (ticker, targetDte) = params;
   final async = ref.watch(sabrCalibrationProvider(ticker));
   return async.whenOrNull(
-    data: (slices) => SabrCalibrator.sliceForDte(slices, targetDte),
+    data: (slices) => slices.isEmpty ? null
+        : slices.reduce((a, b) =>
+            (a.dte - targetDte).abs() <= (b.dte - targetDte).abs() ? a : b),
   );
 });

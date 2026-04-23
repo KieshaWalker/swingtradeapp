@@ -20,6 +20,7 @@ import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/schwab/schwab_models.dart';
 import '../../../services/schwab/schwab_providers.dart';
 import '../models/blotter_models.dart';
+import '../../../services/python_api/python_api_client.dart';
 import '../services/fair_value_engine.dart';
 import 'validated_blotters_screen.dart';
 import 'trade_blotter_form_widgets.dart';
@@ -140,14 +141,24 @@ class _TradeBlotterScreenState extends ConsumerState<TradeBlotterScreen> {
       }
 
       final brokerMid = (match.bid + match.ask) / 2;
-      final fv = FairValueEngine.compute(
-        spot: chain.underlyingPrice,
-        strike: match.strikePrice,
-        impliedVol: match.impliedVolatility / 100,
+      final fvRaw = await PythonApiClient.fairValueCompute(
+        spot:         chain.underlyingPrice,
+        strike:       match.strikePrice,
+        impliedVol:   match.impliedVolatility / 100,
         daysToExpiry: match.daysToExpiration,
-        isCall: _contractType == ContractType.call,
-        brokerMid: brokerMid,
+        isCall:       _contractType == ContractType.call,
+        brokerMid:    brokerMid,
       );
+      final fv = FairValueResult.fromJson(fvRaw) ??
+          FairValueResult(
+            bsFairValue:    brokerMid,
+            sabrFairValue:  brokerMid,
+            modelFairValue: brokerMid,
+            brokerMid:      brokerMid,
+            edgeBps:        0,
+            sabrVol:        match.impliedVolatility / 100,
+            impliedVol:     match.impliedVolatility / 100,
+          );
 
       final wi = FairValueEngine.computeWhatIf(
         current: _portfolio,

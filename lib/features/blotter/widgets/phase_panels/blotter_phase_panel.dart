@@ -38,6 +38,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme.dart';
 import '../../../../services/iv/iv_models.dart';
 import '../../../../services/iv/iv_providers.dart';
+import '../../../../services/python_api/python_api_client.dart';
 import '../../../vol_surface/providers/sabr_calibration_provider.dart';
 import '../../models/blotter_models.dart';
 import '../../models/phase_result.dart';
@@ -89,7 +90,35 @@ class BlotterPhasePanel extends ConsumerStatefulWidget {
 }
 
 class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
-  PhaseResult? _lastResult;
+  PhaseResult?    _lastResult;
+  FairValueResult? _fv;
+  String?          _lastFvKey;
+
+  Future<void> _fetchFairValue({double? rho, double? nu}) async {
+    try {
+      final raw = await PythonApiClient.fairValueCompute(
+        spot:          widget.spot,
+        strike:        widget.strike,
+        impliedVol:    widget.impliedVol,
+        daysToExpiry:  widget.daysToExpiry,
+        isCall:        widget.isCall,
+        brokerMid:     widget.brokerMid,
+        calibratedRho: rho,
+        calibratedNu:  nu,
+      );
+      if (mounted) {
+        setState(() => _fv = FairValueResult.fromJson(raw) ?? FairValueResult(
+          bsFairValue:    widget.brokerMid,
+          sabrFairValue:  widget.brokerMid,
+          modelFairValue: widget.brokerMid,
+          brokerMid:      widget.brokerMid,
+          edgeBps:        0,
+          sabrVol:        widget.impliedVol,
+          impliedVol:     widget.impliedVol,
+        ));
+      }
+    } catch (_) {}
+  }
 
   bool get _hasData =>
       widget.spot > 0 &&
@@ -110,21 +139,22 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     }
 
     // ── Surface-calibrated SABR params (non-blocking) ──────────────────────
-    // Falls back to hardcoded defaults inside FairValueEngine when null.
     final sabrSlice = ref.watch(
         sabrSliceProvider((widget.ticker, widget.daysToExpiry)));
 
-    // ── Synchronous pricing ────────────────────────────────────────────────
-    final fv = FairValueEngine.compute(
-      spot:            widget.spot,
-      strike:          widget.strike,
-      impliedVol:      widget.impliedVol,
-      daysToExpiry:    widget.daysToExpiry,
-      isCall:          widget.isCall,
-      brokerMid:       widget.brokerMid,
-      calibratedRho:   sabrSlice?.rho,
-      calibratedNu:    sabrSlice?.nu,
-    );
+    // ── Async pricing — re-fetch when inputs change ────────────────────────
+    final fvKey = '${widget.spot}:${widget.strike}:${widget.impliedVol}:'
+        '${widget.daysToExpiry}:${widget.isCall}:${widget.brokerMid}:'
+        '${sabrSlice?.rho}:${sabrSlice?.nu}';
+    if (fvKey != _lastFvKey) {
+      _lastFvKey = fvKey;
+      _fv = null;
+      WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _fetchFairValue(rho: sabrSlice?.rho, nu: sabrSlice?.nu));
+    }
+
+    final fv = _fv;
+    if (fv == null) return const _NotReadyTile();
 
     // ── ES₉₅ component decomposition ──────────────────────────────────────
     final T      = widget.daysToExpiry / 365.0;

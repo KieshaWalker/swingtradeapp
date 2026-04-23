@@ -110,6 +110,17 @@ class MacroSubScore {
   });
 
   double get pct => maxScore > 0 ? score / maxScore : 0;
+
+  factory MacroSubScore.fromJson(Map<String, dynamic> j) => MacroSubScore(
+    name:        j['name']        as String? ?? '',
+    description: j['description'] as String? ?? '',
+    score:       (j['score']      as num?  ?? 0).toDouble(),
+    maxScore:    (j['max_score']  as num?  ?? 0).toDouble(),
+    signal:      j['signal']      as String? ?? '',
+    detail:      j['detail']      as String? ?? '',
+    isPositive:  j['is_positive'] as bool?   ?? true,
+    zScored:     j['z_scored']    as bool?   ?? false,
+  );
 }
 
 class MacroScore {
@@ -144,4 +155,15 @@ class MacroScore {
     if (score >= 30) return MacroRegime.caution;
     return MacroRegime.crisis;
   }
+
+  factory MacroScore.fromJson(Map<String, dynamic> j) => MacroScore(
+    total:         (j['total']          as num?  ?? 50).toDouble(),
+    regime:        regimeFor((j['total'] as num? ?? 50).toDouble()),
+    components:    (j['components']     as List? ?? [])
+        .map((c) => MacroSubScore.fromJson(c as Map<String, dynamic>))
+        .toList(),
+    computedAt:    DateTime.now(),
+    hasEnoughData: j['has_enough_data'] as bool? ?? false,
+    usedZScores:   j['used_z_scores']   as bool? ?? false,
+  );
 }

@@ -277,6 +277,33 @@ class SchwabOptionContract {
 
   double get midpoint => (bid + ask) / 2;
   double get spreadPct => midpoint == 0 ? 1 : (ask - bid) / midpoint;
+
+  Map<String, dynamic> toJson() => {
+    'symbol':                 symbol,
+    'strikePrice':            strikePrice,
+    'bid':                    bid,
+    'ask':                    ask,
+    'last':                   last,
+    'mark':                   markPrice,
+    'bidSize':                bidSize,
+    'askSize':                askSize,
+    'highPrice':              highPrice,
+    'lowPrice':               lowPrice,
+    'delta':                  delta,
+    'gamma':                  gamma,
+    'theta':                  theta,
+    'vega':                   vega,
+    'rho':                    rho,
+    'volatility':             impliedVolatility,
+    'totalVolume':            totalVolume,
+    'openInterest':           openInterest,
+    'daysToExpiration':       daysToExpiration,
+    'inTheMoney':             inTheMoney,
+    'intrinsicValue':         intrinsicValue,
+    'timeValue':              timeValue,
+    'theoreticalOptionValue': theoreticalOptionValue,
+    'expirationDate':         expirationDate,
+  };
 }
 
 class SchwabOptionsExpiration {
@@ -298,12 +325,14 @@ class SchwabOptionsChain {
   final double                          underlyingPrice;
   final double                          volatility;
   final List<SchwabOptionsExpiration>   expirations;
+  final Map<String, dynamic>            rawJson;
 
   const SchwabOptionsChain({
     required this.symbol,
     required this.underlyingPrice,
     required this.volatility,
     required this.expirations,
+    this.rawJson = const {},
   });
 
   factory SchwabOptionsChain.fromJson(Map<String, dynamic> json) {
@@ -358,10 +387,11 @@ class SchwabOptionsChain {
     }).toList();
 
     return SchwabOptionsChain(
-      symbol:         json['symbol'] as String? ?? '',
+      symbol:          json['symbol'] as String? ?? '',
       underlyingPrice: underlyingPrice,
-      volatility:     volatility,
-      expirations:    expirations,
+      volatility:      volatility,
+      expirations:     expirations,
+      rawJson:         json,
     );
   }
 }

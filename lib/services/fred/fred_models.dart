@@ -13,7 +13,7 @@
 //   → fredVixProvider, fredGoldProvider, fredSilverProvider,
 //     fredHyOasProvider, fredIgOasProvider, fredSpreadProvider, fredFedFundsProvider
 //   → FredTab (economy/widgets/fred_tab.dart) — historical line charts
-//   → MacroScoreService (services/macro/macro_score_service.dart) — regime scoring
+//   → macroScoreProvider (services/macro/macro_score_provider.dart) → POST /macro/score
 
 class FredObservation {
   final DateTime date;

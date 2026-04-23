@@ -26,9 +26,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme.dart';
-import '../../../../services/iv/iv_providers.dart';
 import '../../../../services/schwab/schwab_models.dart';
 import '../../../../services/schwab/schwab_providers.dart';
+import '../../../../services/python_api/python_api_client.dart';
 import '../../../options/services/option_decision_engine.dart';
 import '../../../options/services/option_scoring_engine.dart';
 import '../../../options/widgets/option_score_sheet.dart';
@@ -62,7 +62,41 @@ class FormulaPhasePanel extends ConsumerStatefulWidget {
 }
 
 class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
-  PhaseResult? _lastResult;
+  PhaseResult?         _lastResult;
+  OptionScore?         _score;
+  OptionDecisionResult? _decisionResult;
+  String?              _lastFetchKey;
+
+  Future<void> _fetchAnalysis(
+    SchwabOptionContract contract,
+    double               underlyingPrice,
+  ) async {
+    final isCall = widget.contractType == ContractType.call;
+
+    try {
+      final raw = await PythonApiClient.scoringScore(
+        contract:        contract.toJson(),
+        underlyingPrice: underlyingPrice,
+      );
+      if (mounted) setState(() => _score = OptionScore.fromJson(raw));
+    } catch (_) {}
+
+    if (widget.priceTarget != null && widget.priceTarget! > 0) {
+      try {
+        final raw = await PythonApiClient.decisionAnalyze(
+          contract:        contract.toJson(),
+          underlyingPrice: underlyingPrice,
+          direction:       isCall ? 'bullish' : 'bearish',
+          priceTarget:     widget.priceTarget!,
+          maxBudget:       widget.maxBudget,
+        );
+        if (mounted) {
+          setState(() => _decisionResult =
+              OptionDecisionResult.fromJson(raw, contract: contract));
+        }
+      } catch (_) {}
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,9 +111,7 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
       contractType: isCall ? 'CALL' : 'PUT',
       strikeCount:  20,
     );
-    final chainAsync  = ref.watch(schwabOptionsChainProvider(params));
-    final ivAsync     = ref.watch(ivAnalysisProvider(widget.ticker));
-    final ivAnalysis  = ivAsync.valueOrNull;
+    final chainAsync = ref.watch(schwabOptionsChainProvider(params));
 
     if (chainAsync.isLoading) return const _LoadingSkeleton();
     if (chainAsync.hasError) {
@@ -109,28 +141,22 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
       );
     }
 
-    // Score and analyze
-    final score = OptionScoringEngine.score(
-      contract, chain.underlyingPrice, ivAnalysis: ivAnalysis);
-
-    OptionDecisionResult? decisionResult;
-    if (widget.priceTarget != null && widget.priceTarget! > 0) {
-      decisionResult = OptionDecisionEngine.analyze(
-        contract,
-        chain.underlyingPrice,
-        OptionDecisionInput(
-          direction:   isCall ? TradeDirection.bullish : TradeDirection.bearish,
-          priceTarget: widget.priceTarget!,
-          maxBudget:   widget.maxBudget,
-          contracts:   1,
-        ),
-        ivAnalysis: ivAnalysis,
-      );
+    // Trigger async fetch when contract or price changes
+    final fetchKey = '${contract.symbol}:${chain.underlyingPrice}:${widget.priceTarget}';
+    if (fetchKey != _lastFetchKey) {
+      _lastFetchKey = fetchKey;
+      _score = null;
+      _decisionResult = null;
+      WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _fetchAnalysis(contract, chain.underlyingPrice));
     }
+
+    final score = _score;
+    if (score == null) return const _LoadingSkeleton();
 
     final result = _computeResult(
       score:          score,
-      decisionResult: decisionResult,
+      decisionResult: _decisionResult,
       contract:       contract,
       underlying:     chain.underlyingPrice,
     );
@@ -142,7 +168,7 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
       contract:       contract,
       underlying:     chain.underlyingPrice,
       score:          score,
-      decisionResult: decisionResult,
+      decisionResult: _decisionResult,
       result:         result,
     );
   }

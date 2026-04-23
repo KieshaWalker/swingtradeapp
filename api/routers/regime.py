@@ -38,6 +38,8 @@ class RegimeRequest(BaseModel):
     vix_10ma:           float | None = None
     vix_dev_pct:        float | None = None
     vix_rsi:            float | None = None
+    vol_sma3:           float | None = None
+    vol_sma20:          float | None = None
 
 
 class RegimeResponse(BaseModel):
@@ -55,6 +57,8 @@ class RegimeResponse(BaseModel):
     iv_percentile:      float | None
     hmm_state:          str   | None
     hmm_probability:    float | None
+    vol_sma3:           float | None
+    vol_sma20:          float | None
     strategy_bias:      str
     signals:            list[str]
 
@@ -267,6 +271,8 @@ async def classify(body: RegimeRequest) -> RegimeResponse:
         vix_dev_pct=vix_dev_pct,
         vix_rsi=vix_rsi,
         hmm_result=hmm_result,
+        vol_sma3=body.vol_sma3,
+        vol_sma20=body.vol_sma20,
     )
 
     return RegimeResponse(
@@ -284,6 +290,8 @@ async def classify(body: RegimeRequest) -> RegimeResponse:
         iv_percentile=regime.iv_percentile,
         hmm_state=regime.hmm_state,
         hmm_probability=regime.hmm_probability,
+        vol_sma3=regime.vol_sma3,
+        vol_sma20=regime.vol_sma20,
         strategy_bias=regime.strategy_bias.value,
         signals=regime.signals,
     )

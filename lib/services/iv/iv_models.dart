@@ -4,7 +4,7 @@
 // Data models for the IV Analytics Engine:
 //
 //  IvSnapshot      — one row from iv_snapshots table (persisted daily record)
-//  IvAnalysis      — computed live result from IvAnalyticsService
+//  IvAnalysis      — computed live result from Python /iv/analytics endpoint
 //  IvRating        — cheap / fair / expensive / extreme enum
 //  SkewPoint       — (strike, putIv, callIv, skewDelta) for the skew curve
 //  GexStrike       — per-strike gamma exposure entry
@@ -469,6 +469,78 @@ class IvAnalysis {
     this.putWallDensity,
     this.underlyingPrice,
   });
+
+  factory IvAnalysis.fromJson(Map<String, dynamic> j) {
+    final ratingStr = j['rating'] as String? ?? 'no_data';
+    final rating = switch (ratingStr) {
+      'extreme'   => IvRating.extreme,
+      'expensive' => IvRating.expensive,
+      'fair'      => IvRating.fair,
+      'cheap'     => IvRating.cheap,
+      _           => IvRating.noData,
+    };
+    final grStr = j['gamma_regime'] as String? ?? 'unknown';
+    final gammaRegime = switch (grStr) {
+      'positive' => GammaRegime.positive,
+      'negative' => GammaRegime.negative,
+      _          => GammaRegime.unknown,
+    };
+    final vrStr = j['vanna_regime'] as String? ?? 'unknown';
+    final vannaRegime = switch (vrStr) {
+      'bullish_on_vol_crush' => VannaRegime.bullishOnVolCrush,
+      'bearish_on_vol_crush' => VannaRegime.bearishOnVolCrush,
+      'bullish_on_vol_spike' => VannaRegime.bullishOnVolSpike,
+      'bearish_on_vol_spike' => VannaRegime.bearishOnVolSpike,
+      _                     => VannaRegime.unknown,
+    };
+    final gsStr = j['gamma_slope'] as String? ?? 'flat';
+    final gammaSlope = switch (gsStr) {
+      'rising'  => GammaSlope.rising,
+      'falling' => GammaSlope.falling,
+      _         => GammaSlope.flat,
+    };
+    final sigStr = j['iv_gex_signal'] as String? ?? 'unknown';
+    final ivGexSignal = switch (sigStr) {
+      'classic_short_gamma'    => IvGexSignal.classicShortGamma,
+      'regime_shift'           => IvGexSignal.regimeShift,
+      'event_over_pos_gamma'   => IvGexSignal.eventOverPosGamma,
+      'stable_gamma'           => IvGexSignal.stableGamma,
+      _                        => IvGexSignal.unknown,
+    };
+    final gexStrikes = (j['gex_strikes'] as List? ?? [])
+        .map((e) => GexStrike.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return IvAnalysis(
+      ticker:             j['ticker']               as String? ?? '',
+      currentIv:          (j['current_iv']          as num).toDouble(),
+      iv52wHigh:          (j['iv52w_high']          as num?)?.toDouble(),
+      iv52wLow:           (j['iv52w_low']           as num?)?.toDouble(),
+      ivRank:             (j['iv_rank']             as num?)?.toDouble(),
+      ivPercentile:       (j['iv_percentile']       as num?)?.toDouble(),
+      rating:             rating,
+      historyDays:        (j['history_days']        as num? ?? 0).toInt(),
+      skew:               (j['skew']                as num?)?.toDouble(),
+      skewAvg52w:         (j['skew_avg_52w']        as num?)?.toDouble(),
+      skewZScore:         (j['skew_z_score']        as num?)?.toDouble(),
+      gexStrikes:         gexStrikes,
+      totalGex:           (j['total_gex']           as num?)?.toDouble(),
+      maxGexStrike:       (j['max_gex_strike']      as num?)?.toDouble(),
+      putCallRatio:       (j['put_call_ratio']      as num?)?.toDouble(),
+      totalVex:           (j['total_vex']           as num?)?.toDouble(),
+      totalCex:           (j['total_cex']           as num?)?.toDouble(),
+      totalVolga:         (j['total_volga']         as num?)?.toDouble(),
+      maxVexStrike:       (j['max_vex_strike']      as num?)?.toDouble(),
+      gammaRegime:        gammaRegime,
+      vannaRegime:        vannaRegime,
+      zeroGammaLevel:     (j['zero_gamma_level']    as num?)?.toDouble(),
+      spotToZeroGammaPct: (j['spot_to_zero_gamma_pct'] as num?)?.toDouble(),
+      deltaGex:           (j['delta_gex']           as num?)?.toDouble(),
+      gammaSlope:         gammaSlope,
+      ivGexSignal:        ivGexSignal,
+      putWallDensity:     (j['put_wall_density']    as num?)?.toDouble(),
+      underlyingPrice:    (j['underlying_price']    as num?)?.toDouble(),
+    );
+  }
 
   bool get hasHistory => historyDays >= 10;
 

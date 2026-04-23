@@ -40,6 +40,8 @@ from typing import Any
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
+
+from core.ml_utils import _slope
 from sklearn.metrics import accuracy_score, precision_score, recall_score, roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
@@ -522,16 +524,6 @@ def _sf(d: dict, key: str) -> float | None:
     except (TypeError, ValueError):
         return None
 
-
-def _slope(values: list[float | None]) -> float | None:
-    pts = [(i, v) for i, v in enumerate(values) if v is not None]
-    if len(pts) < 2:
-        return None
-    xs = np.array([p[0] for p in pts], dtype=float)
-    ys = np.array([p[1] for p in pts], dtype=float)
-    xs -= xs.mean()
-    denom = float(np.dot(xs, xs))
-    return float(np.dot(xs, ys) / denom) if denom else None
 
 
 def _insufficient(model_type: str) -> TrainingResult:

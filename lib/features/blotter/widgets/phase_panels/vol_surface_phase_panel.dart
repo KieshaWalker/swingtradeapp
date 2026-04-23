@@ -551,7 +551,18 @@ class VolSurfacePhasePanel extends ConsumerStatefulWidget {
 }
 
 class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
-  PhaseResult? _last;
+  PhaseResult?    _last;
+  ArbCheckResult? _arbCheckResult;
+  String?         _lastArbSnapId;
+
+  void _maybeRefreshArb(VolSnapshot snap) {
+    final id = '${snap.ticker}:${snap.obsDateStr}';
+    if (id == _lastArbSnapId) return;
+    _lastArbSnapId = id;
+    checkArbForSnap(snap).then((result) {
+      if (mounted) setState(() => _arbCheckResult = result);
+    });
+  }
 
   void _notifyIfChanged(PhaseResult result) {
     if (_last?.status == result.status && _last?.headline == result.headline) {
@@ -638,7 +649,8 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
           dte:    widget.daysToExpiry,
           isCall: widget.isCall,
         );
-        final arbCheck = ArbChecker.check(snap);
+        _maybeRefreshArb(snap);
+        final arbCheck = _arbCheckResult;
 
         final result = _toPhaseResult(
           a:                    analysis,

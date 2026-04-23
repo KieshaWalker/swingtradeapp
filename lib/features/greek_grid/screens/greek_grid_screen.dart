@@ -20,6 +20,7 @@ import '../models/greek_grid_models.dart';
 import '../providers/greek_grid_providers.dart';
 import '../services/greek_interpreter.dart';
 import '../widgets/greek_grid_heatmap.dart';
+import '../../../../services/python_api/python_api_client.dart';
 import '../widgets/greek_cell_detail_sheet.dart';
 import '../widgets/greek_interpretation_panel.dart';
 
@@ -32,9 +33,11 @@ class GreekGridScreen extends ConsumerStatefulWidget {
 }
 
 class _GreekGridScreenState extends ConsumerState<GreekGridScreen> {
-  GreekSelector _selected  = GreekSelector.delta;
-  int           _dateIndex = 0; // index into sorted obs_dates list
-  bool          _indexInit = false;
+  GreekSelector     _selected     = GreekSelector.delta;
+  int               _dateIndex    = 0;
+  bool              _indexInit    = false;
+  InterpretationResult? _interpretation;
+  String?           _lastInterpKey;
 
   @override
   Widget build(BuildContext context) {
@@ -75,24 +78,28 @@ class _GreekGridScreenState extends ConsumerState<GreekGridScreen> {
           if (obsDates.isEmpty) {
             return _EmptyState(symbol: widget.symbol);
           }
-          final interpretation = interpretGreekGrid(
-            snapshot,
-            gridAsync.valueOrNull ?? [],
-            widget.symbol,
-          );
+
+          final allPoints = gridAsync.valueOrNull ?? [];
+          final interpKey = '${widget.symbol}_${selectedDate}_${allPoints.length}';
+          if (interpKey != _lastInterpKey) {
+            _lastInterpKey = interpKey;
+            _interpretation = null;
+            WidgetsBinding.instance.addPostFrameCallback((_) => _fetchInterpretation(allPoints));
+          }
+
           return Column(
             children: [
               const SizedBox(height: 8),
-              // ── Greek selector ─────────────────────────────────────────────
               _GreekSwitcherBar(
                 selected:  _selected,
                 onChanged: (g) => setState(() => _selected = g),
               ),
               const SizedBox(height: 4),
-              // ── Interpretation panel ───────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: GreekInterpretationPanel(result: interpretation),
+                child: _interpretation != null
+                    ? GreekInterpretationPanel(result: _interpretation!)
+                    : const SizedBox(height: 48, child: Center(child: CircularProgressIndicator(strokeWidth: 1.5))),
               ),
               const SizedBox(height: 4),
               // ── Date scrubber ──────────────────────────────────────────────
@@ -118,6 +125,19 @@ class _GreekGridScreenState extends ConsumerState<GreekGridScreen> {
         },
       ),
     );
+  }
+
+  Future<void> _fetchInterpretation(List<dynamic> allPoints) async {
+    try {
+      final cells = allPoints
+          .map((p) => (p as dynamic).toJson() as Map<String, dynamic>)
+          .toList();
+      final raw = await PythonApiClient.greekGridInterpretGrid(gridCells: cells);
+      if (!mounted) return;
+      setState(() => _interpretation = InterpretationResult.fromJson(raw));
+    } catch (_) {
+      // leave _interpretation null — panel stays hidden
+    }
   }
 
   void _showDetail(StrikeBand band, ExpiryBucket bucket) {

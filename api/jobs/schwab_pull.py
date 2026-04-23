@@ -88,7 +88,7 @@ async def run_schwab_pull() -> dict:
         vix_rsi: float | None = None
         hmm_result = None
         if fmp_key:
-            vix_closes = await _fetch_fmp_closes(client, "^VIX", fmp_key, days=65)
+            vix_closes, _ = await _fetch_fmp_closes(client, "^VIX", fmp_key, days=65)
             if vix_closes:
                 vix_current = vix_closes[-1]
                 ma10_data = vix_closes[-10:] if len(vix_closes) >= 10 else []
@@ -144,15 +144,15 @@ async def run_schwab_pull() -> dict:
                 # ── Step 4: IV analytics + vvol rank ─────────────────────────
                 history = _fetch_iv_history(db, ticker)
                 iv_result = iv_analyse(chain, history)
-                vvol = None
+                vvol = None ## Compute vvol only when we have a SABR slice and history to compare against, otherwise the rank/percentile would be meaningless noise.
                 if slices and nu_history:
                     atm_slice = min(slices, key=lambda s: abs(s.dte - 30))
                     vvol      = vvol_compute(atm_slice.nu, nu_history)
                 _upsert_iv_snapshot(db, ticker, today, iv_result, spot, vvol)
 
                 # ── Step 5: Greek grid ────────────────────────────────────────
-                obs_dt = datetime.now(timezone.utc)
-                cells = grid_ingest(chain, obs_dt)
+                obs_date = datetime.now(timezone.utc)
+                cells = grid_ingest(chain, obs_date)
                 if cells:
                     _upsert_greek_grid(db, ticker, today, cells, spot, user_id)
 
@@ -160,9 +160,10 @@ async def run_schwab_pull() -> dict:
                 _upsert_greek_snapshots(db, ticker, today, spot, chain, user_id)
 
                 # ── Step 7: Realized vol (FMP historical prices) ──────────────
-                closes: list[float] = []
+                closes:  list[float] = []
+                volumes: list[float] = []
                 if fmp_key:
-                    closes = await _fetch_fmp_closes(client, ticker, fmp_key, days=65)
+                    closes, volumes = await _fetch_fmp_closes(client, ticker, fmp_key, days=65)
                     if closes:
                         rv = rv_compute(closes)
                         log.info("rv_computed ticker=%s rv20d=%s rv60d=%s", ticker, rv.rv20d, rv.rv60d)
@@ -170,7 +171,9 @@ async def run_schwab_pull() -> dict:
                 # ── Step 8: SMA + current regime classification ───────────────
                 # SMA computed from already-fetched FMP closes (trading days).
                 # Filter out zero/None values to guard against bad FMP entries.
-                clean_closes = [c for c in closes if c and c > 0]
+                clean_closes  = [c for c in closes  if c and c > 0]
+                clean_volumes = [v for v in volumes if v and v > 0]
+
                 sma10: float | None = (
                     sum(clean_closes[-10:]) / 10 if len(clean_closes) >= 10 else None
                 )
@@ -179,6 +182,12 @@ async def run_schwab_pull() -> dict:
                 )
                 sma_crossed: bool | None = (
                     sma10 > sma50 if (sma10 is not None and sma50 is not None) else None
+                )
+                vol_sma3: float | None = (
+                    sum(clean_volumes[-3:]) / 3 if len(clean_volumes) >= 3 else None
+                )
+                vol_sma20: float | None = (
+                    sum(clean_volumes[-20:]) / 20 if len(clean_volumes) >= 20 else None
                 )
 
                 regime = classify_regime(
@@ -194,6 +203,8 @@ async def run_schwab_pull() -> dict:
                     vix_dev_pct=vix_dev_pct,
                     vix_rsi=vix_rsi,
                     hmm_result=hmm_result,
+                    vol_sma3=vol_sma3,
+                    vol_sma20=vol_sma20,
                 )
                 _upsert_regime_snapshot(db, today, regime)
                 log.info(
@@ -434,6 +445,7 @@ def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvo
     ]
     row: dict = {
         "ticker": ticker, "date": today,
+        "date_time": datetime.now(timezone.utc).isoformat(),
         "atm_iv": iv_result.current_iv, "skew": iv_result.skew,
         "gex_by_strike": gex_by_strike, "total_gex": iv_result.total_gex,
         "max_gex_strike": iv_result.max_gex_strike,
@@ -459,6 +471,8 @@ def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float, user_id:
                 "strike_band": cell.strike_band.value,
                 "expiry_bucket": cell.expiry_bucket.value,
                 "strike": cell.strike, "delta": cell.delta, "gamma": cell.gamma,
+                "expiry_dte": cell.expiry_dte,
+                "delta": cell.delta, "gamma": cell.gamma,
                 "vega": cell.vega, "theta": cell.theta, "iv": cell.iv,
                 "vanna": cell.vanna, "charm": cell.charm, "volga": cell.volga,
                 "open_interest": cell.open_interest, "volume": cell.volume,
@@ -486,6 +500,8 @@ def _upsert_regime_snapshot(db, today: str, regime) -> None:
             "iv_percentile":    regime.iv_percentile,
             "hmm_state":        regime.hmm_state,
             "hmm_probability":  regime.hmm_probability,
+            "vol_sma3":         regime.vol_sma3,
+            "vol_sma20":        regime.vol_sma20,
             "strategy_bias":    regime.strategy_bias.value,
             "signals":          regime.signals,
         },
@@ -495,7 +511,8 @@ def _upsert_regime_snapshot(db, today: str, regime) -> None:
 
 async def _fetch_fmp_closes(
     client: httpx.AsyncClient, ticker: str, fmp_key: str, days: int = 65
-) -> list[float]:
+) -> tuple[list[float], list[float]]:
+    """Return (closes, volumes) oldest→newest. Volumes may be empty if field absent."""
     try:
         url = (
             f"https://financialmodelingprep.com/stable/historical-price-eod/full"
@@ -503,11 +520,13 @@ async def _fetch_fmp_closes(
         )
         resp = await client.get(url, timeout=30.0)
         if resp.status_code != 200:
-            return []
+            return [], []
         data = resp.json()
         hist = data if isinstance(data, list) else data.get("historical", [])
-        closes = [float(d["close"]) for d in hist if "close" in d]
-        closes.reverse()  # oldest → newest
-        return closes
+        closes  = [float(d["close"])  for d in hist if "close"  in d]
+        volumes = [float(d["volume"]) for d in hist if "volume" in d]
+        closes.reverse()   # oldest → newest
+        volumes.reverse()
+        return closes, volumes
     except Exception:
-        return []
+        return [], []

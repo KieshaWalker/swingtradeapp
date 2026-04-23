@@ -1,8 +1,10 @@
 from datetime import datetime, date, timezone
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import Any
 
 from services.greek_grid_ingester import ingest
+from services.greek_interpreter import interpret_greek_grid, interpret_greek_chart
 from core.supabase_client import get_supabase
 
 router = APIRouter()
@@ -17,9 +19,9 @@ class GreekGridRequest(BaseModel):
 @router.post("/ingest")
 def greek_grid_ingest(req: GreekGridRequest):
     today = req.obs_date or date.today().isoformat()
-    obs_dt = datetime.fromisoformat(today) if req.obs_date else datetime.now(timezone.utc)
+    obs_date = datetime.fromisoformat(today) if req.obs_date else datetime.now(timezone.utc)
 
-    cells = ingest(req.chain, obs_dt)
+    cells = ingest(req.chain, obs_date)
     ticker = req.ticker or req.chain.get("symbol", "")
     spot = float(req.chain.get("underlyingPrice", 0))
 
@@ -47,7 +49,7 @@ def greek_grid_ingest(req: GreekGridRequest):
             }, on_conflict="ticker,obs_date,strike_band,expiry_bucket").execute()
 
     return {
-        "cells_written": len(cells),
+        "cells_written":  len(cells),
         "ticker": ticker,
         "date": today,
         "cells": [
@@ -70,3 +72,30 @@ def greek_grid_ingest(req: GreekGridRequest):
             for c in cells
         ],
     }
+
+
+# ── Interpretation ─────────────────────────────────────────────────────────────
+
+class InterpretGridRequest(BaseModel):
+    grid_cells: list[dict[str, Any]]
+
+
+class InterpretChartRequest(BaseModel):
+    chart_history: list[dict[str, Any]]
+    dte_bucket: int
+
+
+@router.post("/interpret-grid")
+def greek_grid_interpret_grid(req: InterpretGridRequest):
+    try:
+        return interpret_greek_grid(req.grid_cells)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/interpret-chart")
+def greek_grid_interpret_chart(req: InterpretChartRequest):
+    try:
+        return interpret_greek_chart(req.chart_history, req.dte_bucket)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

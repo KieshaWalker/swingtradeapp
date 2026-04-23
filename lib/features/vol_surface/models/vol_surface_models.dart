@@ -239,6 +239,51 @@ class VolPoint {
       );
 }
 
+// ── SABR calibrated slice (one per DTE) ──────────────────────────────────────
+
+class SabrSlice {
+  final int    dte;
+  final double alpha;
+  final double beta;
+  final double rho;
+  final double nu;
+  final double rmse;
+  final int    nPoints;
+
+  const SabrSlice({
+    required this.dte,
+    required this.alpha,
+    required this.beta,
+    required this.rho,
+    required this.nu,
+    required this.rmse,
+    required this.nPoints,
+  });
+
+  bool get isReliable => nPoints >= 5 && rmse < 0.015;
+
+  Map<String, dynamic> toJson() => {
+    'dte': dte, 'alpha': alpha, 'beta': beta,
+    'rho': rho, 'nu': nu, 'rmse': rmse, 'n_points': nPoints,
+  };
+
+  factory SabrSlice.fromJson(Map<String, dynamic> j) => SabrSlice(
+    dte:     (j['dte']      as num).toInt(),
+    alpha:   (j['alpha']    as num).toDouble(),
+    beta:    (j['beta']     as num).toDouble(),
+    rho:     (j['rho']      as num).toDouble(),
+    nu:      (j['nu']       as num).toDouble(),
+    rmse:    (j['rmse']     as num).toDouble(),
+    nPoints: (j['n_points'] as num).toInt(),
+  );
+
+  @override
+  String toString() =>
+      'SABR ${dte}d: α=${alpha.toStringAsFixed(4)} '
+      'ρ=${rho.toStringAsFixed(3)} ν=${nu.toStringAsFixed(3)} '
+      'rmse=${(rmse * 100).toStringAsFixed(2)}% (n=$nPoints)';
+}
+
 class VolSnapshot {
   final String? id;
   final String ticker;

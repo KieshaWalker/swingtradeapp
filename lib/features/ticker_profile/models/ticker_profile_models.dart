@@ -20,6 +20,9 @@
 import '../../trades/models/trade.dart';
 import '../../../services/sec/sec_models.dart';
 
+// to import iv_analytics.py data models without circular dependency, we put them in a separate file that can be imported by both api and app layers
+// to do this we had to move the IvRating enum out of iv_analytics.py and into its own file, since the analytics result model depends on it
+
 // ─────────────────────────────────────────────────────────────────────────────
 // TICKER PROFILE NOTE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -541,7 +544,7 @@ class TickerTradeAnalytics {
 // ─────────────────────────────────────────────────────────────────────────────
 // TIMELINE EVENT  (merged feed — never stored)
 // ─────────────────────────────────────────────────────────────────────────────
-
+// this is from the Ticker Profile timeline, which merges multiple event types into one feed. Each event has a timestamp, a type, a summary string, and an optional link to the underlying data (e.g. trade details, note body, etc).
 enum TimelineEventType {
   tradeOpened,
   tradeClosed,

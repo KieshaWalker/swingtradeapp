@@ -53,17 +53,16 @@ class TickerDashboardScreen extends ConsumerWidget {
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (trades) {
           // Trade-derived symbols (most recently traded first)
-          final seen = <String>{};
+          final seen = <String>{};  
           final tradeSymbols = trades
               .map((t) => t.ticker.toUpperCase())
-              .where(seen.add)
+              .where((s) => seen.add(s))  // filter to unique symbols
               .toList();
 
           // Merge watched-only tickers after trade symbols
-          final watched = watchedAsync.valueOrNull ?? [];
           final symbols = [
+
             ...tradeSymbols,
-            ...watched.where((s) => !seen.contains(s)),
           ];
 
           if (symbols.isEmpty) {
@@ -127,7 +126,7 @@ class _TickerCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final quoteAsync = ref.watch(quoteProvider(symbol));
-    final analytics = ref.watch(tickerAnalyticsProvider(symbol));
+    final analytics = ref.watch(tickerAnalyticsProvider(symbol)); //
     final tradesAsync = ref.watch(tradesProvider);
 
     final openCount =

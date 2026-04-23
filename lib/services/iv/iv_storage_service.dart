@@ -29,7 +29,6 @@ class IvStorageService {
   // ── Read ───────────────────────────────────────────────────────────────────
 
   /// Returns up to 252 daily snapshots for [ticker], sorted ascending by date.
-  /// Used by IvAnalyticsService to compute IVR, IVP, and skew Z-score.
   Future<List<IvSnapshot>> getHistory(String ticker) async {
     final rows = await _db
         .from('iv_snapshots')

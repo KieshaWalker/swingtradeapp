@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
 import '../../../features/greek_grid/services/greek_interpreter.dart';
 import '../../../features/greek_grid/widgets/greek_interpretation_panel.dart';
+import '../../../services/python_api/python_api_client.dart';
 import '../../../services/greeks/greek_snapshot_models.dart';
 import '../../../services/greeks/greek_snapshot_providers.dart';
  
@@ -244,7 +245,7 @@ class _BucketView extends ConsumerWidget {
 
 // ── Body ──────────────────────────────────────────────────────────────────────
 
-class _GreekChartBody extends StatelessWidget {
+class _GreekChartBody extends StatefulWidget {
   final String              symbol;
   final List<GreekSnapshot> history;
   final _BucketDef          bucket;
@@ -255,8 +256,49 @@ class _GreekChartBody extends StatelessWidget {
   });
 
   @override
+  State<_GreekChartBody> createState() => _GreekChartBodyState();
+}
+
+class _GreekChartBodyState extends State<_GreekChartBody> {
+  InterpretationResult? _interpretation;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchInterpretation();
+  }
+
+  @override
+  void didUpdateWidget(_GreekChartBody old) {
+    super.didUpdateWidget(old);
+    if (old.history.length != widget.history.length ||
+        old.bucket.dte != widget.bucket.dte) {
+      setState(() => _interpretation = null);
+      _fetchInterpretation();
+    }
+  }
+
+  Future<void> _fetchInterpretation() async {
+    try {
+      final raw = await PythonApiClient.greekGridInterpretChart(
+        chartHistory: widget.history.map((s) => {
+          'call_delta': s.callDelta,
+          'call_gamma': s.callGamma,
+          'call_theta': s.callTheta,
+          'call_vega':  s.callVega,
+          'call_iv':    s.callIv,
+          'put_iv':     s.putIv,
+        }).toList(),
+        dteBucket: widget.bucket.dte,
+      );
+      if (!mounted) return;
+      setState(() => _interpretation = InterpretationResult.fromJson(raw));
+    } catch (_) {}
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final latest    = history.last;
+    final latest     = widget.history.last;
     final callStrike = latest.callStrike;
     final putStrike  = latest.putStrike;
     final callDte    = latest.callDte;
@@ -264,21 +306,19 @@ class _GreekChartBody extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
       children: [
-        // ── Header summary ──────────────────────────────────────────────────
         _SummaryBar(
           underlying:  latest.underlyingPrice,
           callStrike:  callStrike,
           putStrike:   putStrike,
           dte:         callDte,
-          dteBucket:   bucket.dte,
-          dayCount:    history.length,
+          dteBucket:   widget.bucket.dte,
+          dayCount:    widget.history.length,
         ),
         const SizedBox(height: 10),
 
-        // ── Interpretation ───────────────────────────────────────────────────
-        GreekInterpretationPanel(
-          result: interpretGreekChart(history, bucket.dte),
-        ),
+        _interpretation != null
+            ? GreekInterpretationPanel(result: _interpretation!)
+            : const SizedBox(height: 48, child: Center(child: CircularProgressIndicator(strokeWidth: 1.5))),
         const SizedBox(height: 10),
 
         // ── Legend ──────────────────────────────────────────────────────────
@@ -287,7 +327,7 @@ class _GreekChartBody extends StatelessWidget {
 
         // ── One chart per Greek ──────────────────────────────────────────────
         for (final def in _greeks) ...[
-          _GreekCard(def: def, history: history),
+          _GreekCard(def: def, history: widget.history),
           const SizedBox(height: 12),
         ],
       ],

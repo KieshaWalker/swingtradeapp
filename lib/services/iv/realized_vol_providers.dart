@@ -18,9 +18,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:developer' as developer;
 import '../../features/auth/providers/auth_provider.dart';
+import '../python_api/python_api_client.dart';
 import 'realized_vol_models.dart';
 import 'realized_vol_repository.dart';
-import 'realized_vol_service.dart';
 
 // ── Repository singleton ───────────────────────────────────────────────────
 
@@ -68,8 +68,15 @@ final realizedVolProvider = FutureProvider.family<RealizedVolResult, String>((
   // Fetch RV history for percentile ranking
   final rvHistory = await repo.getHistory(symbol, limit: 252);
 
-  // Compute RV
-  final result = RealizedVolService.compute(prices, history: rvHistory);
+  // Compute RV via Python API
+  final historyRv20d = rvHistory.map((s) => s.rv20d).toList();
+  final historyRv60d = rvHistory.map((s) => s.rv60d).toList();
+  final raw = await PythonApiClient.realizedVolCompute(
+    closes:       prices,
+    historyRv20d: historyRv20d,
+    historyRv60d: historyRv60d,
+  );
+  final result = RealizedVolResult.fromJson(raw);
 
   // Auto-persist today's snapshot
   try {

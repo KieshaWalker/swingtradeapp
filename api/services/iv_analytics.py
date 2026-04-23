@@ -664,3 +664,5 @@ def _rating_from_rank(ivr: float) -> IvRating:
     if ivr >= 25:
         return IvRating.fair
     return IvRating.cheap
+
+

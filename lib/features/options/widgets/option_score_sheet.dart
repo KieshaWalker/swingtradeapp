@@ -8,13 +8,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
-import '../../../services/iv/iv_analytics_service.dart';
 import '../../../services/iv/iv_models.dart';
 import '../../../services/iv/iv_providers.dart';
+import '../../../services/python_api/python_api_client.dart';
 import '../../../services/schwab/schwab_models.dart';
 import '../services/option_scoring_engine.dart';
 
-class OptionScoreSheet extends ConsumerWidget {
+class OptionScoreSheet extends ConsumerStatefulWidget {
   final SchwabOptionContract contract;
   final double underlyingPrice;
   final String symbol;
@@ -26,15 +26,62 @@ class OptionScoreSheet extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final score   = OptionScoringEngine.score(contract, underlyingPrice);
-    // OCC format: UNDERLYING + YYMMDD + C/P + STRIKE — use regex, not contains('C'),
-    // which misidentifies puts on tickers like C (Citigroup), CRM, CVX.
-    final occMatch = RegExp(r'\d{6}([CP])\d').firstMatch(contract.symbol);
-    final isCall  = occMatch?.group(1) == 'C';
+  ConsumerState<OptionScoreSheet> createState() => _OptionScoreSheetState();
+}
+
+class _OptionScoreSheetState extends ConsumerState<OptionScoreSheet> {
+  OptionScore? _score;
+  ({double vanna, double charm, double volga})? _greeks;
+
+  // OCC format: UNDERLYING + YYMMDD + C/P + STRIKE — use regex, not contains('C'),
+  // which misidentifies puts on tickers like C (Citigroup), CRM, CVX.
+  late final bool _isCall = RegExp(r'\d{6}([CP])\d')
+      .firstMatch(widget.contract.symbol)
+      ?.group(1) == 'C';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAsync();
+  }
+
+  Future<void> _fetchAsync() async {
+    try {
+      final raw = await PythonApiClient.scoringScore(
+        contract:        widget.contract.toJson(),
+        underlyingPrice: widget.underlyingPrice,
+      );
+      if (mounted) setState(() => _score = OptionScore.fromJson(raw));
+    } catch (_) {}
+
+    try {
+      final t = (widget.contract.daysToExpiration / 365.0)
+          .clamp(1.0 / (365 * 24), 10.0);
+      final raw = await PythonApiClient.bsGreeks(
+        s:          widget.underlyingPrice,
+        k:          widget.contract.strikePrice,
+        t:          t,
+        sigma:      widget.contract.impliedVolatility / 100.0,
+        r:          0.0433,
+        optionType: _isCall ? 'call' : 'put',
+      );
+      if (mounted) {
+        setState(() => _greeks = (
+          vanna: (raw['vanna'] as num? ?? 0).toDouble(),
+          charm: (raw['charm'] as num? ?? 0).toDouble(),
+          volga: (raw['vomma'] as num? ?? raw['volga'] as num? ?? 0).toDouble(),
+        ));
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final score  = _score;
+    final greeks = _greeks ?? (vanna: 0.0, charm: 0.0, volga: 0.0);
+    final isCall = _isCall;
     final color   = isCall ? AppTheme.profitColor : AppTheme.lossColor;
-    final ivAsync = ref.watch(ivAnalysisProvider(symbol));
-    final greeks  = IvAnalyticsService.contractGreeks(contract, underlyingPrice);
+    final ivAsync = ref.watch(ivAnalysisProvider(widget.symbol));
 
     return DraggableScrollableSheet(
       initialChildSize: 0.90,
@@ -71,7 +118,7 @@ class OptionScoreSheet extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '$symbol  \$${contract.strikePrice.toStringAsFixed(0)}  ${isCall ? 'CALL' : 'PUT'}',
+                        '${widget.symbol}  \$${widget.contract.strikePrice.toStringAsFixed(0)}  ${isCall ? 'CALL' : 'PUT'}',
                         style: TextStyle(
                           color:      color,
                           fontSize:   22,
@@ -84,21 +131,29 @@ class OptionScoreSheet extends ConsumerWidget {
                         spacing: 6,
                         runSpacing: 4,
                         children: [
-                          _tag('EXP ${contract.expirationDate}', AppTheme.neutralColor),
-                          _tag('${contract.daysToExpiration}d DTE',
-                              contract.daysToExpiration <= 7
+                          _tag('EXP ${widget.contract.expirationDate}', AppTheme.neutralColor),
+                          _tag('${widget.contract.daysToExpiration}d DTE',
+                              widget.contract.daysToExpiration <= 7
                                   ? AppTheme.lossColor
                                   : AppTheme.neutralColor),
-                          _tag('IV ${contract.impliedVolatility.toStringAsFixed(1)}%',
+                          _tag('IV ${widget.contract.impliedVolatility.toStringAsFixed(1)}%',
                               AppTheme.neutralColor),
-                          _tag(contract.inTheMoney ? 'ITM' : 'OTM',
-                              contract.inTheMoney ? color : AppTheme.neutralColor),
+                          _tag(widget.contract.inTheMoney ? 'ITM' : 'OTM',
+                              widget.contract.inTheMoney ? color : AppTheme.neutralColor),
                         ],
                       ),
                     ],
                   ),
                 ),
-                _GradeBadge(score: score),
+                score != null
+                    ? _GradeBadge(score: score)
+                    : const SizedBox(
+                        width: 56, height: 56,
+                        child: Center(child: SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )),
+                      ),
               ],
             ),
 
@@ -107,29 +162,37 @@ class OptionScoreSheet extends ConsumerWidget {
             // ── Score breakdown ──────────────────────────────────────────
             _sectionLabel('Score Breakdown'),
             const SizedBox(height: 8),
-            _ScoreBarChart(score: score),
-
-            const SizedBox(height: 4),
-            if (score.flags.isNotEmpty) ...[
-              Wrap(
-                spacing: 6,
-                children: score.flags
-                    .map((f) => Chip(
-                          label:     Text(f, style: const TextStyle(fontSize: 10)),
-                          padding:   EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
-                          backgroundColor:
-                              AppTheme.lossColor.withValues(alpha: 0.12),
-                          side: BorderSide(
-                            color: AppTheme.lossColor.withValues(alpha: 0.4),
-                          ),
-                          labelStyle:
-                              const TextStyle(color: AppTheme.lossColor),
-                        ))
-                    .toList(),
+            if (score != null) ...[
+              _ScoreBarChart(score: score),
+              const SizedBox(height: 4),
+              if (score.flags.isNotEmpty) ...[
+                Wrap(
+                  spacing: 6,
+                  children: score.flags
+                      .map((f) => Chip(
+                            label:     Text(f, style: const TextStyle(fontSize: 10)),
+                            padding:   EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            backgroundColor:
+                                AppTheme.lossColor.withValues(alpha: 0.12),
+                            side: BorderSide(
+                              color: AppTheme.lossColor.withValues(alpha: 0.4),
+                            ),
+                            labelStyle:
+                                const TextStyle(color: AppTheme.lossColor),
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ] else
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Center(child: SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )),
               ),
-              const SizedBox(height: 8),
-            ],
 
             const SizedBox(height: 16),
 
@@ -149,7 +212,7 @@ class OptionScoreSheet extends ConsumerWidget {
               error: (_, _) => const SizedBox.shrink(),
               data:  (iv)   => _IvEnvironmentSection(
                 iv:      iv,
-                contract: contract,
+                contract: widget.contract,
                 greeks:  greeks,
                 isCall:  isCall,
               ),
@@ -161,12 +224,12 @@ class OptionScoreSheet extends ConsumerWidget {
             _sectionLabel('Pricing'),
             const SizedBox(height: 8),
             _GridRow(items: [
-              _kv('Bid',    '\$${contract.bid.toStringAsFixed(2)}'),
-              _kv('Ask',    '\$${contract.ask.toStringAsFixed(2)}'),
-              _kv('Last',   '\$${contract.last.toStringAsFixed(2)}'),
-              _kv('Mid',    '\$${contract.midpoint.toStringAsFixed(2)}'),
-              _kv('Spread', '${(contract.spreadPct * 100).toStringAsFixed(1)}%'),
-              _kv('IV',     '${contract.impliedVolatility.toStringAsFixed(1)}%'),
+              _kv('Bid',    '\$${widget.contract.bid.toStringAsFixed(2)}'),
+              _kv('Ask',    '\$${widget.contract.ask.toStringAsFixed(2)}'),
+              _kv('Last',   '\$${widget.contract.last.toStringAsFixed(2)}'),
+              _kv('Mid',    '\$${widget.contract.midpoint.toStringAsFixed(2)}'),
+              _kv('Spread', '${(widget.contract.spreadPct * 100).toStringAsFixed(1)}%'),
+              _kv('IV',     '${widget.contract.impliedVolatility.toStringAsFixed(1)}%'),
             ]),
 
             const SizedBox(height: 16),
@@ -175,12 +238,12 @@ class OptionScoreSheet extends ConsumerWidget {
             _sectionLabel('Greeks'),
             const SizedBox(height: 8),
             _GridRow(items: [
-              _kv('Delta', contract.delta.toStringAsFixed(3)),
-              _kv('Gamma', contract.gamma.toStringAsFixed(4)),
-              _kv('Theta', contract.theta.toStringAsFixed(3)),
-              _kv('Vega',  contract.vega.toStringAsFixed(4)),
-              _kv('Rho',   contract.rho.toStringAsFixed(4)),
-              _kv('OI',    _fmtInt(contract.openInterest)),
+              _kv('Delta', widget.contract.delta.toStringAsFixed(3)),
+              _kv('Gamma', widget.contract.gamma.toStringAsFixed(4)),
+              _kv('Theta', widget.contract.theta.toStringAsFixed(3)),
+              _kv('Vega',  widget.contract.vega.toStringAsFixed(4)),
+              _kv('Rho',   widget.contract.rho.toStringAsFixed(4)),
+              _kv('OI',    _fmtInt(widget.contract.openInterest)),
             ]),
 
             const SizedBox(height: 16),
@@ -189,21 +252,21 @@ class OptionScoreSheet extends ConsumerWidget {
             _sectionLabel('Market'),
             const SizedBox(height: 8),
             _GridRow(items: [
-              _kv('Volume',   _fmtInt(contract.totalVolume)),
-              _kv('OI',       _fmtInt(contract.openInterest)),
-              _kv('DTE',      '${contract.daysToExpiration}d'),
-              _kv('ITM',      contract.inTheMoney ? 'Yes' : 'No'),
+              _kv('Volume',   _fmtInt(widget.contract.totalVolume)),
+              _kv('OI',       _fmtInt(widget.contract.openInterest)),
+              _kv('DTE',      '${widget.contract.daysToExpiration}d'),
+              _kv('ITM',      widget.contract.inTheMoney ? 'Yes' : 'No'),
               _kv('Intrinsic',
-                  '\$${_intrinsic(contract, underlyingPrice, isCall).toStringAsFixed(2)}'),
-              _kv('Time Val', '\$${contract.timeValue.toStringAsFixed(2)}'),
+                  '\$${_intrinsic(widget.contract, widget.underlyingPrice, isCall).toStringAsFixed(2)}'),
+              _kv('Time Val', '\$${widget.contract.timeValue.toStringAsFixed(2)}'),
             ]),
 
             const SizedBox(height: 16),
 
             // Formula check
             _FormulaCheck(
-              contract:        contract,
-              underlyingPrice: underlyingPrice,
+              contract:        widget.contract,
+              underlyingPrice: widget.underlyingPrice,
               isCall:          isCall,
               ivAnalysis:      ivAsync.valueOrNull,
               greeks:          greeks,
@@ -221,13 +284,13 @@ class OptionScoreSheet extends ConsumerWidget {
                   Navigator.pop(context);
                   context.push('/trades/add', extra: {
                     'prefill': {
-                      'ticker':     symbol,
+                      'ticker':     widget.symbol,
                       'optionType': isCall ? 'call' : 'put',
-                      'strike':     contract.strikePrice,
-                      'expiration': contract.expirationDate,
-                      'entryPrice': contract.ask,
-                      'delta':      contract.delta.abs(),
-                      'impliedVol': contract.impliedVolatility,
+                      'strike':     widget.contract.strikePrice,
+                      'expiration': widget.contract.expirationDate,
+                      'entryPrice': widget.contract.ask,
+                      'delta':      widget.contract.delta.abs(),
+                      'impliedVol': widget.contract.impliedVolatility,
                     },
                   });
                 },
