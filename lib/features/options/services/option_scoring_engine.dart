@@ -24,7 +24,7 @@ class OptionScore {
   final bool   ivpUsed;         // true = IVP data was used for ivScore
   final String grade;           // A / B / C / D
   final List<String> flags;
-
+ 
   const OptionScore({
     required this.total,
     required this.baseScore,
