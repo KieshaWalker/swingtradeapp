@@ -546,6 +546,7 @@ def _unknown_result(ticker: str) -> TickerRegimeResult:
             vix_dev_pct=None,
             regime_duration_days=0,
         ),
+        scoring_method="heuristic",
         strategy_bias="unclear",
         signals=["Insufficient historical data for ML analysis"],
         last_updated=None,

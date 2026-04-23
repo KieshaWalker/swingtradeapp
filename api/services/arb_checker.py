@@ -99,7 +99,7 @@ def _bs_call(F: float, K: float, T: float, sigma: float, r: float = DEFAULT_R) -
         return df * max(F - K, 0)
     d1 = (math.log(F / K) + 0.5 * sigma * sigma * T) / sig_sqt
     d2 = d1 - sig_sqt
-    return df * (F * norm.cdf(d1) - K * norm.cdf(d2))
+    return float(df * (F * norm.cdf(d1) - K * norm.cdf(d2)))
 
 
 def check(

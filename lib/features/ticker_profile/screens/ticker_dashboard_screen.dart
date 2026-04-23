@@ -52,17 +52,19 @@ class TickerDashboardScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (trades) {
-          // Trade-derived symbols (most recently traded first)
-          final seen = <String>{};  
+          final seen = <String>{};
           final tradeSymbols = trades
               .map((t) => t.ticker.toUpperCase())
-              .where((s) => seen.add(s))  // filter to unique symbols
+              .where((s) => seen.add(s))
               .toList();
 
-          // Merge watched-only tickers after trade symbols
+          // Watched-only tickers appended after traded symbols, no duplicates
+          final watchedSymbols = watchedAsync.valueOrNull ?? [];
           final symbols = [
-
             ...tradeSymbols,
+            ...watchedSymbols
+                .map((s) => s.toUpperCase())
+                .where((s) => !seen.contains(s)),
           ];
 
           if (symbols.isEmpty) {

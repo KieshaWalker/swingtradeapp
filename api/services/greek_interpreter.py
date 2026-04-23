@@ -105,9 +105,9 @@ def interpret_greek_grid(
 
     # Build a lookup: (strike_band, expiry_bucket) → cell (newest obs_date wins)
     cells_by_date: dict[str, list[dict]] = {}
-    for cell in grid_cells:
-        d = cell.get("obs_date", "")
-        cells_by_date.setdefault(d, []).append(cell)
+    for row in grid_cells:
+        d = row.get("obs_date", "")
+        cells_by_date.setdefault(d, []).append(row)
 
     if not cells_by_date:
         return _build_result([], [], 0)

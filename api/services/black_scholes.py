@@ -17,12 +17,18 @@
 
 import math
 from dataclasses import dataclass
-from scipy.stats import norm
+from scipy.stats import norm as _norm
 
+def _cdf(x: float) -> float: return float(_norm.cdf(x))  # noqa: E302
+def _pdf(x: float) -> float: return float(_norm.pdf(x))  # noqa: E302
 from core.constants import DEFAULT_R, FV_SIGXT_GUARD
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _cdf(x: float) -> float: return float(_cdf(x))
+def _pdf(x: float) -> float: return float(_pdf(x))
+
 
 def _d1d2(F: float, K: float, T: float, sigma: float) -> tuple[float, float]:
     sqrt_T = math.sqrt(T)
@@ -43,8 +49,8 @@ def bs_price(F: float, K: float, T: float, r: float, sigma: float, is_call: bool
         return df * max(F - K, 0) if is_call else df * max(K - F, 0)
     d1, d2 = _d1d2(F, K, T, sigma)
     if is_call:
-        return df * (F * norm.cdf(d1) - K * norm.cdf(d2))
-    return df * (K * norm.cdf(-d2) - F * norm.cdf(-d1))
+        return df * (F * _cdf(d1) - K * _cdf(d2))
+    return df * (K * _cdf(-d2) - F * _cdf(-d1))
 
 
 # ── First-order Greeks ────────────────────────────────────────────────────────
@@ -57,7 +63,7 @@ def bs_delta(F: float, K: float, T: float, r: float, sigma: float, is_call: bool
         return (1.0 if F > K else 0.0) if is_call else (-1.0 if F < K else 0.0)
     d1, _ = _d1d2(F, K, T, sigma)
     df = math.exp(-r * T)
-    return df * norm.cdf(d1) if is_call else df * (norm.cdf(d1) - 1.0)
+    return df * _cdf(d1) if is_call else df * (_cdf(d1) - 1.0)
 
 
 def bs_gamma(F: float, K: float, T: float, r: float, sigma: float) -> float:
@@ -68,7 +74,7 @@ def bs_gamma(F: float, K: float, T: float, r: float, sigma: float) -> float:
         return 0.0
     d1, _ = _d1d2(F, K, T, sigma)
     df = math.exp(-r * T)
-    return df * norm.pdf(d1) / (F * sig_sqt)
+    return df * _pdf(d1) / (F * sig_sqt)
 
 
 def bs_vega(F: float, K: float, T: float, r: float, sigma: float) -> float:
@@ -79,7 +85,7 @@ def bs_vega(F: float, K: float, T: float, r: float, sigma: float) -> float:
         return 0.0
     d1, _ = _d1d2(F, K, T, sigma)
     df = math.exp(-r * T)
-    return F * df * norm.pdf(d1) * sqrt_T
+    return F * df * _pdf(d1) * sqrt_T
 
 
 def bs_theta(F: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> float:
@@ -90,11 +96,11 @@ def bs_theta(F: float, K: float, T: float, r: float, sigma: float, is_call: bool
         return 0.0
     d1, d2 = _d1d2(F, K, T, sigma)
     df = math.exp(-r * T)
-    phi_d1 = norm.pdf(d1)
+    phi_d1 = _pdf(d1)
     decay = -F * df * phi_d1 * sigma / (2 * sqrt_T)
     if is_call:
-        return (decay - r * K * df * norm.cdf(d2) + r * F * df * norm.cdf(d1)) / 365
-    return (decay + r * K * df * norm.cdf(-d2) - r * F * df * norm.cdf(-d1)) / 365
+        return (decay - r * K * df * _cdf(d2) + r * F * df * _cdf(d1)) / 365
+    return (decay + r * K * df * _cdf(-d2) - r * F * df * _cdf(-d1)) / 365
 
 
 def bs_rho(F: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> float:
@@ -106,8 +112,8 @@ def bs_rho(F: float, K: float, T: float, r: float, sigma: float, is_call: bool) 
     d1, d2 = _d1d2(F, K, T, sigma)
     df = math.exp(-r * T)
     if is_call:
-        return K * T * df * norm.cdf(d2)
-    return -K * T * df * norm.cdf(-d2)
+        return K * T * df * _cdf(d2)
+    return -K * T * df * _cdf(-d2)
 
 
 # ── Second-order Greeks ───────────────────────────────────────────────────────
@@ -119,7 +125,7 @@ def bs_vanna(F: float, K: float, T: float, sigma: float, is_call: bool = True) -
     if sig_sqt < FV_SIGXT_GUARD or T < 1e-8:
         return 0.0
     d1, d2 = _d1d2(F, K, T, sigma)
-    return -norm.pdf(d1) * d2 / sigma
+    return -_pdf(d1) * d2 / sigma
 
 
 def bs_charm(F: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> float:
@@ -133,7 +139,7 @@ def bs_charm(F: float, K: float, T: float, r: float, sigma: float, is_call: bool
         return 0.0
     d1, d2 = _d1d2(F, K, T, sigma)
     df = math.exp(-r * T)
-    return -df * norm.pdf(d1) * (2 * r * T - d2 * sigma * sqrt_T) / (2 * sigma * sqrt_T)
+    return -df * _pdf(d1) * (2 * r * T - d2 * sigma * sqrt_T) / (2 * sigma * sqrt_T)
 
 
 def bs_vomma(F: float, K: float, T: float, r: float, sigma: float, is_call: bool = True) -> float:
@@ -143,7 +149,7 @@ def bs_vomma(F: float, K: float, T: float, r: float, sigma: float, is_call: bool
     if sig_sqt < FV_SIGXT_GUARD or T < 1e-8:
         return 0.0
     d1, d2 = _d1d2(F, K, T, sigma)
-    vega = F * math.exp(-r * T) * norm.pdf(d1) * sqrt_T
+    vega = F * math.exp(-r * T) * _pdf(d1) * sqrt_T
     return vega * d1 * d2 / sigma
 
 
@@ -182,11 +188,11 @@ def bs_all_greeks(
         )
 
     d1, d2 = _d1d2(F, K, T, sigma)
-    phi_d1 = norm.pdf(d1)
-    cdf_d1 = norm.cdf(d1)
-    cdf_d2 = norm.cdf(d2)
-    cdf_neg_d1 = norm.cdf(-d1)
-    cdf_neg_d2 = norm.cdf(-d2)
+    phi_d1 = _pdf(d1)
+    cdf_d1 = _cdf(d1)
+    cdf_d2 = _cdf(d2)
+    cdf_neg_d1 = _cdf(-d1)
+    cdf_neg_d2 = _cdf(-d2)
 
     # Delta
     delta = df * cdf_d1 if is_call else df * (cdf_d1 - 1.0)
