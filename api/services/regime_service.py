@@ -3,32 +3,45 @@
 # =============================================================================
 # Current market regime classifier.
 #
-# Inputs (all computed in the 8-hour pipeline):
-#   • GammaRegime + IvGexSignal     from iv_analytics
-#   • spot_to_zero_gamma_pct        from iv_analytics (ZGL distance)
-#   • iv_percentile                 from iv_analytics (IVP 0–100)
-#   • delta_gex                     from iv_analytics (GEX_t − GEX_{t−1})
-#   • sma10, sma50                  from FMP historical closes
-#   • vix_dev_pct                   (VIX − VIX10MA) / VIX10MA × 100
-#   • vix_rsi                       Wilder RSI(14) on VIX closes
-#   • hmm_state                     HMM 2-state low/high-vol regime
+# SCOPE: Thresholds calibrated for index and large-cap equity underlyings
+# (SPY, QQQ, single large-caps with |GEX| > $100M). Do not use for small/mid-cap
+# without recalibrating thresholds. See MIN_MEANINGFUL_TOTAL_GEX_USD in constants.
 #
-# Output: CurrentRegime with StrategyBias + human-readable signals.
+# Inputs (all computed in the 8-hour pipeline):
+#   • GammaRegime + IvGexSignal        from iv_analytics
+#   • spot_to_zero_gamma_pct           from iv_analytics (ZGL distance)
+#   • spot_to_vt_pct                   from iv_analytics (Volatility Trigger distance)
+#   • iv_percentile                    from iv_analytics (IVP 0–100)
+#   • delta_gex, total_gex, gex_0dte_pct from iv_analytics
+#   • sma10, sma50, price_roc5         from FMP historical closes
+#   • vix_dev_pct, vix_rsi             VIX momentum + mean-reversion signals
+#   • vix_term_structure_ratio         VIX / VIX3M (<1 contango, >1 backwardation)
+#   • vvix_current, vvix_10ma          VVIX early warning for regime transition
+#   • hmm_state                        HMM 2-state low/high-vol regime
+#   • breadth_proxy                    RSP/SPY breadth z-score
 #
 # Decision table (priority order):
-#   1. HMM high-vol                → straddle_only (regardless of gamma)
+#   0. VVIX spike + suppressed VIX  → override premium_sell to straddle_only
+#   1. HMM high-vol                 → straddle_only (regardless of gamma)
 #      1a. VIX RSI > 70 in high-vol → premium_sell (mean-reversion imminent)
-#   2. Near gamma flip (≤1.5%)     → directional or unclear (side + SMA)
-#   3. classicShortGamma signal    → straddle_only
-#   4. regimeShift signal          → straddle_only (stealth danger zone)
-#   5. eventOverPosGamma signal    → premium_sell
-#   6. stableGamma signal          → premium_sell
-#   7. negative gamma + SMA bear   → directional_bearish
-#   8. negative gamma + SMA bull   → unclear (conflict)
-#   9. positive gamma + SMA bull   → directional_bullish
-#  10. positive gamma + SMA bear   → unclear (conflict)
-#  11. deltaGex transition signal  → additive bullish signal
-#  12. fallback                    → unclear
+#      1b. Backwardation reinforce  → straddle_only confirmed
+#   2. Near gamma flip (≤1.5%)      → directional or unclear (side + SMA)
+#      2a. Transition corridor      → directional_bearish / unclear (VT < spot < ZGL)
+#   3. classicShortGamma signal     → straddle_only
+#   4. regimeShift signal           → straddle_only (stealth danger zone)
+#   5. eventOverPosGamma signal     → premium_sell (backwardation adds warning)
+#   6. stableGamma signal           → premium_sell (backwardation downgrades to unclear)
+#   7. negative gamma + SMA bear    → directional_bearish
+#   8. negative gamma + SMA bull    → unclear (conflict); ROC5 tiebreaker
+#   9. positive gamma + SMA bull    → directional_bullish
+#  10. positive gamma + SMA bear    → unclear (conflict); ROC5 tiebreaker
+#  11. deltaGex transition signal   → additive bullish signal
+#  12. fallback                     → unclear
+#
+# Additive contextual signals (never override bias alone):
+#   • 0DTE-dominated GEX warning
+#   • Breadth divergence
+#   • Asset-class scope guard
 # =============================================================================
 
 from __future__ import annotations
@@ -37,6 +50,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from .hmm_regime import HmmRegimeResult, HmmVolState
+from core.constants import MIN_MEANINGFUL_TOTAL_GEX_USD
 
 
 class StrategyBias(str, Enum):

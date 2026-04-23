@@ -5,8 +5,9 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from routers import black_scholes, sabr, fair_value, iv_analytics, realized_vol, arb, scoring, decision, greek_grid, scheduler_trigger, regime, macro
 
@@ -38,6 +39,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    # Without this, Starlette's ServerErrorMiddleware returns the 500 response
+    # before CORSMiddleware can inject Access-Control-Allow-Origin headers.
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 app.include_router(black_scholes.router, prefix="/bs", tags=["Black-Scholes"])
 app.include_router(sabr.router, prefix="/sabr", tags=["SABR"])

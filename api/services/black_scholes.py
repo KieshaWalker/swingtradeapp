@@ -19,15 +19,13 @@ import math
 from dataclasses import dataclass
 from scipy.stats import norm as _norm
 
-def _cdf(x: float) -> float: return float(_norm.cdf(x))  # noqa: E302
-def _pdf(x: float) -> float: return float(_norm.pdf(x))  # noqa: E302
 from core.constants import DEFAULT_R, FV_SIGXT_GUARD
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _cdf(x: float) -> float: return float(_cdf(x))
-def _pdf(x: float) -> float: return float(_pdf(x))
+def _cdf(x: float) -> float: return float(_norm.cdf(x))  # noqa: E302
+def _pdf(x: float) -> float: return float(_norm.pdf(x))  # noqa: E302
 
 
 def _d1d2(F: float, K: float, T: float, sigma: float) -> tuple[float, float]:

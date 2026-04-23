@@ -339,17 +339,6 @@ class PythonApiClient {
 
   // ── Greek Grid ─────────────────────────────────────────────────────────────
 
-  static Future<Map<String, dynamic>> greekGridIngest({
-    required Map<String, dynamic> chain,
-    String? obsDate,
-    String? ticker,
-  }) =>
-      _post('/greek-grid/ingest', {
-        'chain': chain,
-        'obs_date': ?obsDate,
-        'ticker': ?ticker,
-      });
-
   /// Returns InterpretationResult dict: headline, headline_signal, today, period, period_obs
   static Future<Map<String, dynamic>> greekGridInterpretGrid({
     required List<Map<String, dynamic>> gridCells,

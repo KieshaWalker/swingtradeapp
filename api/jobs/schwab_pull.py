@@ -79,15 +79,21 @@ async def run_schwab_pull() -> dict:
     results: dict[str, str] = {}
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        # ── Fetch VIX closes once for the whole pipeline run ──────────────────
-        # FMP timeseries=65 returns 65 trading-day records (oldest→newest after reverse).
+        # ── Fetch VIX + supplementary vol indexes once per pipeline run ─────────
+        # All fetched once here and reused across every ticker to avoid redundant
+        # API calls. FMP timeseries=65 gives 65 trading days oldest→newest.
         vix_closes: list[float] = []
         vix_current: float | None = None
         vix_10ma: float | None = None
         vix_dev_pct: float | None = None
         vix_rsi: float | None = None
         hmm_result = None
+        vix_term_structure_ratio: float | None = None   # VIX / VIX3M (<1=contango, >1=backwardation)
+        vvix_current: float | None = None
+        vvix_10ma: float | None = None
+        breadth_proxy: float | None = None              # RSP/SPY 5d return ratio z-score
         if fmp_key:
+            # VIX
             vix_closes, _ = await _fetch_fmp_closes(client, "^VIX", fmp_key, days=65)
             if vix_closes:
                 vix_current = vix_closes[-1]
@@ -97,14 +103,57 @@ async def run_schwab_pull() -> dict:
                     vix_dev_pct = (vix_current - vix_10ma) / vix_10ma * 100
                 vix_rsi = compute_wilder_rsi(vix_closes)
                 hmm_result = classify_vix_regime(vix_closes)
-                log.info(
-                    "vix_computed current=%.2f 10ma=%s dev_pct=%s rsi=%s hmm=%s",
-                    vix_current,
-                    f"{vix_10ma:.2f}" if vix_10ma else "—",
-                    f"{vix_dev_pct:.1f}%" if vix_dev_pct else "—",
-                    f"{vix_rsi:.1f}" if vix_rsi else "—",
-                    hmm_result.state.value if hmm_result else "—",
-                )
+
+            # VIX3M term structure — ratio <1 = contango (tailwind for premium selling)
+            vix3m_closes, _ = await _fetch_fmp_closes(client, "^VIX3M", fmp_key, days=5)
+            if vix3m_closes and vix_current is not None and vix3m_closes[-1] > 0:
+                vix_term_structure_ratio = vix_current / vix3m_closes[-1]
+
+            # VVIX — rising above 120 while VIX < 20 is an early regime-transition warning
+            vvix_closes, _ = await _fetch_fmp_closes(client, "^VVIX", fmp_key, days=15)
+            if vvix_closes:
+                vvix_current = vvix_closes[-1]
+                vvix_ma10 = vvix_closes[-10:] if len(vvix_closes) >= 10 else vvix_closes
+                vvix_10ma = sum(vvix_ma10) / len(vvix_ma10)
+
+            # Breadth proxy: RSP (equal-weight) vs SPY (cap-weight) 5d return ratio.
+            # When RSP underperforms SPY the market is narrow (few mega-caps driving index).
+            # z-score < -1.5 signals breadth divergence; signals are context-only (no bias override).
+            spy_closes, _ = await _fetch_fmp_closes(client, "SPY", fmp_key, days=25)
+            rsp_closes, _ = await _fetch_fmp_closes(client, "RSP", fmp_key, days=25)
+            if len(spy_closes) >= 10 and len(rsp_closes) >= 10:
+                spy_rets = [
+                    (spy_closes[i] - spy_closes[i - 5]) / spy_closes[i - 5]
+                    for i in range(5, len(spy_closes))
+                    if spy_closes[i - 5] > 0
+                ]
+                rsp_rets = [
+                    (rsp_closes[i] - rsp_closes[i - 5]) / rsp_closes[i - 5]
+                    for i in range(5, len(rsp_closes))
+                    if rsp_closes[i - 5] > 0
+                ]
+                n = min(len(spy_rets), len(rsp_rets))
+                if n >= 5:
+                    ratios = [
+                        rsp_rets[i] / spy_rets[i] if abs(spy_rets[i]) > 1e-6 else 1.0
+                        for i in range(n)
+                    ]
+                    ratio_mean = sum(ratios) / len(ratios)
+                    ratio_std = (sum((r - ratio_mean) ** 2 for r in ratios) / len(ratios)) ** 0.5
+                    if ratio_std > 1e-6:
+                        breadth_proxy = (ratios[-1] - ratio_mean) / ratio_std
+
+            log.info(
+                "vix_computed current=%.2f 10ma=%s dev_pct=%s rsi=%s hmm=%s ts_ratio=%s vvix=%s breadth_z=%s",
+                vix_current or 0,
+                f"{vix_10ma:.2f}" if vix_10ma else "—",
+                f"{vix_dev_pct:.1f}%" if vix_dev_pct else "—",
+                f"{vix_rsi:.1f}" if vix_rsi else "—",
+                hmm_result.state.value if hmm_result else "—",
+                f"{vix_term_structure_ratio:.3f}" if vix_term_structure_ratio else "—",
+                f"{vvix_current:.1f}" if vvix_current else "—",
+                f"{breadth_proxy:.2f}" if breadth_proxy else "—",
+            )
 
         for row in rows:
             ticker  = row["ticker"]
@@ -189,6 +238,10 @@ async def run_schwab_pull() -> dict:
                 vol_sma20: float | None = (
                     sum(clean_volumes[-20:]) / 20 if len(clean_volumes) >= 20 else None
                 )
+                # 5-day rate of change — leading momentum indicator ahead of SMA cross
+                price_roc5: float | None = None
+                if len(clean_closes) >= 6 and clean_closes[-6] > 0:
+                    price_roc5 = (clean_closes[-1] - clean_closes[-6]) / clean_closes[-6] * 100
 
                 regime = classify_regime(
                     ticker=ticker,
@@ -205,6 +258,15 @@ async def run_schwab_pull() -> dict:
                     hmm_result=hmm_result,
                     vol_sma3=vol_sma3,
                     vol_sma20=vol_sma20,
+                    delta_gex=iv_result.delta_gex,
+                    vix_term_structure_ratio=vix_term_structure_ratio,
+                    vvix_current=vvix_current,
+                    vvix_10ma=vvix_10ma,
+                    spot_to_vt_pct=iv_result.spot_to_vt_pct,
+                    breadth_proxy=breadth_proxy,
+                    price_roc5=price_roc5,
+                    total_gex=iv_result.total_gex,
+                    gex_0dte_pct=iv_result.gex_0dte_pct,
                 )
                 _upsert_regime_snapshot(db, today, regime)
                 log.info(
@@ -485,25 +547,35 @@ def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float, user_id:
 def _upsert_regime_snapshot(db, today: str, regime) -> None:
     db.table("regime_snapshots").upsert(
         {
-            "ticker":           regime.ticker,
-            "obs_date":         today,
-            "gamma_regime":     regime.gamma_regime,
-            "iv_gex_signal":    regime.iv_gex_signal,
-            "sma10":            regime.sma10,
-            "sma50":            regime.sma50,
-            "sma_crossed":      regime.sma_crossed,
-            "vix_current":      regime.vix_current,
-            "vix_10ma":         regime.vix_10ma,
-            "vix_dev_pct":      regime.vix_dev_pct,
-            "vix_rsi":          regime.vix_rsi,
-            "spot_to_zgl_pct":  regime.spot_to_zgl_pct,
-            "iv_percentile":    regime.iv_percentile,
-            "hmm_state":        regime.hmm_state,
-            "hmm_probability":  regime.hmm_probability,
-            "vol_sma3":         regime.vol_sma3,
-            "vol_sma20":        regime.vol_sma20,
-            "strategy_bias":    regime.strategy_bias.value,
-            "signals":          regime.signals,
+            "ticker":                   regime.ticker,
+            "obs_date":                 today,
+            "gamma_regime":             regime.gamma_regime,
+            "iv_gex_signal":            regime.iv_gex_signal,
+            "sma10":                    regime.sma10,
+            "sma50":                    regime.sma50,
+            "sma_crossed":              regime.sma_crossed,
+            "vix_current":              regime.vix_current,
+            "vix_10ma":                 regime.vix_10ma,
+            "vix_dev_pct":              regime.vix_dev_pct,
+            "vix_rsi":                  regime.vix_rsi,
+            "spot_to_zgl_pct":          regime.spot_to_zgl_pct,
+            "iv_percentile":            regime.iv_percentile,
+            "hmm_state":                regime.hmm_state,
+            "hmm_probability":          regime.hmm_probability,
+            "vol_sma3":                 regime.vol_sma3,
+            "vol_sma20":                regime.vol_sma20,
+            "delta_gex":                regime.delta_gex,
+            "strategy_bias":            regime.strategy_bias.value,
+            "signals":                  regime.signals,
+            # New institutional-grade fields
+            "vix_term_structure_ratio": regime.vix_term_structure_ratio,
+            "vvix_current":             regime.vvix_current,
+            "spot_to_vt_pct":           regime.spot_to_vt_pct,
+            "breadth_proxy":            regime.breadth_proxy,
+            "gex_0dte":                 regime.gex_0dte,
+            "gex_0dte_pct":             regime.gex_0dte_pct,
+            "price_roc5":               regime.price_roc5,
+            "total_gex":                regime.total_gex,
         },
         on_conflict="ticker,obs_date",
     ).execute()

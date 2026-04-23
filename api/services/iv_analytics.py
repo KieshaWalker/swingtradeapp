@@ -182,6 +182,11 @@ class IvAnalysisResult:
     gamma_slope: GammaSlope
     iv_gex_signal: IvGexSignal
     put_wall_density: float | None
+    # ── New institutional-grade fields ──────────────────────────────────────────
+    gex_0dte: float | None          # GEX contributed solely by same-day expiries ($M)
+    gex_0dte_pct: float | None      # gex_0dte / |total_gex| × 100
+    volatility_trigger: float | None  # lowest significant positive-GEX support above ZGL
+    spot_to_vt_pct: float | None    # (spot − VT) / spot × 100; <0 = in transition corridor
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -259,6 +264,23 @@ def analyse(
         if total_call_oi > 0:
             put_call_ratio = total_put_oi / total_call_oi
 
+    # ── 0DTE vs longer-dated GEX split ─────────────────────────────────────────
+    # 0DTE gamma behaves differently (intraday only); ZGL computed from longer-dated
+    # strikes gives a cleaner multi-day support/resistance picture.
+    exp_0dte   = [e for e in expirations if int(e.get("dte", 999)) == 0]
+    exp_longer = [e for e in expirations if int(e.get("dte", 999)) > 0]
+
+    gex_strikes_longer = _compute_gex(exp_longer, spot) if exp_longer else []
+
+    gex_0dte: float | None = None
+    gex_0dte_pct: float | None = None
+    if exp_0dte:
+        gex_strikes_0dte = _compute_gex(exp_0dte, spot)
+        if gex_strikes_0dte:
+            gex_0dte = sum(g.dealer_gex(spot) for g in gex_strikes_0dte)
+            if total_gex is not None and abs(total_gex) > 0:
+                gex_0dte_pct = gex_0dte / abs(total_gex) * 100
+
     # ── Second-order Greeks ────────────────────────────────────────────────────
     second_order = _compute_second_order(expirations, spot, r)
     total_vex: float | None = None
@@ -282,10 +304,23 @@ def analyse(
                         else VannaRegime.bearish_on_vol_crush)
 
     # ── Advanced GEX metrics ───────────────────────────────────────────────────
-    zero_gamma_level = _compute_zero_gamma_level(gex_strikes, spot)
+    # Use longer-dated strikes for ZGL: 0DTE gamma is intraday noise for multi-day
+    # swing positioning. Longer-dated GEX gives a cleaner support/resistance picture.
+    zgl_source = gex_strikes_longer if gex_strikes_longer else gex_strikes
+    zero_gamma_level = _compute_zero_gamma_level(zgl_source, spot)
     spot_to_zero_gamma_pct: float | None = None
     if zero_gamma_level is not None and spot > 0:
         spot_to_zero_gamma_pct = (spot - zero_gamma_level) / spot * 100
+
+    # Volatility Trigger — last meaningful positive-GEX support wall above ZGL.
+    # The VT/ZGL corridor is the "transition zone" where bearish feedback loops
+    # are latent but not yet ignited (SpotGamma methodology).
+    volatility_trigger: float | None = None
+    spot_to_vt_pct: float | None = None
+    if zero_gamma_level is not None and spot > 0:
+        volatility_trigger = _compute_volatility_trigger(zgl_source, spot, zero_gamma_level)
+        if volatility_trigger is not None:
+            spot_to_vt_pct = (spot - volatility_trigger) / spot * 100
 
     delta_gex: float | None = None
     if total_gex is not None and len(history) >= 2:
@@ -327,6 +362,10 @@ def analyse(
         gamma_slope=gamma_slope,
         iv_gex_signal=iv_gex_signal,
         put_wall_density=put_wall_density,
+        gex_0dte=gex_0dte,
+        gex_0dte_pct=gex_0dte_pct,
+        volatility_trigger=volatility_trigger,
+        spot_to_vt_pct=spot_to_vt_pct,
     )
 
 
@@ -458,6 +497,43 @@ def _compute_zero_gamma_level(gex_strikes: list[GexStrike], spot: float) -> floa
     if not near:
         return None
     return min(near, key=lambda s: abs(s.dealer_gex(spot))).strike
+
+
+# ── Volatility Trigger ───────────────────────────────────────────────────────
+
+def _compute_volatility_trigger(
+    gex_strikes: list[GexStrike], spot: float, zgl: float
+) -> float | None:
+    """Derive the Volatility Trigger — lowest significant positive-GEX support above ZGL.
+
+    Scans strikes between ZGL and spot. The VT is the floor of meaningful positive
+    gamma support: once spot breaches VT but stays above ZGL, the market is in the
+    'transition corridor' where bearish feedback loops are latent but not ignited.
+
+    Returns the lowest strike with dealer_gex >= 5% of total positive GEX in the
+    ZGL-to-spot zone, or None if no meaningful support exists.
+    """
+    if not gex_strikes or spot <= 0:
+        return None
+
+    # Collect strikes between ZGL and spot with positive dealer GEX
+    support_strikes = sorted(
+        [s for s in gex_strikes if zgl < s.strike <= spot and s.dealer_gex(spot) > 0],
+        key=lambda s: s.strike,
+    )
+    if not support_strikes:
+        return None
+
+    total_pos_gex = sum(s.dealer_gex(spot) for s in support_strikes)
+    if total_pos_gex <= 0:
+        return None
+
+    threshold = total_pos_gex * 0.05  # 5% significance floor
+    for s in support_strikes:
+        if s.dealer_gex(spot) >= threshold:
+            return s.strike  # lowest strike with meaningful positive GEX support
+
+    return support_strikes[0].strike  # all tiny, but best available floor
 
 
 # ── Gamma Slope ───────────────────────────────────────────────────────────────

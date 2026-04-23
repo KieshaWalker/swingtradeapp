@@ -99,3 +99,9 @@ GRID_BAND_NEAR_UPPER: float = 10.0
 # ── Schwab pull scheduler ──────────────────────────────────────────────────────
 SCHWAB_PULL_INTERVAL_HOURS: int = 8
 SABR_RECAL_INTERVAL_MINUTES: int = 30
+
+# ── Regime classifier scope guard ─────────────────────────────────────────────
+# Thresholds (1.5% ZGL proximity, VIX RSI bands, $50M delta-GEX significance)
+# are calibrated for index and large-cap equity underlyings (SPY, QQQ, large-caps
+# with GEX > $100M). Do not apply to small/mid-cap without recalibrating.
+MIN_MEANINGFUL_TOTAL_GEX_USD: float = 100_000_000  # $100M minimum absolute GEX
