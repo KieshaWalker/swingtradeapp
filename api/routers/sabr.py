@@ -47,22 +47,4 @@ def sabr_iv_endpoint(req: SabrIvRequest):
 @router.post("/calibrate", response_model=SabrCalibrateResponse)
 def sabr_calibrate_endpoint(req: SabrCalibrateRequest):
     slices = calibrate_snapshot(spot=req.spot_price, points=req.points, r=req.r)
-    today = req.obs_date or date.today().isoformat()
-
-    # Persist to Supabase
-    if slices:
-        db = get_supabase()
-        for s in slices:
-            db.table("sabr_calibrations").upsert({
-                "ticker": req.ticker,
-                "obs_date": today,
-                "dte": s.dte,
-                "alpha": s.alpha,
-                "beta": s.beta,
-                "rho": s.rho,
-                "nu": s.nu,
-                "rmse": s.rmse,
-                "n_points": s.n_points,
-            }, on_conflict="ticker,obs_date,dte").execute()
-
     return SabrCalibrateResponse(slices=[s.to_dict() for s in slices])

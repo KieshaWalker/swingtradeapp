@@ -39,7 +39,7 @@ from services.hmm_regime import classify_vix_regime
 log = logging.getLogger(__name__)
 
 # DTE targets that mirror the Flutter app's greek chart buckets
-_DTE_BUCKETS = [4, 7, 30, 60, 90]
+_DTE_BUCKETS = [4, 7, 31]
 
 
 async def run_schwab_pull() -> dict:
@@ -186,9 +186,9 @@ async def run_schwab_pull() -> dict:
                 slices = calibrate_snapshot(spot=spot, points=points)
                 # Fetch ν history BEFORE upserting today's calibration so that
                 # nu_history contains only prior observations (today excluded).
-                nu_history = _fetch_nu_history(db, ticker) if slices else []
+                nu_history = _fetch_nu_history(db, ticker, user_id) if slices else []
                 if slices:
-                    _upsert_sabr_calibrations(db, ticker, today, slices)
+                    _upsert_sabr_calibrations(db, ticker, today, slices, user_id)
 
                 # ── Step 4: IV analytics + vvol rank ─────────────────────────
                 history = _fetch_iv_history(db, ticker)
@@ -437,7 +437,7 @@ def _fetch_iv_history(db, ticker: str) -> list[dict]:
     return resp.data or []
 
 
-def _fetch_nu_history(db, ticker: str, dte_target: int = 30) -> list[float]:
+def _fetch_nu_history(db, ticker: str, user_id: str, dte_target: int = 30) -> list[float]:
     """Return a time-ordered series of calibrated SABR ν values for the DTE
     slice closest to dte_target.  Used to compute vvol rank/percentile.
 
@@ -450,6 +450,7 @@ def _fetch_nu_history(db, ticker: str, dte_target: int = 30) -> list[float]:
     resp = (
         db.table("sabr_calibrations")
         .select("obs_date,dte,nu")
+        .eq("user_id", user_id)
         .eq("ticker", ticker)
         .gte("obs_date", cutoff)
         .gte("n_points", 5)
@@ -487,15 +488,15 @@ def _upsert_vol_surface(
     ).execute()
 
 
-def _upsert_sabr_calibrations(db, ticker: str, today: str, slices) -> None:
+def _upsert_sabr_calibrations(db, ticker: str, today: str, slices, user_id: str) -> None:
     for s in slices:
         db.table("sabr_calibrations").upsert(
             {
-                "ticker": ticker, "obs_date": today,
+                "user_id": user_id, "ticker": ticker, "obs_date": today,
                 "dte": s.dte, "alpha": s.alpha, "beta": s.beta,
                 "rho": s.rho, "nu": s.nu, "rmse": s.rmse, "n_points": s.n_points,
             },
-            on_conflict="ticker,obs_date,dte",
+            on_conflict="user_id,ticker,obs_date,dte",
         ).execute()
 
 
@@ -507,7 +508,6 @@ def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvo
     ]
     row: dict = {
         "ticker": ticker, "date": today,
-        "date_time": datetime.now(timezone.utc).isoformat(),
         "atm_iv": iv_result.current_iv, "skew": iv_result.skew,
         "gex_by_strike": gex_by_strike, "total_gex": iv_result.total_gex,
         "max_gex_strike": iv_result.max_gex_strike,
@@ -578,7 +578,7 @@ def _upsert_regime_snapshot(db, today: str, regime) -> None:
 
 
             "vol_sma3":                 regime.vol_sma3,
-            "vol_sma20":                regime.vol_sma20, #### does not have colums in supabase
+            "vol_sma20":                regime.vol_sma20,
 
 
 
