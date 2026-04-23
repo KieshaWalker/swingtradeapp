@@ -529,16 +529,26 @@ def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float, user_id:
     for cell in cells:
         db.table("greek_grid_snapshots").upsert(
             {
-                "user_id": user_id, "ticker": ticker, "obs_date": today,
+                "user_id": user_id,
+                "ticker": ticker, 
+                "obs_date": today,
                 "strike_band": cell.strike_band.value,
                 "expiry_bucket": cell.expiry_bucket.value,
-                "strike": cell.strike, "delta": cell.delta, "gamma": cell.gamma,
-                "expiry_dte": cell.expiry_dte,
-                "delta": cell.delta, "gamma": cell.gamma,
-                "vega": cell.vega, "theta": cell.theta, "iv": cell.iv,
-                "vanna": cell.vanna, "charm": cell.charm, "volga": cell.volga,
-                "open_interest": cell.open_interest, "volume": cell.volume,
-                "contract_count": cell.contract_count, "spot_at_obs": spot,
+                "strike": cell.strike, 
+                "expiry_date": cell.expiry_date,
+                "delta": cell.delta,
+                "gamma": cell.gamma,
+                "vega": cell.vega, 
+                "theta": cell.theta, 
+                "iv": cell.iv,
+                "vanna": cell.vanna,
+                "charm": cell.charm,
+                "volga": cell.volga,
+                "open_interest": cell.open_interest, 
+                "volume": cell.volume,
+                "spot_at_obs": spot,
+                "contract_count": cell.contract_count, 
+
             },
             on_conflict="user_id,ticker,obs_date,strike_band,expiry_bucket",
         ).execute()
@@ -562,12 +572,17 @@ def _upsert_regime_snapshot(db, today: str, regime) -> None:
             "iv_percentile":            regime.iv_percentile,
             "hmm_state":                regime.hmm_state,
             "hmm_probability":          regime.hmm_probability,
-            "vol_sma3":                 regime.vol_sma3,
-            "vol_sma20":                regime.vol_sma20,
-            "delta_gex":                regime.delta_gex,
             "strategy_bias":            regime.strategy_bias.value,
             "signals":                  regime.signals,
-            # New institutional-grade fields
+
+
+            "vol_sma3":                 regime.vol_sma3,
+            "vol_sma20":                regime.vol_sma20, #### does not have colums in supabase
+
+
+
+
+            "delta_gex":                regime.delta_gex,            # New institutional-grade fields
             "vix_term_structure_ratio": regime.vix_term_structure_ratio,
             "vvix_current":             regime.vvix_current,
             "spot_to_vt_pct":           regime.spot_to_vt_pct,

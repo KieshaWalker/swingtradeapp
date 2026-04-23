@@ -221,7 +221,7 @@ def train_model(req: TrainRequest) -> TrainResponse:
         msg = (
             f"Insufficient training data — need ≥80 labeled samples, "
             f"got {result.n_samples}. Accumulate more regime history and retry."
-        )
+                            )
 
     return TrainResponse(
         model_type=result.model_type,
@@ -240,6 +240,13 @@ def train_model(req: TrainRequest) -> TrainResponse:
 @router.post("/classify", response_model=RegimeResponse)
 async def classify(body: RegimeRequest) -> RegimeResponse:
     # If caller provides raw VIX closes, compute HMM + derived metrics here.
+    ### we are posting this exactly 
+    ## response_model=RegimeResponse is the output of this function, so we need to fill in the vix fields in the response model.
+    ## the output is to be used in the schwab pull, so we want to compute the vix fields if the closes are provided, otherwise we will just pass through whatever is in the request (which may be None)
+    ## the matching swab pull code is in the regime snapshot section, where it calls classify_regime and passes in the vix fields from the request body. If the closes are provided, we will compute the vix fields here and pass them to classify_regime, which will then include them 
+    # in the regime_snapshots that gets stored in supabase. If the closes are not provided, 
+    # we will just pass through whatever is in the request 
+    # (which may be None) and classify_regime will handle that accordingly.
     vix_rsi = body.vix_rsi
     vix_10ma = body.vix_10ma
     vix_dev_pct = body.vix_dev_pct
@@ -293,5 +300,5 @@ async def classify(body: RegimeRequest) -> RegimeResponse:
         vol_sma3=regime.vol_sma3,
         vol_sma20=regime.vol_sma20,
         strategy_bias=regime.strategy_bias.value,
-        signals=regime.signals,
+        signals=regime.signals,        
     )
