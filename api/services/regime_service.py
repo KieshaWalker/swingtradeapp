@@ -77,11 +77,21 @@ class CurrentRegime:
     iv_percentile:      float | None  # IVP 0–100
     hmm_state:          str   | None  # "low_vol" | "high_vol" | None
     hmm_probability:    float | None  # posterior probability of current HMM state
-    vol_sma3:           float | None  # 3-day average volume
-    vol_sma20:          float | None  # 20-day average volume
-    delta_gex:          float | None  # GEX_t − GEX_{t−1} (day-over-day change)
-    strategy_bias:      StrategyBias
-    signals:            list[str] = field(default_factory=list)
+    vol_sma3:                   float | None
+    vol_sma20:                  float | None
+    delta_gex:                  float | None
+    strategy_bias:              StrategyBias
+    signals:                    list[str] = field(default_factory=list)
+    # Institutional-grade context fields
+    vix_term_structure_ratio:   float | None = None
+    vvix_current:               float | None = None
+    vvix_10ma:                  float | None = None
+    spot_to_vt_pct:             float | None = None
+    breadth_proxy:              float | None = None
+    price_roc5:                 float | None = None
+    total_gex:                  float | None = None
+    gex_0dte:                   float | None = None
+    gex_0dte_pct:               float | None = None
 
 
 def classify_regime(
@@ -96,13 +106,32 @@ def classify_regime(
     vix_10ma:            float | None,
     vix_dev_pct:         float | None,
     vix_rsi:             float | None,
-    hmm_result:          HmmRegimeResult | None = None,
-    vol_sma3:            float | None = None,
-    vol_sma20:           float | None = None,
-    delta_gex:           float | None = None,
+    hmm_result:                  HmmRegimeResult | None = None,
+    vol_sma3:                    float | None = None,
+    vol_sma20:                   float | None = None,
+    delta_gex:                   float | None = None,
+    vix_term_structure_ratio:    float | None = None,
+    vvix_current:                float | None = None,
+    vvix_10ma:                   float | None = None,
+    spot_to_vt_pct:              float | None = None,
+    breadth_proxy:               float | None = None,
+    price_roc5:                  float | None = None,
+    total_gex:                   float | None = None,
+    gex_0dte_pct:                float | None = None,
 ) -> CurrentRegime:
     """Classify the current market regime and return a StrategyBias."""
     signals: list[str] = []
+
+    _ctx = dict(
+        vix_term_structure_ratio=vix_term_structure_ratio,
+        vvix_current=vvix_current,
+        vvix_10ma=vvix_10ma,
+        spot_to_vt_pct=spot_to_vt_pct,
+        breadth_proxy=breadth_proxy,
+        price_roc5=price_roc5,
+        total_gex=total_gex,
+        gex_0dte_pct=gex_0dte_pct,
+    )
 
     # ── SMA cross: distinguish bearish (False) from no data (None) ───────────
     if sma10 is not None and sma50 is not None:
@@ -153,7 +182,7 @@ def classify_regime(
                          sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                          spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                          vol_sma3, vol_sma20, delta_gex,
-                         StrategyBias.premium_sell, signals)
+                         StrategyBias.premium_sell, signals, **_ctx)
 
         # Default high-vol: not yet at mean-reversion extreme → straddle
         if vix_spike:
@@ -171,7 +200,7 @@ def classify_regime(
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                      vol_sma3, vol_sma20, delta_gex,
-                     StrategyBias.straddle_only, signals)
+                     StrategyBias.straddle_only, signals, **_ctx)
 
     # ── Gate 1b: HMM low-vol state → Risk-on, but flag suppression risk ─────
     if hmm_result and hmm_result.state == HmmVolState.low_vol:
@@ -202,7 +231,7 @@ def classify_regime(
                              sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                              spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                              vol_sma3, vol_sma20, delta_gex,
-                             StrategyBias.directional_bearish, signals)
+                             StrategyBias.directional_bearish, signals, **_ctx)
             elif sma_crossed is True:
                 signals.append(
                     f"SMA10 ({_fmt(sma10)}) > SMA50 ({_fmt(sma50)}) conflicts with "
@@ -212,7 +241,7 @@ def classify_regime(
                              sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                              spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                              vol_sma3, vol_sma20, delta_gex,
-                             StrategyBias.unclear, signals)
+                             StrategyBias.unclear, signals, **_ctx)
             else:
                 # sma_crossed is None — no SMA data
                 signals.append("SMA data unavailable — cannot confirm trend near ZGL")
@@ -220,7 +249,7 @@ def classify_regime(
                              sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                              spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                              vol_sma3, vol_sma20, delta_gex,
-                             StrategyBias.unclear, signals)
+                             StrategyBias.unclear, signals, **_ctx)
         else:
             signals.append(
                 f"Near gamma flip: spot {spot_to_zgl_pct:.2f}% ABOVE ZGL — "  # type: ignore[arg-type]
@@ -235,7 +264,7 @@ def classify_regime(
                              sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                              spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                              vol_sma3, vol_sma20, delta_gex,
-                             StrategyBias.directional_bearish, signals)
+                             StrategyBias.directional_bearish, signals, **_ctx)
             elif sma_crossed is True:
                 signals.append(
                     f"SMA10 ({_fmt(sma10)}) > SMA50 ({_fmt(sma50)}) — "
@@ -246,14 +275,14 @@ def classify_regime(
                              sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                              spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                              vol_sma3, vol_sma20, delta_gex,
-                             StrategyBias.unclear, signals)
+                             StrategyBias.unclear, signals, **_ctx)
             else:
                 signals.append("SMA data unavailable — cannot confirm trend near ZGL")
                 return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                              sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                              spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                              vol_sma3, vol_sma20, delta_gex,
-                             StrategyBias.unclear, signals)
+                             StrategyBias.unclear, signals, **_ctx)
 
     # ── Gate 3: IvGexSignal overrides ────────────────────────────────────────
     if iv_gex_signal == "classicShortGamma":
@@ -266,7 +295,7 @@ def classify_regime(
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                      vol_sma3, vol_sma20, delta_gex,
-                     StrategyBias.straddle_only, signals)
+                     StrategyBias.straddle_only, signals, **_ctx)
 
     if iv_gex_signal == "regimeShift":
         signals.append(
@@ -280,7 +309,7 @@ def classify_regime(
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                      vol_sma3, vol_sma20, delta_gex,
-                     StrategyBias.straddle_only, signals)
+                     StrategyBias.straddle_only, signals, **_ctx)
 
     if iv_gex_signal == "eventOverPosGamma":
         signals.append(
@@ -292,7 +321,7 @@ def classify_regime(
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                      vol_sma3, vol_sma20, delta_gex,
-                     StrategyBias.premium_sell, signals)
+                     StrategyBias.premium_sell, signals, **_ctx)
 
     if iv_gex_signal == "stableGamma":
         signals.append(
@@ -305,7 +334,7 @@ def classify_regime(
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                      vol_sma3, vol_sma20, delta_gex,
-                     StrategyBias.premium_sell, signals)
+                     StrategyBias.premium_sell, signals, **_ctx)
 
     # ── Gate 4: VIX RSI extreme signals (additive to directional bias) ───────
     if vix_rsi is not None:
@@ -339,7 +368,7 @@ def classify_regime(
                          sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                          spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                          vol_sma3, vol_sma20, delta_gex,
-                         StrategyBias.unclear, signals)
+                         StrategyBias.unclear, signals, **_ctx)
         if sma_crossed is False:
             signals.append(
                 f"SMA10 ({_fmt(sma10)}) ≤ SMA50 ({_fmt(sma50)}) — "
@@ -349,7 +378,7 @@ def classify_regime(
                          sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                          spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                          vol_sma3, vol_sma20, delta_gex,
-                         StrategyBias.directional_bearish, signals)
+                         StrategyBias.directional_bearish, signals, **_ctx)
         # sma_crossed is None — no SMA data
         signals.append(
             "SMA data unavailable — negative gamma but cannot confirm trend direction"
@@ -358,7 +387,7 @@ def classify_regime(
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                      vol_sma3, vol_sma20, delta_gex,
-                     StrategyBias.unclear, signals)
+                     StrategyBias.unclear, signals, **_ctx)
 
     if gamma_regime == "positive":
         zgl_str = (
@@ -379,7 +408,7 @@ def classify_regime(
                          sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                          spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                          vol_sma3, vol_sma20, delta_gex,
-                         StrategyBias.unclear, signals)
+                         StrategyBias.unclear, signals, **_ctx)
         if sma_crossed is True:
             signals.append(
                 f"SMA10 ({_fmt(sma10)}) > SMA50 ({_fmt(sma50)}) — "
@@ -389,7 +418,7 @@ def classify_regime(
                          sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                          spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                          vol_sma3, vol_sma20, delta_gex,
-                         StrategyBias.directional_bullish, signals)
+                         StrategyBias.directional_bullish, signals, **_ctx)
         # sma_crossed is None — no SMA data
         signals.append(
             "SMA data unavailable — positive gamma but cannot confirm trend direction"
@@ -398,7 +427,7 @@ def classify_regime(
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                      vol_sma3, vol_sma20, delta_gex,
-                     StrategyBias.unclear, signals)
+                     StrategyBias.unclear, signals, **_ctx)
 
     # ── Fallback ─────────────────────────────────────────────────────────────
     signals.append("Insufficient regime data — no strong directional edge")
@@ -406,7 +435,7 @@ def classify_regime(
                  sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                  spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
                  vol_sma3, vol_sma20, delta_gex,
-                 StrategyBias.unclear, signals)
+                 StrategyBias.unclear, signals, **_ctx)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -486,6 +515,9 @@ def _make(
     vix_current, vix_10ma, vix_dev_pct, vix_rsi, spot_to_zgl_pct,
     iv_percentile, hmm_state, hmm_prob, vol_sma3, vol_sma20, delta_gex,
     bias, signals,
+    vix_term_structure_ratio=None, vvix_current=None, vvix_10ma=None,
+    spot_to_vt_pct=None, breadth_proxy=None, price_roc5=None,
+    total_gex=None, gex_0dte=None, gex_0dte_pct=None,
 ) -> CurrentRegime:
     return CurrentRegime(
         ticker=ticker,
@@ -507,6 +539,15 @@ def _make(
         delta_gex=delta_gex,
         strategy_bias=bias,
         signals=signals,
+        vix_term_structure_ratio=vix_term_structure_ratio,
+        vvix_current=vvix_current,
+        vvix_10ma=vvix_10ma,
+        spot_to_vt_pct=spot_to_vt_pct,
+        breadth_proxy=breadth_proxy,
+        price_roc5=price_roc5,
+        total_gex=total_gex,
+        gex_0dte=gex_0dte,
+        gex_0dte_pct=gex_0dte_pct,
     )
 
 
