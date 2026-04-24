@@ -130,6 +130,10 @@ def analyze(
     entry_cost = ask * c * 100
     contracts_affordable = 0 if ask == 0 else int(max_budget / (ask * 100))
 
+    # ── Theta drag ────────────────────────────────────────────────────────────
+    daily_theta_drag = theta * 100 * c
+    total_theta_drag = daily_theta_drag * dte  # full decay to expiry (linear approx)
+
     # ── P&L projection (gamma-adjusted, theta-deducted to target date) ────────
     move = price_target - underlying_price
     pnl_gross = (delta * move + 0.5 * gamma * move ** 2) * 100 * c
@@ -141,10 +145,6 @@ def analyze(
     break_even_price = strike + ask if is_call else strike - ask
     break_even_move = abs(break_even_price - underlying_price)
     break_even_move_pct = break_even_move / underlying_price * 100 if underlying_price != 0 else 0.0
-
-    # ── Theta drag ────────────────────────────────────────────────────────────
-    daily_theta_drag = theta * 100 * c
-    total_theta_drag = daily_theta_drag * dte  # full decay to expiry (linear approx)
 
     # ── Pricing edge ──────────────────────────────────────────────────────────
     pricing_edge = theo - mid

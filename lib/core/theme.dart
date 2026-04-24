@@ -31,7 +31,7 @@ class AppTheme {
   static const _surface  = Color(0xFF9795BE); // app bar, bottom nav — lighter purple
   static const _card     = Color(0xFF57558A); // cards & containers — deeper purple
   static const _elevated = Color(0xFF4B4978); // dialogs, dropdowns — darkest purple
-  static const _border   = Color(0xFF7A78A8); // borders & dividers — mid lavender
+  static const _border   = Color.fromARGB(255, 146, 146, 157); // borders & dividers — mid lavender
 
   // ── Semantic accent colors ─────────────────────────────────────────────────
   static const _green = Color(0xFF4ADE80); // lime-green — profit (pops on purple)

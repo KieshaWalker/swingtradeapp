@@ -19,6 +19,8 @@
 #   PYTHON_API_SECRET
 # =============================================================================
 
+serviceAccount: projects/options-trader-493420/serviceAccounts/89270877238-compute@developer.gserviceaccount.com
+
 substitutions:
   _REGION: us-central1
   _SERVICE: swing-options-api
