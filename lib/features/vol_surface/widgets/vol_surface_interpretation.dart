@@ -6,7 +6,22 @@
 // =============================================================================
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/vol_surface_models.dart';
+import '../providers/sabr_calibration_provider.dart';
+import '../../../services/iv/iv_models.dart';
+import '../../../services/iv/iv_storage_service.dart';
+import '../../../services/vol_surface/arb_checker.dart';
+
+// ── IV snapshot provider ──────────────────────────────────────────────────────
+// Reads the latest iv_snapshots row for a ticker — populated by Python
+// /iv/analytics each time an options chain loads. Provides real GEX,
+// skew (pp), and P/C ratio to replace the Dart OI-proxy approximations.
+
+final _ivSnapProvider = FutureProvider.autoDispose
+    .family<IvSnapshot?, String>(
+  (ref, ticker) => IvStorageService().getLatest(ticker),
+);
 
 // ── Private analysis ──────────────────────────────────────────────────────────
 
@@ -408,7 +423,7 @@ List<String> _keyReads(_A a) {
 // Public widget
 // ═══════════════════════════════════════════════════════════════════════════════
 
-class VolSurfaceInterpretation extends StatelessWidget {
+class VolSurfaceInterpretation extends ConsumerWidget {
   final VolSnapshot snap;
   final String ivMode;
 
@@ -419,8 +434,9 @@ class VolSurfaceInterpretation extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final a = _A.from(snap);
+    final ivSnap = ref.watch(_ivSnapProvider(snap.ticker)).valueOrNull;
 
     // Verdict
     final bool isFail = a.termShape == _Term.backwardation && a.atmPct > 0.70;
@@ -505,12 +521,14 @@ class VolSurfaceInterpretation extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _IvCard(a: a),
+                  _IvCard(a: a, ivSnap: ivSnap),
                   _TermCard(a: a),
-                  _SkewCard(a: a),
-                  _WallsCard(snap: snap, a: a),
-                  _FlowCard(snap: snap),
-                  _ReadsCard(a: a),
+                  _SkewCard(a: a, ivSnap: ivSnap),
+                  _WallsCard(snap: snap, a: a, ivSnap: ivSnap),
+                  _FlowCard(snap: snap, ivSnap: ivSnap),
+                  _ReadsCard(a: a, ivSnap: ivSnap),
+                  _SabrCard(snap: snap),
+                  _ArbCard(snap: snap),
                 ],
               ),
             ),
@@ -525,26 +543,47 @@ class VolSurfaceInterpretation extends StatelessWidget {
 
 class _IvCard extends StatelessWidget {
   final _A a;
-  const _IvCard({required this.a});
+  final IvSnapshot? ivSnap;
+  const _IvCard({required this.a, this.ivSnap});
 
   @override
   Widget build(BuildContext context) {
-    final iv   = a.atmIvFront;
-    final pct  = a.atmPct;
+    final iv = a.atmIvFront;
 
-    final (label, color) = switch (pct) {
-      < 0.30 => ('LOW IV', const Color(0xFF4ade80)),
-      < 0.60 => ('NORMAL IV', const Color(0xFF60a5fa)),
-      < 0.80 => ('ELEVATED IV', const Color(0xFFfbbf24)),
-      _      => ('HIGH IV', const Color(0xFFf87171)),
+    // Use Python IV rank (52-week history) when available; fall back to
+    // surface percentile (ATM IV within today's p5–p95 range).
+    final usingIvRank = ivSnap?.ivRank != null;
+    final pct = usingIvRank
+        ? (ivSnap!.ivRank! / 100).clamp(0.0, 1.0)
+        : a.atmPct;
+
+    final (label, color) = switch (usingIvRank ? ivSnap!.ivRating : null) {
+      IvRating.cheap     => ('LOW IV',      const Color(0xFF4ade80)),
+      IvRating.fair      => ('NORMAL IV',   const Color(0xFF60a5fa)),
+      IvRating.expensive => ('ELEVATED IV', const Color(0xFFfbbf24)),
+      IvRating.extreme   => ('HIGH IV',     const Color(0xFFf87171)),
+      _ => switch (pct) {
+        < 0.30 => ('LOW IV',      const Color(0xFF4ade80)),
+        < 0.60 => ('NORMAL IV',   const Color(0xFF60a5fa)),
+        < 0.80 => ('ELEVATED IV', const Color(0xFFfbbf24)),
+        _      => ('HIGH IV',     const Color(0xFFf87171)),
+      },
     };
 
-    final String sub = switch (pct) {
-      < 0.30 => 'Cheap vs surface — debit edge',
-      < 0.60 => 'Near surface average',
-      < 0.80 => 'Above avg — watch premium cost',
-      _      => 'Top of surface — crush risk',
-    };
+    final String sub = usingIvRank
+        ? switch (ivSnap!.ivRating) {
+            IvRating.cheap     => 'Cheap vs 52w — debit edge',
+            IvRating.fair      => 'Near 52w average',
+            IvRating.expensive => 'Above 52w avg — watch premium cost',
+            IvRating.extreme   => '52w highs — crush risk',
+            _                  => '',
+          }
+        : switch (pct) {
+            < 0.30 => 'Cheap vs surface — debit edge',
+            < 0.60 => 'Near surface average',
+            < 0.80 => 'Above avg — watch premium cost',
+            _      => 'Top of surface — crush risk',
+          };
 
     return _Card(
       width: 168,
@@ -583,7 +622,10 @@ class _IvCard extends StatelessWidget {
           ]),
           const SizedBox(height: 5),
           Text(
-            '${(pct * 100).toStringAsFixed(0)}th pct of surface',
+            usingIvRank
+                ? 'IVR ${ivSnap!.ivRank!.toStringAsFixed(0)}%'
+                    '  ·  IVP ${ivSnap!.ivPercentile?.toStringAsFixed(0) ?? '—'}%'
+                : '${(pct * 100).toStringAsFixed(0)}th pct of surface',
             style: const TextStyle(
                 color: Color(0xFF6b7280),
                 fontSize: 9,
@@ -615,8 +657,11 @@ class _IvCard extends StatelessWidget {
                   fontFamily: 'monospace')),
           const SizedBox(height: 6),
           Text(
-            'Surface p5–p95: ${(a.surfaceMin * 100).toStringAsFixed(0)}–'
-            '${(a.surfaceMax * 100).toStringAsFixed(0)}%',
+            usingIvRank
+                ? 'Surface p5–p95: ${(a.surfaceMin * 100).toStringAsFixed(0)}–'
+                    '${(a.surfaceMax * 100).toStringAsFixed(0)}%  (today)'
+                : 'Surface p5–p95: ${(a.surfaceMin * 100).toStringAsFixed(0)}–'
+                    '${(a.surfaceMax * 100).toStringAsFixed(0)}%',
             style: const TextStyle(
                 color: Color(0xFF4b5563),
                 fontSize: 9,
@@ -737,11 +782,24 @@ class _TermCard extends StatelessWidget {
 
 class _SkewCard extends StatelessWidget {
   final _A a;
-  const _SkewCard({required this.a});
+  final IvSnapshot? ivSnap;
+  const _SkewCard({required this.a, this.ivSnap});
 
   @override
   Widget build(BuildContext context) {
-    final (label, color, headline, sub) = switch (a.skew) {
+    // Python skew = OTM put IV − call IV in percentage points.
+    // Prefer it over the Dart near-OTM ratio approximation.
+    final effectiveSkew = ivSnap?.skew != null
+        ? (ivSnap!.skew! > 2.0
+            ? _Skew.putBid
+            : ivSnap!.skew! < -2.0
+                ? _Skew.callBid
+                : _Skew.symmetric)
+        : a.skew;
+
+    final effectivePcr = ivSnap?.putCallRatio ?? a.putCallRatio;
+
+    final (label, color, headline, sub) = switch (effectiveSkew) {
       _Skew.putBid => (
           'PUT SKEW',
           const Color(0xFFf87171),
@@ -762,7 +820,7 @@ class _SkewCard extends StatelessWidget {
         ),
     };
 
-    final pcr = a.putCallRatio.toStringAsFixed(2);
+    final pcr = effectivePcr.toStringAsFixed(2);
 
     return _Card(
       width: 188,
@@ -807,18 +865,53 @@ class _SkewCard extends StatelessWidget {
 
 class _ReadsCard extends StatelessWidget {
   final _A a;
-  const _ReadsCard({required this.a});
+  final IvSnapshot? ivSnap;
+  const _ReadsCard({required this.a, this.ivSnap});
 
   @override
   Widget build(BuildContext context) {
-    final reads = _keyReads(a);
+    // Use Python iv_gex_signal description + strategy hint when available;
+    // fall back to locally-computed key reads.
+    final signal = ivSnap?.ivGexSignal;
+    final useSignal = signal != null && signal != IvGexSignal.unknown;
+
+    final reads = useSignal
+        ? [signal.description, signal.strategyHint]
+        : _keyReads(a);
+
+    final signalColor = useSignal
+        ? switch (signal) {
+            IvGexSignal.classicShortGamma => const Color(0xFFf87171),
+            IvGexSignal.regimeShift       => const Color(0xFFfbbf24),
+            IvGexSignal.eventOverPosGamma => const Color(0xFFfbbf24),
+            _                             => const Color(0xFF4ade80),
+          }
+        : const Color(0xFF9ca3af);
 
     return _Card(
-      width: 240,
-      label: 'KEY READS',
+      width: 260,
+      label: useSignal ? 'IV / GEX SIGNAL' : 'KEY READS',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (useSignal) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: signalColor.withValues(alpha: 0.12),
+                border: Border.all(color: signalColor.withValues(alpha: 0.40)),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(signal.label.toUpperCase(),
+                  style: TextStyle(
+                      color: signalColor,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                      fontFamily: 'monospace')),
+            ),
+            const SizedBox(height: 8),
+          ],
           for (var i = 0; i < reads.length; i++) ...[
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -834,13 +927,13 @@ class _ReadsCard extends StatelessWidget {
                 ),
                 Expanded(
                   child: Text(
-                    reads[i].startsWith('⚠')
-                        ? reads[i].substring(2)
-                        : reads[i],
+                    reads[i].startsWith('⚠') ? reads[i].substring(2) : reads[i],
                     style: TextStyle(
-                        color: reads[i].startsWith('⚠')
-                            ? const Color(0xFFfbbf24)
-                            : const Color(0xFF9ca3af),
+                        color: useSignal
+                            ? (i == 0 ? const Color(0xFFd1d5db) : const Color(0xFF6b7280))
+                            : reads[i].startsWith('⚠')
+                                ? const Color(0xFFfbbf24)
+                                : const Color(0xFF9ca3af),
                         fontSize: 10,
                         height: 1.45,
                         fontFamily: 'monospace'),
@@ -877,7 +970,8 @@ class _StrikeFlow {
 
 class _FlowCard extends StatelessWidget {
   final VolSnapshot snap;
-  const _FlowCard({required this.snap});
+  final IvSnapshot? ivSnap;
+  const _FlowCard({required this.snap, this.ivSnap});
 
   @override
   Widget build(BuildContext context) {
@@ -926,7 +1020,9 @@ class _FlowCard extends StatelessWidget {
     }
     final totalVol = totalCallVol + totalPutVol;
     final totalOI  = totalCallOI  + totalPutOI;
-    final volPcr   = totalCallVol > 0 ? totalPutVol / totalCallVol : 1.0;
+    // Prefer Python-computed P/C ratio (full chain OI) over surface-OI proxy.
+    final volPcr = ivSnap?.putCallRatio ??
+        (totalCallVol > 0 ? totalPutVol / totalCallVol : 1.0);
 
     // Top 4 strikes by volume (falling back to OI)
     final ranked = byStrike.values.toList()
@@ -1248,13 +1344,29 @@ class _GammaStrategySheet extends StatelessWidget {
 
 class _WallsCard extends StatelessWidget {
   final VolSnapshot snap;
-  final _A          a;    // needed for IV/OI signal
-  const _WallsCard({required this.snap, required this.a});
+  final _A          a;
+  final IvSnapshot? ivSnap;
+  const _WallsCard({required this.snap, required this.a, this.ivSnap});
 
   @override
   Widget build(BuildContext context) {
     final g    = _GammaData.from(snap);
     final spot = snap.spotPrice;
+
+    // Override regime from Python-computed true GEX when available.
+    // The Dart fallback uses raw OI as a proxy (callOI − putOI), which
+    // ignores strike distance, time-to-expiry, and actual gamma values.
+    final effectiveRegime = ivSnap?.totalGex != null
+        ? (ivSnap!.totalGex! > 0
+            ? _GammaRegime.positive
+            : ivSnap!.totalGex! < 0
+                ? _GammaRegime.negative
+                : _GammaRegime.neutral)
+        : (g.totalCallOI > g.totalPutOI
+            ? _GammaRegime.positive
+            : g.totalCallOI < g.totalPutOI
+                ? _GammaRegime.negative
+                : _GammaRegime.neutral);
 
     if (g.callWalls.isEmpty && g.putWalls.isEmpty) {
       return _Card(
@@ -1274,12 +1386,18 @@ class _WallsCard extends StatelessWidget {
       );
     }
 
-    final (regimeLabel, regimeColor, regimeSub) = switch (g.regime) {
+    // Flip level: prefer Python zero_gamma_level (true GEX crossing) over OI-flip proxy.
+    final effectiveFlipLevel    = ivSnap?.zeroGammaLevel ?? g.oiFlip;
+    final effectiveFlipDistPct  = ivSnap?.spotToZeroGammaPct?.abs() ?? g.oiFlipDistPct;
+    final effectiveDangerZone   = effectiveRegime == _GammaRegime.positive &&
+        effectiveFlipDistPct != null && effectiveFlipDistPct < 4.0;
+
+    final (regimeLabel, regimeColor, regimeSub) = switch (effectiveRegime) {
       _GammaRegime.positive => (
-          g.dangerZone ? 'POS GAMMA ⚡ DANGER ZONE' : 'POS GAMMA',
-          g.dangerZone ? const Color(0xFFfbbf24) : const Color(0xFF4ade80),
-          g.dangerZone
-              ? 'OI flip within ${g.oiFlipDistPct!.toStringAsFixed(1)}% — one move from negative gamma'
+          effectiveDangerZone ? 'POS GAMMA ⚡ DANGER ZONE' : 'POS GAMMA',
+          effectiveDangerZone ? const Color(0xFFfbbf24) : const Color(0xFF4ade80),
+          effectiveDangerZone
+              ? 'GEX flip within ${effectiveFlipDistPct.toStringAsFixed(1)}% — one move from negative gamma'
               : 'Dealers absorb moves — mean-reversion likely near walls',
         ),
       _GammaRegime.negative => (
@@ -1294,55 +1412,69 @@ class _WallsCard extends StatelessWidget {
         ),
     };
 
-    // ── OI slope ───────────────────────────────────────────────────────────
-    final (slopeIcon, slopeColor, slopeLabel) = switch (g.oiSlope) {
-      _GexSlope.rising  => ('↗', const Color(0xFF4ade80), 'Rising — more call OI ahead'),
-      _GexSlope.flat    => ('→', const Color(0xFF9ca3af), 'Flat — OI balance stable'),
-      _GexSlope.falling => ('↘', const Color(0xFFf97316), 'Falling — OI balance declining toward flip'),
+    // GEX slope: prefer Python gamma_slope over Dart OI-band proxy.
+    final (slopeIcon, slopeColor, slopeLabel) = switch (ivSnap?.gammaSlope) {
+      GammaSlope.rising  => ('↗', const Color(0xFF4ade80), 'Rising — GEX cushion strengthening above spot'),
+      GammaSlope.falling => ('↘', const Color(0xFFf97316), 'Falling — GEX eroding toward flip level'),
+      GammaSlope.flat    => ('→', const Color(0xFF9ca3af), 'Flat — GEX stable across strikes'),
+      _ => switch (g.oiSlope) {
+        _GexSlope.rising  => ('↗', const Color(0xFF4ade80), 'Rising — more call OI ahead'),
+        _GexSlope.flat    => ('→', const Color(0xFF9ca3af), 'Flat — OI balance stable'),
+        _GexSlope.falling => ('↘', const Color(0xFFf97316), 'Falling — OI balance declining toward flip'),
+      },
     };
 
-    // ── IV / OI signal ─────────────────────────────────────────────────────
-    // Single-snapshot heuristic: classify the current IV level vs OI-derived gamma regime.
-    // IV is measured as surface percentile (ATM IV within today's p5–p95 range),
-    // not a historical IV percentile. A true correlation requires multiple snapshots.
-    final (ivGexLabel, ivGexColor, ivGexDetail) = switch ((g.regime, a.atmPct)) {
-      (_GammaRegime.negative, final p) when p > 0.65 => (
-          'CLASSIC SHORT GAMMA',
-          const Color(0xFFf87171),
-          'Neg gamma + elevated IV — inverse corr in effect (spot ↓ = IV ↑)',
-        ),
-      (_GammaRegime.negative, final p) when p < 0.30 => (
-          'REGIME SHIFT SIGNAL',
-          const Color(0xFFfbbf24),
-          'Neg gamma but IV suppressed — inverse corr may be breaking',
-        ),
-      (_GammaRegime.negative, _) => (
-          'SHORT GAMMA ENV',
-          const Color(0xFFf97316),
-          'Directional risk elevated — monitor for IV/spot correlation',
-        ),
-      (_GammaRegime.positive, final p) when p > 0.70 => (
-          'EVENT OVER POS GAMMA',
-          const Color(0xFFfbbf24),
-          'High IV despite positive gamma — event premium suppressing dampening',
-        ),
-      _ => (
-          'STABLE GAMMA',
-          const Color(0xFF4ade80),
-          'Positive gamma with moderate IV — price/IV less correlated',
-        ),
-    };
+    // IV / GEX signal: prefer Python classification (uses true GEX + 52w IV rank).
+    final pySignal = ivSnap?.ivGexSignal;
+    final (ivGexLabel, ivGexColor, ivGexDetail) = pySignal != null &&
+            pySignal != IvGexSignal.unknown
+        ? (
+            pySignal.label.toUpperCase(),
+            switch (pySignal) {
+              IvGexSignal.classicShortGamma => const Color(0xFFf87171),
+              IvGexSignal.regimeShift       => const Color(0xFFfbbf24),
+              IvGexSignal.eventOverPosGamma => const Color(0xFFfbbf24),
+              _                             => const Color(0xFF4ade80),
+            },
+            pySignal.description,
+          )
+        : switch ((effectiveRegime, a.atmPct)) {
+            (_GammaRegime.negative, final p) when p > 0.65 => (
+              'CLASSIC SHORT GAMMA',
+              const Color(0xFFf87171),
+              'Neg gamma + elevated IV — inverse corr in effect (spot ↓ = IV ↑)',
+            ),
+            (_GammaRegime.negative, final p) when p < 0.30 => (
+              'REGIME SHIFT SIGNAL',
+              const Color(0xFFfbbf24),
+              'Neg gamma but IV suppressed — inverse corr may be breaking',
+            ),
+            (_GammaRegime.negative, _) => (
+              'SHORT GAMMA ENV',
+              const Color(0xFFf97316),
+              'Directional risk elevated — monitor for IV/spot correlation',
+            ),
+            (_GammaRegime.positive, final p) when p > 0.70 => (
+              'EVENT OVER POS GAMMA',
+              const Color(0xFFfbbf24),
+              'High IV despite positive gamma — event premium suppressing dampening',
+            ),
+            _ => (
+              'STABLE GAMMA',
+              const Color(0xFF4ade80),
+              'Positive gamma with moderate IV — price/IV less correlated',
+            ),
+          };
 
-    // ── Liquidity density proxy ────────────────────────────────────────────
-    // OI concentration at nearest put wall vs. avg OI in ±5% of spot.
-    // Proxy only — real bid/ask SIZE is not in TOS static CSV exports.
-    final (liqLabel, liqColor, liqDetail) = g.wallOiRatio == null
+    // Wall density: prefer Python put_wall_density over Dart OI-concentration proxy.
+    final effectiveWallDensity = ivSnap?.putWallDensity ?? g.wallOiRatio;
+    final (liqLabel, liqColor, liqDetail) = effectiveWallDensity == null
         ? ('N/A', const Color(0xFF4b5563), '')
-        : g.wallOiRatio! < 0.50
-            ? ('THIN WALL',    const Color(0xFFf87171), 'Low OI at put wall vs nearby — washout risk')
-            : g.wallOiRatio! > 2.0
-                ? ('SOLID WALL', const Color(0xFF4ade80), 'High OI concentration — support well-defended')
-                : ('MODERATE',  const Color(0xFF9ca3af), 'Average OI density at put wall');
+        : effectiveWallDensity < 0.50
+            ? ('THIN WALL',  const Color(0xFFf87171), 'Low density at put wall — washout risk')
+            : effectiveWallDensity > 2.0
+                ? ('SOLID WALL', const Color(0xFF4ade80), 'High density — support well-defended')
+                : ('MODERATE',  const Color(0xFF9ca3af), 'Average density at put wall');
 
     String fmtK(int n) {
       if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
@@ -1384,7 +1516,7 @@ class _WallsCard extends StatelessWidget {
                 context: context,
                 isScrollControlled: true,
                 backgroundColor: Colors.transparent,
-                builder: (_) => _GammaStrategySheet(regime: g.regime),
+                builder: (_) => _GammaStrategySheet(regime: effectiveRegime),
               ),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -1405,7 +1537,7 @@ class _WallsCard extends StatelessWidget {
           const SizedBox(height: 3),
           Text(regimeSub,
               style: TextStyle(
-                  color: g.dangerZone
+                  color: effectiveDangerZone
                       ? const Color(0xFFfbbf24)
                       : const Color(0xFF6b7280),
                   fontSize: 8,
@@ -1515,24 +1647,23 @@ class _WallsCard extends StatelessWidget {
             const SizedBox(height: 7),
           ],
 
-          // ── OI flip ──────────────────────────────────────────────────────
-          if (g.oiFlip != null) ...[
+          // ── GEX / OI flip ─────────────────────────────────────────────────
+          if (effectiveFlipLevel != null) ...[
             Row(children: [
-              const Text('OI flip  ',
-                  style: TextStyle(
+              Text(ivSnap?.zeroGammaLevel != null ? 'GEX flip  ' : 'OI flip  ',
+                  style: const TextStyle(
                       color: Color(0xFF4b5563),
                       fontSize: 8,
                       fontFamily: 'monospace')),
-              Text(fmtStrike(g.oiFlip!),
+              Text(fmtStrike(effectiveFlipLevel),
                   style: const TextStyle(
                       color: Color(0xFFfbbf24),
                       fontSize: 9,
                       fontWeight: FontWeight.w600,
                       fontFamily: 'monospace')),
-              if (g.oiFlipDistPct != null) ...[
-                const Text('  ',
-                    style: TextStyle(fontSize: 8)),
-                Text('(${g.oiFlipDistPct!.toStringAsFixed(1)}% away)',
+              if (effectiveFlipDistPct != null) ...[
+                const Text('  ', style: TextStyle(fontSize: 8)),
+                Text('(${effectiveFlipDistPct.toStringAsFixed(1)}% away)',
                     style: const TextStyle(
                         color: Color(0xFF6b7280),
                         fontSize: 8,
@@ -1575,8 +1706,8 @@ class _WallsCard extends StatelessWidget {
                   fontFamily: 'monospace')),
           const SizedBox(height: 7),
 
-          // ── Liquidity density proxy ───────────────────────────────────────
-          if (g.wallOiRatio != null) ...[
+          // ── Wall density ──────────────────────────────────────────────────
+          if (effectiveWallDensity != null) ...[
             Row(children: [
               const Text('WALL DENSITY  ',
                   style: TextStyle(
@@ -1608,7 +1739,8 @@ class _WallsCard extends StatelessWidget {
                     fontSize: 8,
                     fontFamily: 'monospace')),
             const SizedBox(height: 2),
-            Text('OI ratio: ${g.wallOiRatio!.toStringAsFixed(2)}× avg  (bid/ask size not in CSV)',
+            Text('Density: ${effectiveWallDensity.toStringAsFixed(2)}×'
+                '${ivSnap?.putWallDensity != null ? ' (Python)' : ' avg (OI proxy)'}',
                 style: const TextStyle(
                     color: Color(0xFF374151),
                     fontSize: 7,
@@ -1681,6 +1813,303 @@ class _FlowBar extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── SABR calibration card ─────────────────────────────────────────────────────
+
+class _SabrCard extends ConsumerWidget {
+  final VolSnapshot snap;
+  const _SabrCard({required this.snap});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(sabrCalibrationProvider(snap.ticker));
+    return _Card(
+      width: 228,
+      label: 'SABR CALIBRATION',
+      child: async.when(
+        loading: () => const Center(
+          child: SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+                strokeWidth: 1.5, color: Color(0xFF3b82f6)),
+          ),
+        ),
+        error: (_, _) => const Text(
+          'Unavailable',
+          style: TextStyle(
+              color: Color(0xFF6b7280),
+              fontSize: 9,
+              fontFamily: 'monospace'),
+        ),
+        data: (slices) {
+          if (slices.isEmpty) {
+            return const Text(
+              'No surface data\nfor this ticker.',
+              style: TextStyle(
+                  color: Color(0xFF4b5563),
+                  fontSize: 9,
+                  height: 1.5,
+                  fontFamily: 'monospace'),
+            );
+          }
+          final visible = slices.take(6).toList();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: const [
+                SizedBox(
+                    width: 28,
+                    child: Text('DTE',
+                        style: TextStyle(
+                            color: Color(0xFF4b5563),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'monospace'))),
+                SizedBox(
+                    width: 36,
+                    child: Text('α',
+                        style: TextStyle(
+                            color: Color(0xFF4b5563),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'monospace'))),
+                SizedBox(
+                    width: 36,
+                    child: Text('ρ',
+                        style: TextStyle(
+                            color: Color(0xFF4b5563),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'monospace'))),
+                SizedBox(
+                    width: 36,
+                    child: Text('ν',
+                        style: TextStyle(
+                            color: Color(0xFF4b5563),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'monospace'))),
+                Text('RMSE',
+                    style: TextStyle(
+                        color: Color(0xFF4b5563),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'monospace')),
+              ]),
+              const SizedBox(height: 4),
+              for (final s in visible)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Row(children: [
+                    SizedBox(
+                        width: 28,
+                        child: Text('${s.dte}d',
+                            style: const TextStyle(
+                                color: Color(0xFF6b7280),
+                                fontSize: 8,
+                                fontFamily: 'monospace'))),
+                    SizedBox(
+                        width: 36,
+                        child: Text(s.alpha.toStringAsFixed(2),
+                            style: const TextStyle(
+                                color: Color(0xFF60a5fa),
+                                fontSize: 8,
+                                fontFamily: 'monospace'))),
+                    SizedBox(
+                        width: 36,
+                        child: Text(s.rho.toStringAsFixed(2),
+                            style: TextStyle(
+                                color: s.rho < 0
+                                    ? const Color(0xFFf87171)
+                                    : const Color(0xFF4ade80),
+                                fontSize: 8,
+                                fontFamily: 'monospace'))),
+                    SizedBox(
+                        width: 36,
+                        child: Text(s.nu.toStringAsFixed(2),
+                            style: const TextStyle(
+                                color: Color(0xFFfbbf24),
+                                fontSize: 8,
+                                fontFamily: 'monospace'))),
+                    Text('${(s.rmse * 100).toStringAsFixed(1)}%',
+                        style: const TextStyle(
+                            color: Color(0xFF9ca3af),
+                            fontSize: 8,
+                            fontFamily: 'monospace')),
+                  ]),
+                ),
+              if (slices.length > 6) ...[
+                const SizedBox(height: 2),
+                Text('+${slices.length - 6} more',
+                    style: const TextStyle(
+                        color: Color(0xFF4b5563),
+                        fontSize: 8,
+                        fontFamily: 'monospace')),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ── Arb check card ────────────────────────────────────────────────────────────
+
+class _ArbCard extends StatefulWidget {
+  final VolSnapshot snap;
+  const _ArbCard({required this.snap});
+
+  @override
+  State<_ArbCard> createState() => _ArbCardState();
+}
+
+class _ArbCardState extends State<_ArbCard> {
+  late Future<ArbCheckResult> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = checkArbForSnap(widget.snap);
+  }
+
+  @override
+  void didUpdateWidget(_ArbCard old) {
+    super.didUpdateWidget(old);
+    if (old.snap.ticker != widget.snap.ticker ||
+        old.snap.obsDateStr != widget.snap.obsDateStr) {
+      setState(() => _future = checkArbForSnap(widget.snap));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _Card(
+      width: 210,
+      label: 'ARB CHECK',
+      child: FutureBuilder<ArbCheckResult>(
+        future: _future,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                    strokeWidth: 1.5, color: Color(0xFF3b82f6)),
+              ),
+            );
+          }
+          if (!snapshot.hasData) {
+            return const Text(
+              'Unavailable',
+              style: TextStyle(
+                  color: Color(0xFF6b7280),
+                  fontSize: 9,
+                  fontFamily: 'monospace'),
+            );
+          }
+          final result = snapshot.data!;
+          if (result.isArbitrageFree) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4ade80).withValues(alpha: 0.12),
+                    border: Border.all(
+                        color: const Color(0xFF4ade80).withValues(alpha: 0.40)),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text('ARB-FREE ✓',
+                      style: TextStyle(
+                          color: Color(0xFF4ade80),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          fontFamily: 'monospace')),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'No calendar or butterfly\nviolations detected.',
+                  style: TextStyle(
+                      color: Color(0xFF6b7280),
+                      fontSize: 9,
+                      height: 1.4,
+                      fontFamily: 'monospace'),
+                ),
+              ],
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFf87171).withValues(alpha: 0.12),
+                  border: Border.all(
+                      color: const Color(0xFFf87171).withValues(alpha: 0.40)),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                    '${result.totalViolations} ARB VIOLATION${result.totalViolations == 1 ? '' : 'S'}',
+                    style: const TextStyle(
+                        color: Color(0xFFf87171),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                        fontFamily: 'monospace')),
+              ),
+              const SizedBox(height: 6),
+              if (result.calendarViolations.isNotEmpty) ...[
+                Text('Cal: ${result.calendarViolations.length}',
+                    style: const TextStyle(
+                        color: Color(0xFFfbbf24),
+                        fontSize: 9,
+                        fontFamily: 'monospace')),
+                for (final v in result.calendarViolations.take(2))
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6, top: 1),
+                    child: Text(
+                      'K\$${v.strike.toStringAsFixed(0)} ${v.nearDte}d→${v.farDte}d',
+                      style: const TextStyle(
+                          color: Color(0xFF6b7280),
+                          fontSize: 8,
+                          fontFamily: 'monospace'),
+                    ),
+                  ),
+              ],
+              if (result.butterflyViolations.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('Fly: ${result.butterflyViolations.length}',
+                    style: const TextStyle(
+                        color: Color(0xFFf87171),
+                        fontSize: 9,
+                        fontFamily: 'monospace')),
+                for (final v in result.butterflyViolations.take(2))
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6, top: 1),
+                    child: Text(
+                      '${v.dte}d K\$${v.strike.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                          color: Color(0xFF6b7280),
+                          fontSize: 8,
+                          fontFamily: 'monospace'),
+                    ),
+                  ),
+              ],
+            ],
+          );
+        },
+      ),
     );
   }
 }

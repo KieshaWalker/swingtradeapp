@@ -91,5 +91,23 @@ def iv_snapshot_endpoint(req: IvSnapshotRequest):
         "max_gex_strike": result.max_gex_strike,
         "put_call_ratio": result.put_call_ratio,
         "underlying_price": spot,
+        # Extended fields (migration 027)
+        "iv_rank": result.iv_rank,
+        "iv_percentile": result.iv_percentile,
+        "iv_rating": result.rating.value if result.rating else None,
+        "gamma_regime": result.gamma_regime.value if result.gamma_regime else None,
+        "gamma_slope": result.gamma_slope.value if result.gamma_slope else None,
+        "iv_gex_signal": result.iv_gex_signal.value if result.iv_gex_signal else None,
+        "zero_gamma_level": result.zero_gamma_level,
+        "spot_to_zero_gamma_pct": result.spot_to_zero_gamma_pct,
+        "delta_gex": result.delta_gex,
+        "put_wall_density": result.put_wall_density,
+        "vanna_regime": result.vanna_regime.value if result.vanna_regime else None,
+        "total_vex": result.total_vex,
+        "total_cex": result.total_cex,
+        "total_volga": result.total_volga,
+        "max_vex_strike": result.max_vex_strike,
+        "skew_avg_52w": result.skew_avg_52w,
+        "skew_z_score": result.skew_z_score,
     }, on_conflict="ticker,date").execute()
     return {**_result_to_dict(result, spot), "persisted": True, "date": today}

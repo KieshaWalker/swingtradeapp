@@ -105,7 +105,52 @@ _Machine-learning market regime classification. Ingests macro + IV data, trains 
 - `regime_ml_models` (026) — storing trained model JSON
 
 **Changing the ML feature schema** (026) requires updating `regime_ml_models.dart`, `regime_ml_service.py`, and the regime provider.
+regime_ml_models - supabase
+| column_name | data_type                |
+| ----------- | ------------------------ |
+| id          | bigint                   |
+| model_type  | text                     |
+| trained_at  | timestamp with time zone |
+| n_samples   | integer                  |
+| n_positive  | integer                  |
+| accuracy    | double precision         |
+| auc_roc     | double precision         |
+| precision   | double precision         |
+| recall      | double precision         |
+| model_json  | jsonb                    |
 
+regime_snapshots
+| column_name              | data_type                |
+| ------------------------ | ------------------------ |
+| ticker                   | text                     |
+| obs_date                 | date                     |
+| gamma_regime             | text                     |
+| iv_gex_signal            | text                     |
+| sma10                    | double precision         |
+| sma50                    | double precision         |
+| sma_crossed              | boolean                  |
+| vix_current              | double precision         |
+| vix_10ma                 | double precision         |
+| vix_dev_pct              | double precision         |
+| vix_rsi                  | double precision         |
+| spot_to_zgl_pct          | double precision         |
+| iv_percentile            | double precision         |
+| hmm_state                | text                     |
+| hmm_probability          | double precision         |
+| strategy_bias            | text                     |
+| signals                  | ARRAY                    |
+| created_at               | timestamp with time zone |
+| delta_gex                | numeric                  |
+| vix_term_structure_ratio | numeric                  |
+| vvix_current             | numeric                  |
+| spot_to_vt_pct           | numeric                  |
+| breadth_proxy            | numeric                  |
+| gex_0dte                 | numeric                  |
+| gex_0dte_pct             | numeric                  |
+| price_roc5               | numeric                  |
+| total_gex                | numeric                  |
+| vol_sma3                 | double precision         |
+| vol_sma20                | double precision         |
 ---
 
 ## E
@@ -164,6 +209,7 @@ _Aggregates BLS, BEA, EIA, Census, FRED, Kalshi data into snapshots. One of the 
 - `economy_indicator_snapshots` — read by Blotter (economic phase) and Regime (ML features)
 
 **Waterfall — Changing an edge function** (e.g. `get-bls-data`) requires matching changes to `bls_service.dart`, `bls_models.dart`, and the economy snapshot schema if fields change.
+
 
 ---
 

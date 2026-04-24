@@ -182,7 +182,8 @@ class SkewPoint {
       : null;
 }
 
-/// Persisted snapshot stored in Supabase iv_snapshots
+/// Persisted snapshot stored in Supabase iv_snapshots.
+/// Basic fields written since migration 011; extended fields added in 027.
 class IvSnapshot {
   final String ticker;
   final DateTime date;
@@ -194,6 +195,25 @@ class IvSnapshot {
   final double? putCallRatio;
   final double? underlyingPrice;
 
+  // Extended fields (migration 027)
+  final double? ivRank;
+  final double? ivPercentile;
+  final IvRating? ivRating;
+  final GammaRegime? gammaRegime;
+  final GammaSlope? gammaSlope;
+  final IvGexSignal? ivGexSignal;
+  final double? zeroGammaLevel;
+  final double? spotToZeroGammaPct;
+  final double? deltaGex;
+  final double? putWallDensity;
+  final VannaRegime? vannaRegime;
+  final double? totalVex;
+  final double? totalCex;
+  final double? totalVolga;
+  final double? maxVexStrike;
+  final double? skewAvg52w;
+  final double? skewZScore;
+
   const IvSnapshot({
     required this.ticker,
     required this.date,
@@ -204,20 +224,89 @@ class IvSnapshot {
     this.maxGexStrike,
     this.putCallRatio,
     this.underlyingPrice,
+    this.ivRank,
+    this.ivPercentile,
+    this.ivRating,
+    this.gammaRegime,
+    this.gammaSlope,
+    this.ivGexSignal,
+    this.zeroGammaLevel,
+    this.spotToZeroGammaPct,
+    this.deltaGex,
+    this.putWallDensity,
+    this.vannaRegime,
+    this.totalVex,
+    this.totalCex,
+    this.totalVolga,
+    this.maxVexStrike,
+    this.skewAvg52w,
+    this.skewZScore,
   });
 
-  factory IvSnapshot.fromJson(Map<String, dynamic> j) => IvSnapshot(
-    ticker:          j['ticker'] as String,
-    date:            DateTime.parse(j['date'] as String),
-    atmIv:           (j['atm_iv'] as num).toDouble(),
-    skew:            (j['skew'] as num?)?.toDouble(),
-    gexByStrike:     (j['gex_by_strike'] as List? ?? [])
-                         .cast<Map<String, dynamic>>(),
-    totalGex:        (j['total_gex'] as num?)?.toDouble(),
-    maxGexStrike:    (j['max_gex_strike'] as num?)?.toDouble(),
-    putCallRatio:    (j['put_call_ratio'] as num?)?.toDouble(),
-    underlyingPrice: (j['underlying_price'] as num?)?.toDouble(),
-  );
+  factory IvSnapshot.fromJson(Map<String, dynamic> j) {
+    IvRating? parseRating(String? s) => switch (s) {
+      'extreme'   => IvRating.extreme,
+      'expensive' => IvRating.expensive,
+      'fair'      => IvRating.fair,
+      'cheap'     => IvRating.cheap,
+      _           => null,
+    };
+    GammaRegime? parseGammaRegime(String? s) => switch (s) {
+      'positive' => GammaRegime.positive,
+      'negative' => GammaRegime.negative,
+      _          => null,
+    };
+    GammaSlope? parseGammaSlope(String? s) => switch (s) {
+      'rising'  => GammaSlope.rising,
+      'falling' => GammaSlope.falling,
+      'flat'    => GammaSlope.flat,
+      _         => null,
+    };
+    IvGexSignal? parseIvGexSignal(String? s) => switch (s) {
+      'classic_short_gamma'  => IvGexSignal.classicShortGamma,
+      'regime_shift'         => IvGexSignal.regimeShift,
+      'event_over_pos_gamma' => IvGexSignal.eventOverPosGamma,
+      'stable_gamma'         => IvGexSignal.stableGamma,
+      _                      => null,
+    };
+    VannaRegime? parseVannaRegime(String? s) => switch (s) {
+      'bullishOnVolCrush' => VannaRegime.bullishOnVolCrush,
+      'bearishOnVolCrush' => VannaRegime.bearishOnVolCrush,
+      'bullishOnVolSpike' => VannaRegime.bullishOnVolSpike,
+      'bearishOnVolSpike' => VannaRegime.bearishOnVolSpike,
+      _                   => null,
+    };
+
+    return IvSnapshot(
+      ticker:             j['ticker'] as String,
+      date:               DateTime.parse(j['date'] as String),
+      atmIv:              (j['atm_iv'] as num).toDouble(),
+      skew:               (j['skew'] as num?)?.toDouble(),
+      gexByStrike:        (j['gex_by_strike'] as List? ?? [])
+                              .cast<Map<String, dynamic>>(),
+      totalGex:           (j['total_gex'] as num?)?.toDouble(),
+      maxGexStrike:       (j['max_gex_strike'] as num?)?.toDouble(),
+      putCallRatio:       (j['put_call_ratio'] as num?)?.toDouble(),
+      underlyingPrice:    (j['underlying_price'] as num?)?.toDouble(),
+      ivRank:             (j['iv_rank'] as num?)?.toDouble(),
+      ivPercentile:       (j['iv_percentile'] as num?)?.toDouble(),
+      ivRating:           parseRating(j['iv_rating'] as String?),
+      gammaRegime:        parseGammaRegime(j['gamma_regime'] as String?),
+      gammaSlope:         parseGammaSlope(j['gamma_slope'] as String?),
+      ivGexSignal:        parseIvGexSignal(j['iv_gex_signal'] as String?),
+      zeroGammaLevel:     (j['zero_gamma_level'] as num?)?.toDouble(),
+      spotToZeroGammaPct: (j['spot_to_zero_gamma_pct'] as num?)?.toDouble(),
+      deltaGex:           (j['delta_gex'] as num?)?.toDouble(),
+      putWallDensity:     (j['put_wall_density'] as num?)?.toDouble(),
+      vannaRegime:        parseVannaRegime(j['vanna_regime'] as String?),
+      totalVex:           (j['total_vex'] as num?)?.toDouble(),
+      totalCex:           (j['total_cex'] as num?)?.toDouble(),
+      totalVolga:         (j['total_volga'] as num?)?.toDouble(),
+      maxVexStrike:       (j['max_vex_strike'] as num?)?.toDouble(),
+      skewAvg52w:         (j['skew_avg_52w'] as num?)?.toDouble(),
+      skewZScore:         (j['skew_z_score'] as num?)?.toDouble(),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'ticker':           ticker,
