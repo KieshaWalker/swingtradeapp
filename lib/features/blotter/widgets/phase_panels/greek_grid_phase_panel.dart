@@ -322,7 +322,7 @@ PhaseResult _computeResult({
             'Tailwind for put positions growing.';
     }
     signals.add(
-      'ATM gamma (${bucket.label}, 14d): ${dir} '
+      'ATM gamma (${bucket.label}, 14d): $dir '
       '${first.toStringAsFixed(4)} → ${last.toStringAsFixed(4)} '
       '(${pctChng >= 0 ? '+' : ''}${pctChng.toStringAsFixed(0)}%)'
       '  —  $trendNote',
