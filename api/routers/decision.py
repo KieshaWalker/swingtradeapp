@@ -13,6 +13,7 @@ class DecisionRequest(BaseModel):
     price_target: float = Field(..., gt=0)
     max_budget: float = Field(..., gt=0)
     contracts: int = 1
+    days_to_target: int = 0
     iv_analysis: dict | None = None
 
 
@@ -22,6 +23,7 @@ class RankAllRequest(BaseModel):
     price_target: float = Field(..., gt=0)
     max_budget: float = Field(..., gt=0)
     contracts: int = 1
+    days_to_target: int = 0
     iv_analysis: dict | None = None
     top_n: int = 5
 
@@ -43,6 +45,9 @@ def _result_to_dict(r) -> dict:
         "break_even_move_pct": r.break_even_move_pct,
         "daily_theta_drag": r.daily_theta_drag,
         "total_theta_drag": r.total_theta_drag,
+        "theta_decay_to_target": r.theta_decay_to_target,
+        "max_loss": r.max_loss,
+        "risk_reward_ratio": r.risk_reward_ratio,
         "pricing_edge": r.pricing_edge,
         "is_cheap": r.is_cheap,
         "vol_oi_ratio": r.vol_oi_ratio,
@@ -64,6 +69,7 @@ def decision_analyze(req: DecisionRequest):
         price_target=req.price_target,
         max_budget=req.max_budget,
         contracts=req.contracts,
+        days_to_target=req.days_to_target,
         iv_analysis=req.iv_analysis,
     )
     return _result_to_dict(result)
@@ -77,6 +83,7 @@ def decision_rank_all(req: RankAllRequest):
         price_target=req.price_target,
         max_budget=req.max_budget,
         contracts=req.contracts,
+        days_to_target=req.days_to_target,
         iv_analysis=req.iv_analysis,
         top_n=req.top_n,
     )

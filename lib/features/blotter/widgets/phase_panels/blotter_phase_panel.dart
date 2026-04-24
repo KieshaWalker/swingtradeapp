@@ -42,7 +42,6 @@ import '../../../../services/python_api/python_api_client.dart';
 import '../../../vol_surface/providers/sabr_calibration_provider.dart';
 import '../../models/blotter_models.dart';
 import '../../models/phase_result.dart';
-import '../../screens/trade_blotter_screen.dart';
 import '../../services/fair_value_engine.dart';
 
 // ── Portfolio state provider ──────────────────────────────────────────────────
@@ -232,12 +231,63 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     IvAnalysis?              ivAnalysis,
   }) {
     final edgeBps = fv.edgeBps;
+    final isCall  = widget.isCall;
 
-    // Hard fails — note: edgeBps alone is NOT a hard fail.
-    // The SABR+Heston stack uses the contract's own IV for calibration, which
-    // produces a systematic negative bias on OTM options (Heston ρ=-0.7 lowers
-    // OTM call fair value below broker mid). A small negative edge is noise;
-    // only deltaBreached and extreme ES₉₅ are structural risk gates.
+    // ── Regime multipliers — mirror Python option_scoring.py exactly ──────────
+    // Gm (GEX multiplier): negative=0.50 FAIL, near-flip=0.70, pos+deep=1.20,
+    //   pos+rising=1.10, pos+flat=1.00, pos+falling=0.85
+    // Vm (Vanna multiplier): falling slope + bearish vanna = 0.60
+    double gexMultiplier   = 1.0;
+    double vannaMultiplier = 1.0;
+    bool   regimeFail      = false;
+    bool   nearFlip        = false;
+    String? slopeSignal;
+    String? vannaSignal;
+
+    if (ivAnalysis != null) {
+      final gr       = ivAnalysis.gammaRegime;
+      final slope    = ivAnalysis.gammaSlope;
+      final flipPct  = ivAnalysis.spotToZeroGammaPct;
+      final totalGex = ivAnalysis.totalGex;
+      final vr       = ivAnalysis.vannaRegime;
+
+      if (gr == GammaRegime.negative) {
+        regimeFail    = true;
+        gexMultiplier = 0.50;
+      } else if (flipPct != null && flipPct.abs() <= 0.5) {
+        nearFlip      = true;
+        gexMultiplier = 0.70;
+      } else if (gr == GammaRegime.positive) {
+        if (totalGex != null && totalGex >= 1000.0) {
+          gexMultiplier = 1.20;
+        } else if (slope == GammaSlope.rising) {
+          gexMultiplier = 1.10;
+        } else if (slope == GammaSlope.falling) {
+          gexMultiplier = 0.85;
+        }
+        slopeSignal = 'Gamma slope ${slope.label}  →  Gm ${gexMultiplier.toStringAsFixed(2)}×';
+      }
+
+      final slopeFalling = slope == GammaSlope.falling;
+      final vannaBearish = vr == VannaRegime.bearishOnVolCrush ||
+                           vr == VannaRegime.bearishOnVolSpike;
+      if (slopeFalling && vannaBearish) {
+        vannaMultiplier = 0.60;
+        vannaSignal = 'Vanna Divergence: declining slope + bearish dealer hedge — '
+            'fragile rally; reversal risk elevated  (Vm 0.60×)';
+      }
+    }
+
+    final regimeMultiplier = gexMultiplier * vannaMultiplier;
+
+    // ── Direction alignment ───────────────────────────────────────────────────
+    final gr = ivAnalysis?.gammaRegime ?? GammaRegime.unknown;
+    final gexKnown = gr != GammaRegime.unknown;
+    final gexMisaligned = gexKnown &&
+        ((isCall && gr == GammaRegime.negative) ||
+         (!isCall && gr == GammaRegime.positive));
+
+    // ── Hard fails ────────────────────────────────────────────────────────────
     final deltaBreached = whatIf.exceedsDeltaThreshold;
     final es95High      = tradeEs95 > 1500;
 
@@ -246,12 +296,17 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
       status = PhaseStatus.fail;
     } else if (edgeBps < 0 ||
                tradeEs95 > 500 ||
-               whatIf.newDelta.abs() > whatIf.deltaThreshold * 0.80) {
+               whatIf.newDelta.abs() > whatIf.deltaThreshold * 0.80 ||
+               regimeFail ||
+               nearFlip ||
+               gexMisaligned ||
+               vannaMultiplier < 1.0) {
       status = PhaseStatus.warn;
     } else {
       status = PhaseStatus.pass;
     }
 
+    // ── Signals ───────────────────────────────────────────────────────────────
     final signals = <String>[
       '${fv.edgeLabel}  ${edgeBps >= 0 ? '+' : ''}${edgeBps.toStringAsFixed(1)} bps  '
           '(model \$${fv.modelFairValue.toStringAsFixed(3)} vs mid \$${fv.brokerMid.toStringAsFixed(3)})',
@@ -259,6 +314,10 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
           '(market IV: ${(fv.impliedVol * 100).toStringAsFixed(1)}%)',
       'ES₉₅ this trade: \$${tradeEs95.toStringAsFixed(0)}  '
           '(Δ \$${deltaEs.toStringAsFixed(0)} + Γ \$${gammaEs.toStringAsFixed(0)})',
+      if (ivAnalysis != null)
+        'Regime multiplier: Gm ${gexMultiplier.toStringAsFixed(2)}× · '
+        'Vm ${vannaMultiplier.toStringAsFixed(2)}× = ${regimeMultiplier.toStringAsFixed(2)}×'
+        '${regimeFail ? " [REGIME FAIL — capped at 35]" : ""}',
       if (fv.vanna != null)
         'Vanna ${fv.vanna!.toStringAsFixed(4)} · '
         'Charm ${fv.charm?.toStringAsFixed(4) ?? '—'} · '
@@ -266,14 +325,28 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
       if (deltaBreached)
         '⚠ Portfolio delta \$${whatIf.newDelta.toStringAsFixed(0)} '
             'exceeds \$${whatIf.deltaThreshold.toStringAsFixed(0)} threshold',
-      if (ivAnalysis?.gammaRegime == GammaRegime.negative)
-        '⚠ Negative GEX regime — realized vol likely exceeds model; widen stops',
+      if (regimeFail)
+        '⚠ REGIME FAIL: Short Gamma — dealers amplify moves; score capped at 35 (Gm 0.50×)',
+      if (nearFlip)
+        '⚠ Near Zero Gamma flip (${ivAnalysis!.spotToZeroGammaPct!.abs().toStringAsFixed(2)}% from ZGL) — '
+            'regime-shift probability elevated (Gm 0.70×)',
+      ?slopeSignal,
+      if (vannaSignal case final s?) '⚠ $s',
+      if (gexMisaligned && !regimeFail)
+        '⚠ GEX direction mismatch — ${isCall ? "Negative GEX (Short Gamma) opposes calls; strong buy requires positive GEX" : "Positive GEX (Long Gamma) opposes puts; strong buy requires negative GEX"}',
+      if (!gexMisaligned && gexKnown && !regimeFail)
+        '✓ GEX aligned — ${isCall ? "Positive GEX (Long Gamma) supports calls" : "Negative GEX (Short Gamma) supports puts"}',
+      if (!gexKnown)
+        '⚠ GEX regime unavailable — cannot confirm directional alignment',
     ];
 
+    final multiplierTag = ivAnalysis != null
+        ? '  ·  ×${regimeMultiplier.toStringAsFixed(2)}'
+        : '';
     final headline =
         '${fv.edgeLabel}  '
         '${edgeBps >= 0 ? '+' : ''}${edgeBps.toStringAsFixed(0)} bps  ·  '
-        'ES₉₅ \$${tradeEs95.toStringAsFixed(0)}';
+        'ES₉₅ \$${tradeEs95.toStringAsFixed(0)}$multiplierTag';
 
     return PhaseResult(status: status, headline: headline, signals: signals);
   }
@@ -339,7 +412,7 @@ class _PanelBody extends StatelessWidget {
         // 2. Pricing model stack
         _SectionLabel('Pricing Model Stack'),
         const SizedBox(height: 8),
-        _PricingStackCard(fv: fv),
+        _PricingStackCard(fv: fv, isCall: isCall, gammaRegime: ivAnalysis?.gammaRegime),
         const SizedBox(height: 16),
 
         // 3. Second-order Greeks
@@ -394,9 +467,6 @@ class _PanelBody extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // 8. Deep link
-        _DeepLinkButton(),
-        const SizedBox(height: 4),
       ],
     );
   }
@@ -445,7 +515,9 @@ class _PhaseHeader extends StatelessWidget {
 
 class _PricingStackCard extends StatelessWidget {
   final FairValueResult fv;
-  const _PricingStackCard({required this.fv});
+  final bool            isCall;
+  final GammaRegime?    gammaRegime;
+  const _PricingStackCard({required this.fv, required this.isCall, this.gammaRegime});
 
   @override
   Widget build(BuildContext context) {
@@ -501,7 +573,7 @@ class _PricingStackCard extends StatelessWidget {
             color:    AppTheme.neutralColor,
           ),
           // Edge banner
-          _EdgeBanner(fv: fv),
+          _EdgeBanner(fv: fv, isCall: isCall, gammaRegime: gammaRegime),
         ],
       ),
     );
@@ -566,7 +638,9 @@ class _PricingRow extends StatelessWidget {
 
 class _EdgeBanner extends StatelessWidget {
   final FairValueResult fv;
-  const _EdgeBanner({required this.fv});
+  final bool            isCall;
+  final GammaRegime?    gammaRegime;
+  const _EdgeBanner({required this.fv, required this.isCall, this.gammaRegime});
 
   @override
   Widget build(BuildContext context) {
@@ -612,7 +686,7 @@ class _EdgeBanner extends StatelessWidget {
           ),
           const Spacer(),
           Text(
-            _edgeInterpretation(edgeBps),
+            _edgeInterpretation(edgeBps, isCall: isCall, gammaRegime: gammaRegime),
             style: const TextStyle(
                 color: AppTheme.neutralColor, fontSize: 11),
           ),
@@ -1131,29 +1205,6 @@ class _LoadingRow extends StatelessWidget {
   }
 }
 
-// ── Deep link button ──────────────────────────────────────────────────────────
-
-class _DeepLinkButton extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: () => Navigator.push(
-        context,
-        MaterialPageRoute<void>(
-            builder: (_) => const TradeBlotterScreen()),
-      ),
-      icon:  const Icon(Icons.open_in_new_rounded, size: 14),
-      label: const Text('View Full Blotter'),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppTheme.neutralColor,
-        side:            const BorderSide(color: AppTheme.borderColor),
-        minimumSize:     const Size(double.infinity, 40),
-        textStyle:       const TextStyle(fontSize: 12),
-      ),
-    );
-  }
-}
-
 // ── Not-ready / loading ───────────────────────────────────────────────────────
 
 class _NotReadyTile extends StatelessWidget {
@@ -1216,8 +1267,46 @@ class _GexRegimeCard extends StatelessWidget {
     }
 
     final regime   = ivAnalysis?.gammaRegime ?? GammaRegime.unknown;
+    final slope    = ivAnalysis?.gammaSlope   ?? GammaSlope.flat;
+    final vr       = ivAnalysis?.vannaRegime  ?? VannaRegime.unknown;
     final totalGex = ivAnalysis?.totalGex;
+    final flipPct  = ivAnalysis?.spotToZeroGammaPct;
     final gexWall  = ivAnalysis?.maxGexStrike;
+
+    // ── Regime multipliers — mirror Python option_scoring.py ─────────────────
+    double gexMultiplier   = 1.0;
+    double vannaMultiplier = 1.0;
+    bool   regimeFail      = false;
+    bool   nearFlip        = false;
+
+    if (ivAnalysis != null) {
+      if (regime == GammaRegime.negative) {
+        regimeFail    = true;
+        gexMultiplier = 0.50;
+      } else if (flipPct != null && flipPct.abs() <= 0.5) {
+        nearFlip      = true;
+        gexMultiplier = 0.70;
+      } else if (regime == GammaRegime.positive) {
+        if (totalGex != null && totalGex >= 1000.0) {
+          gexMultiplier = 1.20;
+        } else if (slope == GammaSlope.rising) {
+          gexMultiplier = 1.10;
+        } else if (slope == GammaSlope.falling) {
+          gexMultiplier = 0.85;
+        }
+      }
+
+      final slopeFalling = slope == GammaSlope.falling;
+      final vannaBearish = vr == VannaRegime.bearishOnVolCrush ||
+                           vr == VannaRegime.bearishOnVolSpike;
+      if (slopeFalling && vannaBearish) vannaMultiplier = 0.60;
+    }
+
+    final regimeMultiplier = gexMultiplier * vannaMultiplier;
+    final gexKnown         = regime != GammaRegime.unknown;
+    final gexMisaligned    = gexKnown &&
+        ((isCall && regime == GammaRegime.negative) ||
+         (!isCall && regime == GammaRegime.positive));
 
     final Color regimeColor;
     final IconData regimeIcon;
@@ -1233,7 +1322,22 @@ class _GexRegimeCard extends StatelessWidget {
         regimeIcon  = Icons.help_outline_rounded;
     }
 
-    
+    final Color slopeColor = switch (slope) {
+      GammaSlope.rising  => AppTheme.profitColor,
+      GammaSlope.flat    => AppTheme.neutralColor,
+      GammaSlope.falling => const Color(0xFFFBBF24),
+    };
+
+    final Color alignColor = gexMisaligned
+        ? AppTheme.lossColor
+        : gexKnown
+            ? AppTheme.profitColor
+            : AppTheme.neutralColor;
+    final String alignLabel = gexMisaligned
+        ? (isCall ? 'GEX headwind for calls' : 'GEX headwind for puts')
+        : gexKnown
+            ? (isCall ? '✓ GEX tailwind — supports call' : '✓ GEX tailwind — supports put')
+            : 'GEX regime unknown';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1241,14 +1345,14 @@ class _GexRegimeCard extends StatelessWidget {
         color:        AppTheme.cardColor,
         borderRadius: BorderRadius.circular(10),
         border:       Border.all(
-            color: regime == GammaRegime.negative
+            color: regimeFail
                 ? AppTheme.lossColor.withValues(alpha: 0.35)
                 : AppTheme.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Regime badge row
+          // Regime + net GEX row
           Row(
             children: [
               Icon(regimeIcon, size: 16, color: regimeColor),
@@ -1259,13 +1363,28 @@ class _GexRegimeCard extends StatelessWidget {
                     color: regimeColor, fontSize: 14,
                     fontWeight: FontWeight.w800),
               ),
+              const SizedBox(width: 8),
+              // Slope chip
+              if (gexKnown)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color:        slopeColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(5),
+                    border:       Border.all(color: slopeColor.withValues(alpha: 0.35)),
+                  ),
+                  child: Text(
+                    slope.label,
+                    style: TextStyle(
+                        color: slopeColor, fontSize: 10,
+                        fontWeight: FontWeight.w700),
+                  ),
+                ),
               const Spacer(),
               if (totalGex != null) ...[
-                Text(
-                  'Net GEX  ',
-                  style: const TextStyle(
-                      color: AppTheme.neutralColor, fontSize: 11),
-                ),
+                Text('Net GEX  ',
+                    style: const TextStyle(
+                        color: AppTheme.neutralColor, fontSize: 11)),
                 Text(
                   ivAnalysis!.gexLabel,
                   style: TextStyle(
@@ -1290,8 +1409,8 @@ class _GexRegimeCard extends StatelessWidget {
                     size: 13, color: AppTheme.neutralColor),
                 const SizedBox(width: 5),
                 Text(
-                  'Gamma wall at \$${gexWall.toStringAsFixed(gexWall == gexWall.truncateToDouble() ? 0 : 2)}  '
-                  '— major support/resistance level for market makers',
+                  'Gamma wall at \$${gexWall.toStringAsFixed(gexWall == gexWall.truncateToDouble() ? 0 : 2)}'
+                  '  — major support/resistance level for market makers',
                   style: const TextStyle(
                       color: AppTheme.neutralColor, fontSize: 11),
                 ),
@@ -1299,16 +1418,142 @@ class _GexRegimeCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 10),
+          // ── Regime multiplier breakdown ─────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color:        AppTheme.elevatedColor,
               borderRadius: BorderRadius.circular(6),
             ),
-           
+            child: ivAnalysis == null
+                ? const Text(
+                    'GEX data unavailable — regime multipliers not computed',
+                    style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Gm row
+                      _MultiplierRow(
+                        label:  'Gm  (GEX multiplier)',
+                        value:  '${gexMultiplier.toStringAsFixed(2)}×',
+                        detail: regimeFail
+                            ? 'Short Gamma — score capped at 35'
+                            : nearFlip
+                                ? 'Near flip (${flipPct!.abs().toStringAsFixed(2)}% from ZGL)'
+                                : regime == GammaRegime.positive
+                                    ? slope.description
+                                    : '—',
+                        color:  gexMultiplier >= 1.0
+                            ? AppTheme.profitColor
+                            : gexMultiplier >= 0.85
+                                ? const Color(0xFFFBBF24)
+                                : AppTheme.lossColor,
+                      ),
+                      const SizedBox(height: 6),
+                      // Vm row
+                      _MultiplierRow(
+                        label:  'Vm  (Vanna multiplier)',
+                        value:  '${vannaMultiplier.toStringAsFixed(2)}×',
+                        detail: vannaMultiplier < 1.0
+                            ? 'Divergence: falling slope + bearish dealer hedge'
+                            : vr.label,
+                        color:  vannaMultiplier < 1.0
+                            ? AppTheme.lossColor
+                            : AppTheme.neutralColor,
+                      ),
+                      Divider(
+                          height: 14,
+                          color: AppTheme.borderColor.withValues(alpha: 0.4)),
+                      // Combined row
+                      _MultiplierRow(
+                        label:  'Combined  (Gm × Vm)',
+                        value:  '${regimeMultiplier.toStringAsFixed(2)}×',
+                        detail: regimeMultiplier >= 1.0
+                            ? 'Regime amplifies score'
+                            : 'Regime suppresses score',
+                        color:  regimeMultiplier >= 1.0
+                            ? AppTheme.profitColor
+                            : regimeMultiplier >= 0.85
+                                ? const Color(0xFFFBBF24)
+                                : AppTheme.lossColor,
+                        bold: true,
+                      ),
+                      const SizedBox(height: 8),
+                      // Direction alignment chip
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color:        alignColor.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(5),
+                          border:       Border.all(
+                              color: alignColor.withValues(alpha: 0.35)),
+                        ),
+                        child: Text(
+                          alignLabel,
+                          style: TextStyle(
+                              color: alignColor,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Multiplier row (used inside _GexRegimeCard) ───────────────────────────────
+
+class _MultiplierRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final String detail;
+  final Color  color;
+  final bool   bold;
+
+  const _MultiplierRow({
+    required this.label,
+    required this.value,
+    required this.detail,
+    required this.color,
+    this.bold = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: TextStyle(
+                      color: bold ? Colors.white : AppTheme.neutralColor,
+                      fontSize: 11,
+                      fontWeight: bold ? FontWeight.w700 : FontWeight.normal)),
+              if (detail.isNotEmpty)
+                Text(detail,
+                    style: const TextStyle(
+                        color: AppTheme.neutralColor,
+                        fontSize: 10,
+                        height: 1.3)),
+            ],
+          ),
+        ),
+        Text(value,
+            style: TextStyle(
+                color:      color,
+                fontSize:   bold ? 14 : 12,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'monospace')),
+      ],
     );
   }
 }
@@ -1509,8 +1754,19 @@ class _SectionLabel extends StatelessWidget {
 // Helper functions
 // =============================================================================
 
-String _edgeInterpretation(double bps) {
-  if (bps > 20)   return 'Model well above market — strong buy signal';
+String _edgeInterpretation(double bps, {bool isCall = true, GammaRegime? gammaRegime}) {
+  if (bps > 20) {
+    final callAligned = isCall  && gammaRegime == GammaRegime.positive;
+    final putAligned  = !isCall && gammaRegime == GammaRegime.negative;
+    if (callAligned) return 'Strong buy — pricing edge + positive GEX supports call';
+    if (putAligned)  return 'Strong buy — pricing edge + negative GEX supports put';
+    if (gammaRegime == null || gammaRegime == GammaRegime.unknown) {
+      return 'Pricing edge — GEX regime unknown, cannot confirm direction';
+    }
+    return isCall
+        ? 'Pricing edge — GEX headwind (negative GEX opposes calls)'
+        : 'Pricing edge — GEX headwind (positive GEX opposes puts)';
+  }
   if (bps > 5)    return 'Model above mid — you have a pricing edge';
   if (bps > -5)   return 'Fairly priced — no systematic edge';
   if (bps > -20)  return 'Model below mid — paying above fair value';

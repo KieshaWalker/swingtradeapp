@@ -28,9 +28,10 @@ class OptionDecisionWizard extends ConsumerStatefulWidget {
 class _OptionDecisionWizardState extends ConsumerState<OptionDecisionWizard> {
   // ── Inputs ──────────────────────────────────────────────────────────────────
   TradeDirection _direction  = TradeDirection.bullish;
-  final _targetCtrl  = TextEditingController();
-  final _budgetCtrl  = TextEditingController();
+  final _targetCtrl    = TextEditingController();
+  final _budgetCtrl    = TextEditingController();
   final _contractsCtrl = TextEditingController(text: '1');
+  final _daysCtrl      = TextEditingController(text: '14');
   final _formKey = GlobalKey<FormState>();
 
   // ── State ───────────────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ class _OptionDecisionWizardState extends ConsumerState<OptionDecisionWizard> {
     _targetCtrl.dispose();
     _budgetCtrl.dispose();
     _contractsCtrl.dispose();
+    _daysCtrl.dispose();
     super.dispose();
   }
 
@@ -53,12 +55,13 @@ class _OptionDecisionWizardState extends ConsumerState<OptionDecisionWizard> {
 
     try {
       final rawList = await PythonApiClient.decisionRankAll(
-        chain:       chain.rawJson,
-        direction:   _direction == TradeDirection.bullish ? 'bullish' : 'bearish',
-        priceTarget: double.parse(_targetCtrl.text),
-        maxBudget:   double.parse(_budgetCtrl.text),
-        contracts:   int.tryParse(_contractsCtrl.text) ?? 1,
-        topN:        8,
+        chain:         chain.rawJson,
+        direction:     _direction == TradeDirection.bullish ? 'bullish' : 'bearish',
+        priceTarget:   double.parse(_targetCtrl.text),
+        maxBudget:     double.parse(_budgetCtrl.text),
+        contracts:     int.tryParse(_contractsCtrl.text) ?? 1,
+        daysToTarget:  int.tryParse(_daysCtrl.text) ?? 0,
+        topN:          8,
       );
 
       // Build symbol → contract lookup so fromJson can attach the full object
@@ -142,11 +145,12 @@ class _OptionDecisionWizardState extends ConsumerState<OptionDecisionWizard> {
             chain:      chain,
             onReset:    () => setState(() => _analyzed = false),
           ) : _InputForm(
-            formKey:      _formKey,
-            direction:    _direction,
-            targetCtrl:   _targetCtrl,
-            budgetCtrl:   _budgetCtrl,
+            formKey:       _formKey,
+            direction:     _direction,
+            targetCtrl:    _targetCtrl,
+            budgetCtrl:    _budgetCtrl,
             contractsCtrl: _contractsCtrl,
+            daysCtrl:      _daysCtrl,
             underlyingPrice: chain.underlyingPrice,
             onDirectionChanged: (d) {
               setState(() {
@@ -174,6 +178,7 @@ class _InputForm extends StatelessWidget {
   final TextEditingController targetCtrl;
   final TextEditingController budgetCtrl;
   final TextEditingController contractsCtrl;
+  final TextEditingController daysCtrl;
   final double               underlyingPrice;
   final void Function(TradeDirection) onDirectionChanged;
   final VoidCallback         onAnalyze;
@@ -184,6 +189,7 @@ class _InputForm extends StatelessWidget {
     required this.targetCtrl,
     required this.budgetCtrl,
     required this.contractsCtrl,
+    required this.daysCtrl,
     required this.underlyingPrice,
     required this.onDirectionChanged,
     required this.onAnalyze,
@@ -336,6 +342,29 @@ class _InputForm extends StatelessWidget {
               ],
             ),
 
+            const SizedBox(height: 20),
+
+            // Days to target
+            const Text('DAYS TO TARGET',
+                style: TextStyle(
+                    color: AppTheme.neutralColor, fontSize: 11,
+                    fontWeight: FontWeight.w700, letterSpacing: 1.0)),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller:  daysCtrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                suffixText: 'days',
+                hintText: '14',
+              ),
+              validator: (v) {
+                final n = int.tryParse(v ?? '');
+                if (n == null || n < 0) return 'Enter days (0 = no theta deduction)';
+                return null;
+              },
+            ),
+
             const SizedBox(height: 32),
 
             SizedBox(
@@ -439,8 +468,9 @@ class _HowItWorksCard extends StatelessWidget {
           for (final line in const [
             'Scans all strikes × expirations for the chain',
             'Scores each contract (delta, DTE, spread, IV, OI, moneyness)',
-            'Projects P&L at your price target using live delta',
-            'Evaluates break-even, theta drag, pricing edge & gamma risk',
+            'Projects P&L using delta + gamma (2nd-order), minus theta decay to your target date',
+            'Frames each trade as Max Loss vs R:R ratio',
+            'Evaluates break-even, pricing edge, unusual flow & gamma risk',
             'Returns top 8 ranked as Buy / Watch / Avoid',
           ])
             Padding(
@@ -696,6 +726,36 @@ class _DecisionCard extends StatelessWidget {
                             ? AppTheme.profitColor
                             : AppTheme.neutralColor,
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _Metric(
+                        label: 'Max Loss',
+                        value: '-\$${result.maxLoss.toStringAsFixed(0)}',
+                        color: AppTheme.lossColor,
+                      ),
+                      _Metric(
+                        label: 'R:R',
+                        value: result.riskRewardRatio > 0
+                            ? '${result.riskRewardRatio.toStringAsFixed(1)}:1'
+                            : '—',
+                        color: result.riskRewardRatio >= 1.5
+                            ? AppTheme.profitColor
+                            : result.riskRewardRatio > 0
+                                ? const Color(0xFFFBBF24)
+                                : AppTheme.neutralColor,
+                      ),
+                      if (result.thetaDecayToTarget > 0)
+                        _Metric(
+                          label: 'θ to Target',
+                          value: '-\$${result.thetaDecayToTarget.toStringAsFixed(0)}',
+                          color: AppTheme.lossColor,
+                        )
+                      else
+                        const _Metric(label: '', value: ''),
+                      const _Metric(label: '', value: ''),
                     ],
                   ),
 

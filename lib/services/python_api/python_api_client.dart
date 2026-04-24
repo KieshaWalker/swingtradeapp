@@ -298,6 +298,7 @@ class PythonApiClient {
     required double priceTarget,
     required double maxBudget,
     int contracts = 1,
+    int daysToTarget = 0,
     Map<String, dynamic>? ivAnalysis,
     int topN = 5,
   }) =>
@@ -307,6 +308,7 @@ class PythonApiClient {
         'price_target': priceTarget,
         'max_budget': maxBudget,
         'contracts': contracts,
+        'days_to_target': daysToTarget,
         'iv_analysis': ?ivAnalysis,
         'top_n': topN,
       });

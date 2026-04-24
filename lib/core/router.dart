@@ -55,8 +55,6 @@ import '../features/trades/screens/trades_screen.dart';
 import '../features/summary/screens/summary_screen.dart';
 import '../features/iv/screens/iv_screen.dart';
 import '../features/blotter/screens/five_phase_blotter_screen.dart';
-import '../features/blotter/screens/trade_blotter_screen.dart';
-import '../features/blotter/screens/validated_blotters_screen.dart';
 import '../features/options/screens/greek_chart_screen.dart';
 import '../features/vol_surface/screens/vol_surface_screen.dart';
 import '../features/ideas/screens/trade_ideas_screen.dart';
@@ -167,11 +165,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
       GoRoute(
-        path: '/calculator',
-        pageBuilder: (context, state) =>
-            const NoTransitionPage(child: _AppShell(child: CalculatorScreen())),
-      ),
-      GoRoute(
         path: '/journal',
         pageBuilder: (context, state) =>
             const NoTransitionPage(child: _AppShell(child: JournalScreen())),
@@ -182,6 +175,11 @@ final routerProvider = Provider<GoRouter>((ref) {
               initialEntry: state.extra as JournalEntry?,
             ),
           ),
+          GoRoute(
+        path: '/calculator',
+        pageBuilder: (context, state) =>
+            const NoTransitionPage(child: _AppShell(child: CalculatorScreen())),
+      )
         ],
       ),
       GoRoute(
@@ -191,27 +189,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
-        path: '/blotter',
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: TradeBlotterScreen()),
-        ),
-        routes: [
-          GoRoute(
-            path: 'validated',
-            builder: (ctx, s) => const ValidatedBlottersScreen(),
-          ),
-          GoRoute(
-            path: 'evaluate',
-            builder: (_, state) => FivePhaseBlotterScreen(
-              initialTicker: state.uri.queryParameters['ticker'],
-            ),
-          ),
-        ],
-      ),
-      GoRoute(
-        path: '/vol-surface',
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: VolSurfaceScreen()),
+        path: '/blotter/evaluate',
+        builder: (_, state) => FivePhaseBlotterScreen(
+          initialTicker: state.uri.queryParameters['ticker'],
         ),
       ),
       GoRoute(

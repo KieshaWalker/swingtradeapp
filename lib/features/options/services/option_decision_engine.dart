@@ -39,6 +39,10 @@ class OptionDecisionResult {
 
   final double dailyThetaDrag;
   final double totalThetaDrag;
+  final double thetaDecayToTarget;
+
+  final double maxLoss;
+  final double riskRewardRatio;
 
   final double pricingEdge;
   final bool   isCheap;
@@ -65,6 +69,9 @@ class OptionDecisionResult {
     required this.breakEvenMovePct,
     required this.dailyThetaDrag,
     required this.totalThetaDrag,
+    required this.thetaDecayToTarget,
+    required this.maxLoss,
+    required this.riskRewardRatio,
     required this.pricingEdge,
     required this.isCheap,
     required this.volOiRatio,
@@ -91,8 +98,11 @@ class OptionDecisionResult {
       breakEvenPrice:        (j['break_even_price']        as num? ?? 0).toDouble(),
       breakEvenMove:         (j['break_even_move']         as num? ?? 0).toDouble(),
       breakEvenMovePct:      (j['break_even_move_pct']     as num? ?? 0).toDouble(),
-      dailyThetaDrag:        (j['daily_theta_drag']        as num? ?? 0).toDouble(),
-      totalThetaDrag:        (j['total_theta_drag']        as num? ?? 0).toDouble(),
+      dailyThetaDrag:        (j['daily_theta_drag']         as num? ?? 0).toDouble(),
+      totalThetaDrag:        (j['total_theta_drag']         as num? ?? 0).toDouble(),
+      thetaDecayToTarget:    (j['theta_decay_to_target']   as num? ?? 0).toDouble(),
+      maxLoss:               (j['max_loss']                as num? ?? 0).toDouble(),
+      riskRewardRatio:       (j['risk_reward_ratio']       as num? ?? 0).toDouble(),
       pricingEdge:           (j['pricing_edge']            as num? ?? 0).toDouble(),
       isCheap:               j['is_cheap']                 as bool? ?? false,
       volOiRatio:            (j['vol_oi_ratio']            as num? ?? 0).toDouble(),

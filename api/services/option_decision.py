@@ -35,7 +35,7 @@ class OptionDecisionResult:
     entry_cost: float
     contracts_affordable: int
 
-    # P&L projection
+    # P&L projection (gamma-adjusted, theta-deducted to target date)
     estimated_pnl: float
     estimated_return: float
 
@@ -47,6 +47,11 @@ class OptionDecisionResult:
     # Theta drag
     daily_theta_drag: float
     total_theta_drag: float
+    theta_decay_to_target: float  # theta deducted from P&L over days_to_target
+
+    # Risk framing
+    max_loss: float             # = entry_cost for long options
+    risk_reward_ratio: float    # estimated_pnl / max_loss
 
     # Pricing edge
     pricing_edge: float
@@ -85,6 +90,7 @@ def analyze(
     price_target: float,
     max_budget: float,
     contracts: int = 1,
+    days_to_target: int = 0,
     iv_analysis: dict | None = None,
 ) -> OptionDecisionResult:
     """Full decision analysis for one contract.
@@ -124,9 +130,11 @@ def analyze(
     entry_cost = ask * c * 100
     contracts_affordable = 0 if ask == 0 else int(max_budget / (ask * 100))
 
-    # ── P&L projection ────────────────────────────────────────────────────────
+    # ── P&L projection (gamma-adjusted, theta-deducted to target date) ────────
     move = price_target - underlying_price
-    estimated_pnl = delta * move * 100 * c
+    pnl_gross = (delta * move + 0.5 * gamma * move ** 2) * 100 * c
+    theta_decay_to_target = abs(daily_theta_drag) * days_to_target if days_to_target > 0 else 0.0
+    estimated_pnl = pnl_gross - theta_decay_to_target
     estimated_return = estimated_pnl / entry_cost * 100 if entry_cost != 0 else 0.0
 
     # ── Break-even ────────────────────────────────────────────────────────────
@@ -136,12 +144,16 @@ def analyze(
 
     # ── Theta drag ────────────────────────────────────────────────────────────
     daily_theta_drag = theta * 100 * c
-    total_theta_drag = daily_theta_drag * dte
+    total_theta_drag = daily_theta_drag * dte  # full decay to expiry (linear approx)
 
     # ── Pricing edge ──────────────────────────────────────────────────────────
     pricing_edge = theo - mid
     edge_threshold = max(0.05, mid * 0.02)
     is_cheap = pricing_edge > edge_threshold
+
+    # ── Risk framing ──────────────────────────────────────────────────────────
+    max_loss = entry_cost
+    risk_reward_ratio = estimated_pnl / max_loss if max_loss > 0 and estimated_pnl > 0 else 0.0
 
     # ── Volume / OI ratio ─────────────────────────────────────────────────────
     vol_oi_ratio = vol / oi if oi > 0 else 0.0
@@ -169,9 +181,11 @@ def analyze(
         )
 
     if estimated_pnl > 0:
-        reasons.append(f"Estimated +${estimated_pnl:.0f} at ${price_target:.2f} target")
+        suffix = f" (after {days_to_target}d theta decay)" if days_to_target > 0 else ""
+        reasons.append(f"γ-adj est. +${estimated_pnl:.0f} at ${price_target:.2f}{suffix}")
     else:
-        warnings.append(f"Negative P&L projected (${estimated_pnl:.0f}) — target may be insufficient")
+        suffix = f" after {days_to_target}d theta decay" if days_to_target > 0 else ""
+        warnings.append(f"Negative γ-adj P&L (${estimated_pnl:.0f}){suffix} — target may be insufficient")
 
     if estimated_return >= 50:
         reasons.append(f"{estimated_return:.0f}% return if target hit")
@@ -234,6 +248,9 @@ def analyze(
         break_even_move_pct=break_even_move_pct,
         daily_theta_drag=daily_theta_drag,
         total_theta_drag=total_theta_drag,
+        theta_decay_to_target=theta_decay_to_target,
+        max_loss=max_loss,
+        risk_reward_ratio=risk_reward_ratio,
         pricing_edge=pricing_edge,
         is_cheap=is_cheap,
         vol_oi_ratio=vol_oi_ratio,
@@ -252,6 +269,7 @@ def rank_all(
     price_target: float,
     max_budget: float,
     contracts: int = 1,
+    days_to_target: int = 0,
     iv_analysis: dict | None = None,
     top_n: int = 5,
 ) -> list[OptionDecisionResult]:
@@ -275,6 +293,7 @@ def rank_all(
                 price_target=price_target,
                 max_budget=max_budget,
                 contracts=contracts,
+                days_to_target=days_to_target,
                 iv_analysis=iv_analysis,
             ))
 

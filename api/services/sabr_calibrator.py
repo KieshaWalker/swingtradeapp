@@ -58,7 +58,6 @@ class SabrSlice:
             "nu": self.nu,
             "rmse": self.rmse,
             "n_points": self.n_points,
-            "is_reliable": self.is_reliable,
         }
 
 

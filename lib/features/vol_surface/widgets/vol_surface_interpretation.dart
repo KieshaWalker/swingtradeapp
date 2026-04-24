@@ -17,18 +17,22 @@ enum _GexSlope    { rising, flat, falling }
 
 // ── Gamma wall data ────────────────────────────────────────────────────────────
 // Dealers are assumed net-short options (they sell to retail/institutions).
-// Large call OI → dealers long delta hedge → price ceiling (call wall).
-// Large put OI → dealers short delta hedge → price floor (put wall).
-// Net GEX = callOI − putOI. Positive net = dealers absorb moves. Negative = amplify.
+// Large call OI → dealers long delta hedge → concentrated hedging near call wall.
+// Large put OI → dealers short delta hedge → pinning effect near put wall.
+// Net OI = callOI − putOI (proxy for gamma regime; true GEX requires gamma × OI × multiplier × spot).
+// Positive net OI → more call-side hedging → dealers likely absorb moves.
+// Negative net OI → more put-side hedging → dealers likely amplify moves.
 //
-// GEX slope: direction of net GEX profile as price rises.
-//   Rising  → more positive gamma ahead (stable, walls sticky)
-//   Falling → GEX declining toward zero  (Danger Zone if flip is close)
+// OI slope: direction of net OI profile as price rises.
+//   Rising  → more call OI ahead (walls sticky, moves likely absorbed)
+//   Falling → OI balance declining toward zero (Danger Zone if flip is close)
 //   Flat    → no strong directional bias in OI above spot
 //
-// IV/GEX correlation: in negative gamma regimes, spot ↓ typically causes IV ↑.
-//   If that relationship breaks (neg gamma + suppressed IV), a regime shift may
-//   be occurring. Computed from current atmPct + regime.
+// IV/OI signal: in negative OI regimes, spot ↓ typically correlates with IV ↑.
+//   If that relationship breaks (neg OI + suppressed IV), a regime shift may
+//   be occurring. Computed from current surface-range atmPct + OI regime.
+//   Note: atmPct is the surface percentile (ATM IV within today's p5–p95 range),
+//   not a historical IV percentile.
 //
 // Liquidity density proxy: bid/ask SIZE is not in the TOS static CSV export, so
 //   we cannot measure book depth directly. Instead we compute the OI concentration
@@ -41,18 +45,18 @@ class _WallStrike {
   final double strike;
   final int    callOI;
   final int    putOI;
-  int get netGex => callOI - putOI; // + = call-dominated
+  int get netOI => callOI - putOI; // + = call-dominated (OI proxy, not true GEX)
   const _WallStrike({required this.strike, required this.callOI, required this.putOI});
 }
 
 class _GammaData {
   final List<_WallStrike> callWalls;       // top 3 by call OI above spot
   final List<_WallStrike> putWalls;        // top 3 by put OI  below spot
-  final double?           gexFlip;         // price where cumulative net GEX → 0
-  final double?           gexFlipDistPct;  // |flip − spot| / spot × 100
+  final double?           oiFlip;          // price where cumulative net OI → 0
+  final double?           oiFlipDistPct;   // |flip − spot| / spot × 100
   final _GammaRegime      regime;
-  final _GexSlope         gexSlope;        // GEX direction as price moves up
-  final bool              dangerZone;      // pos-gamma but flip within 4% of spot
+  final _GexSlope         oiSlope;         // net OI direction as price moves up
+  final bool              dangerZone;      // pos-OI regime but flip within 4% of spot
   final double?           wallOiRatio;     // nearest put wall OI / avg nearby OI
   final int               totalCallOI;
   final int               totalPutOI;
@@ -60,10 +64,10 @@ class _GammaData {
   const _GammaData({
     required this.callWalls,
     required this.putWalls,
-    required this.gexFlip,
-    required this.gexFlipDistPct,
+    required this.oiFlip,
+    required this.oiFlipDistPct,
     required this.regime,
-    required this.gexSlope,
+    required this.oiSlope,
     required this.dangerZone,
     required this.wallOiRatio,
     required this.totalCallOI,
@@ -71,8 +75,8 @@ class _GammaData {
   });
 
   static const _empty = _GammaData(
-    callWalls: [], putWalls: [], gexFlip: null, gexFlipDistPct: null,
-    regime: _GammaRegime.neutral, gexSlope: _GexSlope.flat,
+    callWalls: [], putWalls: [], oiFlip: null, oiFlipDistPct: null,
+    regime: _GammaRegime.neutral, oiSlope: _GexSlope.flat,
     dangerZone: false, wallOiRatio: null, totalCallOI: 0, totalPutOI: 0,
   );
 
@@ -113,12 +117,12 @@ class _GammaData {
         .take(3).toList()
         ..sort((a, b) => b.strike.compareTo(a.strike)); // descending (nearest first)
 
-    // ── Net GEX regime at spot ─────────────────────────────────────────────
+    // ── Net OI regime at spot ──────────────────────────────────────────────
     _GammaRegime regime = _GammaRegime.neutral;
     if (spot != null && all.isNotEmpty) {
       final nearest = all.reduce((a, b) =>
           (a.strike - spot).abs() < (b.strike - spot).abs() ? a : b);
-      final net = nearest.netGex;
+      final net = nearest.netOI;
       if (net > 0) {
         regime = _GammaRegime.positive;
       } else if (net < 0) {
@@ -126,21 +130,21 @@ class _GammaData {
       }
     }
 
-    // ── GEX flip price ─────────────────────────────────────────────────────
-    // Walk outward from spot; find the first strike where cumulative GEX sign
+    // ── OI flip price ──────────────────────────────────────────────────────
+    // Walk outward from spot; find the first strike where cumulative net OI sign
     // flips from the at-spot sign.
     double? flip;
     if (spot != null && all.length >= 2) {
       final sortedByDist = [...all]
         ..sort((a, b) => (a.strike - spot).abs().compareTo((b.strike - spot).abs()));
-      int cumGex  = 0;
-      int? firstSign; // only set on first non-zero cumGex to avoid false flip at 0
+      int cumOI   = 0;
+      int? firstSign; // only set on first non-zero cumOI to avoid false flip at 0
       for (final w in sortedByDist) {
-        cumGex += w.netGex;
+        cumOI += w.netOI;
         // Skip zero — setting firstSign=0 would trigger a false flip on the next
         // non-zero step. We want the sign of the first non-zero cumulative value.
-        if (cumGex.sign != 0) firstSign ??= cumGex.sign;
-        if (firstSign != null && cumGex.sign != 0 && cumGex.sign != firstSign) {
+        if (cumOI.sign != 0) firstSign ??= cumOI.sign;
+        if (firstSign != null && cumOI.sign != 0 && cumOI.sign != firstSign) {
           flip = w.strike;
           break;
         }
@@ -150,19 +154,19 @@ class _GammaData {
         ? ((flip - spot).abs() / spot * 100)
         : null;
 
-    // ── GEX slope ──────────────────────────────────────────────────────────
-    // Compare total net GEX in the 0–3% band above spot to the 3–6% band.
-    // Falling: GEX declining as price rises → approaching zero/flip.
-    // Rising:  more positive gamma ahead    → walls are sticky, moves absorbed.
+    // ── OI slope ───────────────────────────────────────────────────────────
+    // Compare total net OI in the 0–3% band above spot to the 3–6% band.
+    // Falling: OI balance declining as price rises → approaching flip.
+    // Rising:  more call OI ahead → walls likely sticky, moves absorbed.
     _GexSlope gexSlope = _GexSlope.flat;
     if (spot != null && above.length >= 2) {
-      final nearGex = above
+      final nearOI = above
           .where((w) => w.strike <= spot * 1.03)
-          .fold(0, (s, w) => s + w.netGex);
-      final farGex = above
+          .fold(0, (s, w) => s + w.netOI);
+      final farOI = above
           .where((w) => w.strike > spot * 1.03 && w.strike <= spot * 1.06)
-          .fold(0, (s, w) => s + w.netGex);
-      final ratio = (nearGex == 0) ? 1.0 : farGex / nearGex;
+          .fold(0, (s, w) => s + w.netOI);
+      final ratio = (nearOI == 0) ? 1.0 : farOI / nearOI;
       if (ratio < 0.70) {
         gexSlope = _GexSlope.falling;
       } else if (ratio > 1.30) {
@@ -171,7 +175,7 @@ class _GammaData {
     }
 
     // ── Danger Zone ────────────────────────────────────────────────────────
-    // Positive gamma but GEX flip is within 4% of spot — one move from flipping.
+    // Positive OI regime but OI flip is within 4% of spot — one move from flipping.
     final dangerZone = regime == _GammaRegime.positive &&
         flipDistPct != null &&
         flipDistPct < 4.0;
@@ -198,16 +202,16 @@ class _GammaData {
     }
 
     return _GammaData(
-      callWalls:      topCalls,
-      putWalls:       topPuts,
-      gexFlip:        flip,
-      gexFlipDistPct: flipDistPct,
-      regime:         regime,
-      gexSlope:       gexSlope,
-      dangerZone:     dangerZone,
-      wallOiRatio:    wallOiRatio,
-      totalCallOI:    totalC,
-      totalPutOI:     totalP,
+      callWalls:     topCalls,
+      putWalls:      topPuts,
+      oiFlip:        flip,
+      oiFlipDistPct: flipDistPct,
+      regime:        regime,
+      oiSlope:       gexSlope,
+      dangerZone:    dangerZone,
+      wallOiRatio:   wallOiRatio,
+      totalCallOI:   totalC,
+      totalPutOI:    totalP,
     );
   }
 }
@@ -1082,7 +1086,7 @@ class _GammaStrategySheet extends StatelessWidget {
     ('EXECUTION', 'Passive Liquidity',
         'Sit on the BID or ASK and wait for fills. Spreads are tight; slippage is minimal. No need to chase.'),
     ('THE TRAP ⚠', 'Complacency',
-        'Long Gamma environments precede flips. Track distance to the GEX flip point daily and use a "circuit breaker" as spot approaches it. Increase sizing on mean-reversion trades — but cut immediately if the flip triggers.'),
+        'Long Gamma environments precede flips. Track distance to the OI flip point daily and use a "circuit breaker" as spot approaches it. Increase sizing on mean-reversion trades — but cut immediately if the flip triggers.'),
   ];
 
   static const _shortGamma = [
@@ -1244,7 +1248,7 @@ class _GammaStrategySheet extends StatelessWidget {
 
 class _WallsCard extends StatelessWidget {
   final VolSnapshot snap;
-  final _A          a;    // needed for IV/GEX correlation signal
+  final _A          a;    // needed for IV/OI signal
   const _WallsCard({required this.snap, required this.a});
 
   @override
@@ -1275,7 +1279,7 @@ class _WallsCard extends StatelessWidget {
           g.dangerZone ? 'POS GAMMA ⚡ DANGER ZONE' : 'POS GAMMA',
           g.dangerZone ? const Color(0xFFfbbf24) : const Color(0xFF4ade80),
           g.dangerZone
-              ? 'GEX flip within ${g.gexFlipDistPct!.toStringAsFixed(1)}% — one move from negative gamma'
+              ? 'OI flip within ${g.oiFlipDistPct!.toStringAsFixed(1)}% — one move from negative gamma'
               : 'Dealers absorb moves — mean-reversion likely near walls',
         ),
       _GammaRegime.negative => (
@@ -1290,16 +1294,17 @@ class _WallsCard extends StatelessWidget {
         ),
     };
 
-    // ── GEX slope ──────────────────────────────────────────────────────────
-    final (slopeIcon, slopeColor, slopeLabel) = switch (g.gexSlope) {
-      _GexSlope.rising  => ('↗', const Color(0xFF4ade80), 'Rising — more gamma ahead'),
-      _GexSlope.flat    => ('→', const Color(0xFF9ca3af), 'Flat — gamma stable as price moves'),
-      _GexSlope.falling => ('↘', const Color(0xFFf97316), 'Falling — GEX declining toward flip'),
+    // ── OI slope ───────────────────────────────────────────────────────────
+    final (slopeIcon, slopeColor, slopeLabel) = switch (g.oiSlope) {
+      _GexSlope.rising  => ('↗', const Color(0xFF4ade80), 'Rising — more call OI ahead'),
+      _GexSlope.flat    => ('→', const Color(0xFF9ca3af), 'Flat — OI balance stable'),
+      _GexSlope.falling => ('↘', const Color(0xFFf97316), 'Falling — OI balance declining toward flip'),
     };
 
-    // ── IV / GEX correlation signal ────────────────────────────────────────
-    // Single-snapshot heuristic: classify the current IV level vs gamma regime.
-    // A true price/IV time-series correlation requires multiple snapshots.
+    // ── IV / OI signal ─────────────────────────────────────────────────────
+    // Single-snapshot heuristic: classify the current IV level vs OI-derived gamma regime.
+    // IV is measured as surface percentile (ATM IV within today's p5–p95 range),
+    // not a historical IV percentile. A true correlation requires multiple snapshots.
     final (ivGexLabel, ivGexColor, ivGexDetail) = switch ((g.regime, a.atmPct)) {
       (_GammaRegime.negative, final p) when p > 0.65 => (
           'CLASSIC SHORT GAMMA',
@@ -1408,9 +1413,9 @@ class _WallsCard extends StatelessWidget {
                   fontFamily: 'monospace')),
           const SizedBox(height: 7),
 
-          // ── GEX slope ────────────────────────────────────────────────────
+          // ── OI slope ─────────────────────────────────────────────────────
           Row(children: [
-            const Text('GAMMA SLOPE  ',
+            const Text('OI SLOPE  ',
                 style: TextStyle(
                     color: Color(0xFF4b5563),
                     fontSize: 8,
@@ -1472,7 +1477,7 @@ class _WallsCard extends StatelessWidget {
 
           // ── Put walls ────────────────────────────────────────────────────
           if (g.putWalls.isNotEmpty) ...[
-            const Text('PUT WALLS  (support)',
+            const Text('PUT WALLS  (pinning zone)',
                 style: TextStyle(
                     color: Color(0xFF4b5563),
                     fontSize: 8,
@@ -1510,24 +1515,24 @@ class _WallsCard extends StatelessWidget {
             const SizedBox(height: 7),
           ],
 
-          // ── GEX flip ─────────────────────────────────────────────────────
-          if (g.gexFlip != null) ...[
+          // ── OI flip ──────────────────────────────────────────────────────
+          if (g.oiFlip != null) ...[
             Row(children: [
-              const Text('GEX flip  ',
+              const Text('OI flip  ',
                   style: TextStyle(
                       color: Color(0xFF4b5563),
                       fontSize: 8,
                       fontFamily: 'monospace')),
-              Text(fmtStrike(g.gexFlip!),
+              Text(fmtStrike(g.oiFlip!),
                   style: const TextStyle(
                       color: Color(0xFFfbbf24),
                       fontSize: 9,
                       fontWeight: FontWeight.w600,
                       fontFamily: 'monospace')),
-              if (g.gexFlipDistPct != null) ...[
+              if (g.oiFlipDistPct != null) ...[
                 const Text('  ',
                     style: TextStyle(fontSize: 8)),
-                Text('(${g.gexFlipDistPct!.toStringAsFixed(1)}% away)',
+                Text('(${g.oiFlipDistPct!.toStringAsFixed(1)}% away)',
                     style: const TextStyle(
                         color: Color(0xFF6b7280),
                         fontSize: 8,
@@ -1537,8 +1542,8 @@ class _WallsCard extends StatelessWidget {
             const SizedBox(height: 7),
           ],
 
-          // ── IV / GEX correlation ──────────────────────────────────────────
-          const Text('IV / GEX SIGNAL',
+          // ── IV / OI signal ────────────────────────────────────────────────
+          const Text('IV / OI SIGNAL',
               style: TextStyle(
                   color: Color(0xFF4b5563),
                   fontSize: 8,
