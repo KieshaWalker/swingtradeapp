@@ -513,6 +513,23 @@ def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvo
         "max_gex_strike": iv_result.max_gex_strike,
         "put_call_ratio": iv_result.put_call_ratio,
         "underlying_price": spot,
+        "iv_rank":               iv_result.iv_rank,
+        "iv_percentile":         iv_result.iv_percentile,
+        "iv_rating":             iv_result.rating.value if iv_result.rating else None,
+        "gamma_regime":          iv_result.gamma_regime.value if iv_result.gamma_regime else None,
+        "gamma_slope":           iv_result.gamma_slope.value if iv_result.gamma_slope else None,
+        "iv_gex_signal":         iv_result.iv_gex_signal.value if iv_result.iv_gex_signal else None,
+        "zero_gamma_level":      iv_result.zero_gamma_level,
+        "spot_to_zero_gamma_pct": iv_result.spot_to_zero_gamma_pct,
+        "delta_gex":             iv_result.delta_gex,
+        "put_wall_density":      iv_result.put_wall_density,
+        "vanna_regime":          iv_result.vanna_regime.value if iv_result.vanna_regime else None,
+        "total_vex":             iv_result.total_vex,
+        "total_cex":             iv_result.total_cex,
+        "total_volga":           iv_result.total_volga,
+        "max_vex_strike":        iv_result.max_vex_strike,
+        "skew_avg_52w":          iv_result.skew_avg_52w,
+        "skew_z_score":          iv_result.skew_z_score,
     }
     if vvol is not None:
         row.update({

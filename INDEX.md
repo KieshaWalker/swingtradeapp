@@ -264,17 +264,18 @@ _IV rank, IV history, GEX, Vanna-Charm, realized vol, skew. Core inputs to Optio
 | [UI] | lib/features/iv/widgets/gex_chart.dart |
 | [UI] | lib/features/iv/widgets/vanna_charm_chart.dart |
 | [UI] | lib/features/iv/widgets/skew_chart.dart |
-| [MODEL] | lib/services/iv/iv_models.dart |
+| [MODEL] | lib/services/iv/iv_models.dart ← `IvSnapshot` expanded with 17 fields in migration 027 |
 | [PROVIDER] | lib/services/iv/iv_providers.dart |
 | [SVC] | lib/services/iv/iv_storage_service.dart |
 | [MODEL] | lib/services/iv/realized_vol_models.dart |
 | [PROVIDER] | lib/services/iv/realized_vol_providers.dart |
 | [SVC] | lib/services/iv/realized_vol_repository.dart |
-| [API] | api/routers/iv_analytics.py |
+| [API] | api/routers/iv_analytics.py ← `/iv/snapshot` persists full `IvAnalysis` result |
 | [API] | api/services/iv_analytics.py |
 | [DB] | supabase/migrations/011_iv_snapshots.sql → `iv_snapshots` |
+| [DB] | supabase/migrations/027_iv_snapshots_extended_fields.sql ← adds iv_rank, iv_percentile, iv_rating, gamma_regime, gamma_slope, iv_gex_signal, zero_gamma_level, spot_to_zero_gamma_pct, delta_gex, put_wall_density, vanna_regime, total_vex/cex/volga, max_vex_strike, skew_avg_52w, skew_z_score |
 
-**Waterfall:** `iv_snapshots` is read by Blotter (formula phase) and Regime (ML features). `iv_models.dart` is one of the largest model files (~622 lines) — changes to the snapshot shape cascade to `iv_storage_service.dart`, `iv_providers.dart`, and the Blotter formula panel.
+**Waterfall:** `iv_snapshots` is read by Blotter (formula phase), Regime (ML features), and **Vol Surface interpretation panel** (migration 027 fields). `iv_models.dart` is one of the largest model files — changes to the snapshot shape cascade to `iv_storage_service.dart`, `iv_providers.dart`, the Blotter formula panel, and `vol_surface_interpretation.dart`.
 
 ---
 
@@ -444,21 +445,21 @@ _Trade entry, P&L tracking, trade blocks, CSV import, live greeks on open positi
 ## V
 
 ### Volatility Surface
-_Vol surface snapshots from options chains: arbitrage checking, SABR calibration, heatmap, smile chart._
+_Vol surface snapshots from options chains: heatmap, smile chart, SABR calibration, arbitrage checking, and a full interpretation panel backed by Python._
 
 | Layer | File |
 |-------|------|
 | [UI] | lib/features/vol_surface/screens/vol_surface_screen.dart |
 | [UI] | lib/features/vol_surface/widgets/vol_heatmap.dart |
 | [UI] | lib/features/vol_surface/widgets/vol_smile_chart.dart |
-| [UI] | lib/features/vol_surface/widgets/vol_surface_interpretation.dart |
+| [UI] | lib/features/vol_surface/widgets/vol_surface_interpretation.dart ← `ConsumerWidget`; reads `iv_snapshots` + calls `/sabr/calibrate` + `/arb/check` |
 | [UI] | lib/features/vol_surface/widgets/vol_surface_guide.dart |
 | [MODEL] | lib/features/vol_surface/models/vol_surface_models.dart |
 | [PROVIDER] | lib/features/vol_surface/providers/vol_surface_provider.dart |
-| [PROVIDER] | lib/features/vol_surface/providers/sabr_calibration_provider.dart |
+| [PROVIDER] | lib/features/vol_surface/providers/sabr_calibration_provider.dart ← fires `/sabr/calibrate` when watched |
 | [SVC] | lib/features/vol_surface/services/vol_surface_parser.dart |
 | [SVC] | lib/features/vol_surface/services/vol_surface_repository.dart |
-| [SVC] | lib/services/vol_surface/arb_checker.dart |
+| [SVC] | lib/services/vol_surface/arb_checker.dart ← `checkArbForSnap()` calls `/arb/check` |
 | [API] | api/routers/sabr.py |
 | [API] | api/routers/arb.py |
 | [API] | api/services/sabr_calibrator.py |
@@ -469,6 +470,13 @@ _Vol surface snapshots from options chains: arbitrage checking, SABR calibration
 | [DB] | supabase/migrations/017_vol_surface_unique_per_ticker.sql |
 | [DB] | supabase/migrations/018_vol_surface_points_schema_comment.sql |
 | [DB] | supabase/migrations/023_vvol_columns.sql ← adds vvol columns |
+
+**Interpretation panel data flow:** `vol_surface_interpretation.dart` is a `ConsumerWidget` with three Python-backed data sources:
+1. `_ivSnapProvider(ticker)` → reads latest `iv_snapshots` row (written by `/iv/snapshot` on every chain load) — drives IV rank, gamma regime, GEX flip level, gamma slope, iv_gex_signal, wall density, skew, P/C ratio
+2. `sabrCalibrationProvider(ticker)` → calls `/sabr/calibrate` — drives the SABR card (α, ρ, ν, RMSE per DTE)
+3. `checkArbForSnap(snap)` → calls `/arb/check` — drives the arb check card
+
+All three fall back gracefully if the API is unreachable or no snapshot exists yet.
 
 **Waterfall:** `vol_surface_snapshots` is read by Blotter (phase 3). The surface `points` field is JSONB — changing its shape requires updating `vol_surface_parser.dart`, `vol_surface_models.dart`, `vol_surface_repository.dart`, and the Blotter vol surface panel.
 
@@ -562,6 +570,7 @@ SCHWAB ──────► OPTIONS & DECISION ◄──── IV & VOL ◄─�
 | 024 | regime_snapshot | `regime_snapshots` | Regime, Blotter, Summary |
 | 025 | regime_snapshots_institutional_fields | adds institutional fields | Regime |
 | 026 | regime_ml_models | `regime_ml_models` | Regime ML |
+| 027 | iv_snapshots_extended_fields | adds 17 columns to `iv_snapshots` | IV, Vol Surface interpretation |
 
 ---
 
