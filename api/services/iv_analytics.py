@@ -10,10 +10,13 @@
 #   This service expects all chain contract IVs in PERCENT form (raw Schwab).
 # =============================================================================
 
+import logging
 import math
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone
+
+_log = logging.getLogger(__name__)
 
 from scipy.stats import norm
 
@@ -463,16 +466,18 @@ def _compute_gex(expirations: list[dict], spot: float) -> list[GexStrike]:
 
         put_gamma = 0.0
         if put_oi > 0:
+            for p in puts[:3]:  # DEBUG: sample raw Schwab put gamma
+                _log.warning("DEBUG put gamma raw: strike=%s exp=%s gamma=%s oi=%s",
+                             p.get("strikePrice"), p.get("expirationDate"),
+                             p.get("gamma"), p.get("openInterest"))
             put_gamma = sum(float(p.get("gamma", 0)) * float(p.get("openInterest", 0)) for p in puts) / put_oi
 
 
-        results.append(GexStrike(
-            strike=strike,
-            call_oi=call_oi,
-            put_oi=put_oi,
-            call_gamma=call_gamma,
-            put_gamma=put_gamma,
-        ))
+        gex_strike = GexStrike(strike=strike, call_oi=call_oi, put_oi=put_oi,
+                               call_gamma=call_gamma, put_gamma=put_gamma)
+        _log.warning("DEBUG GEX strike=%.1f callOI=%.0f callGamma=%.6f putOI=%.0f putGamma=%.6f gex=%.4f",
+                     strike, call_oi, call_gamma, put_oi, put_gamma, gex_strike.dealer_gex(spot))
+        results.append(gex_strike)
     return results
 
 

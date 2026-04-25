@@ -11,6 +11,8 @@ import '../models/vol_surface_models.dart';
 import '../providers/sabr_calibration_provider.dart';
 import '../../../services/iv/iv_models.dart';
 import '../../../services/iv/iv_storage_service.dart';
+import '../../../services/iv/realized_vol_models.dart';
+import '../../../services/iv/realized_vol_providers.dart';
 import '../../../services/vol_surface/arb_checker.dart';
 
 // ── IV snapshot provider ──────────────────────────────────────────────────────
@@ -437,6 +439,7 @@ class VolSurfaceInterpretation extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final a = _A.from(snap);
     final ivSnap = ref.watch(_ivSnapProvider(snap.ticker)).valueOrNull;
+    final rvResult = ref.watch(realizedVolProvider(snap.ticker)).valueOrNull;
 
     // Verdict
     final bool isFail = a.termShape == _Term.backwardation && a.atmPct > 0.70;
@@ -521,7 +524,7 @@ class VolSurfaceInterpretation extends ConsumerWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _IvCard(a: a, ivSnap: ivSnap),
+                  _IvCard(a: a, ivSnap: ivSnap, rvResult: rvResult),
                   _TermCard(a: a),
                   _SkewCard(a: a, ivSnap: ivSnap),
                   _WallsCard(snap: snap, a: a, ivSnap: ivSnap),
@@ -544,7 +547,8 @@ class VolSurfaceInterpretation extends ConsumerWidget {
 class _IvCard extends StatelessWidget {
   final _A a;
   final IvSnapshot? ivSnap;
-  const _IvCard({required this.a, this.ivSnap});
+  final RealizedVolResult? rvResult;
+  const _IvCard({required this.a, this.ivSnap, this.rvResult});
 
   @override
   Widget build(BuildContext context) {
@@ -631,6 +635,17 @@ class _IvCard extends StatelessWidget {
                 fontSize: 9,
                 fontFamily: 'monospace'),
           ),
+          if (rvResult != null && rvResult!.rv20d > 0) ...[
+            const SizedBox(height: 2),
+            Text(
+              'HV20d ${(rvResult!.rv20d * 100).toStringAsFixed(1)}%'
+              '  ·  HV60d ${(rvResult!.rv60d * 100).toStringAsFixed(1)}%',
+              style: const TextStyle(
+                  color: Color(0xFF6b7280),
+                  fontSize: 9,
+                  fontFamily: 'monospace'),
+            ),
+          ],
           const SizedBox(height: 8),
           Container(
             padding:
@@ -1819,6 +1834,111 @@ class _FlowBar extends StatelessWidget {
 
 // ── SABR calibration card ─────────────────────────────────────────────────────
 
+// Derives plain-English reads from a single SABR slice.
+class _SabrRead {
+  final String skewLabel;
+  final Color  skewColor;
+  final String skewDetail;
+
+  final String wingsLabel;
+  final Color  wingsColor;
+  final String wingsDetail;
+
+  final String alphaLabel;
+  final Color  alphaColor;
+  final String alphaDetail;
+
+  final String fitLabel;
+  final Color  fitColor;
+  final bool   isReliable;
+
+  const _SabrRead({
+    required this.skewLabel,  required this.skewColor,  required this.skewDetail,
+    required this.wingsLabel, required this.wingsColor, required this.wingsDetail,
+    required this.alphaLabel, required this.alphaColor, required this.alphaDetail,
+    required this.fitLabel,   required this.fitColor,   required this.isReliable,
+  });
+
+  factory _SabrRead.from(SabrSlice s) {
+    // ── ρ  →  skew direction ──────────────────────────────────────────────────
+    // Negative ρ = strong negative correlation between spot and vol
+    // (equity crash puts cost more than calls — classic put skew).
+    // Positive ρ = melt-up / squeeze skew (uncommon for single stocks).
+    final (skewLabel, skewColor, skewDetail) = s.rho < -0.40
+        ? ('STRONG PUT SKEW', const Color(0xFFf87171),
+            'ρ=${s.rho.toStringAsFixed(2)}  Crash-risk priced into puts. '
+            'OTM puts command significant premium over calls. '
+            'Selling put spreads costs more than call spreads at same distance.')
+        : s.rho < -0.15
+            ? ('MILD PUT SKEW', const Color(0xFFfbbf24),
+                'ρ=${s.rho.toStringAsFixed(2)}  Normal equity hedging bias. '
+                'OTM puts slightly bid; surface consistent with typical equity structure.')
+            : s.rho > 0.20
+                ? ('CALL SKEW', const Color(0xFF4ade80),
+                    'ρ=${s.rho.toStringAsFixed(2)}  Unusual upside skew. '
+                    'Calls priced richer than puts at same distance — squeeze or '
+                    'melt-up positioning visible in the surface.')
+                : ('SYMMETRIC', const Color(0xFF60a5fa),
+                    'ρ=${s.rho.toStringAsFixed(2)}  Balanced smile. '
+                    'No strong directional bias in the surface; calls and puts '
+                    'priced at similar IV for equivalent distances from spot.');
+
+    // ── ν  →  wing convexity (vol-of-vol) ────────────────────────────────────
+    // High ν = vol-of-vol is high → smile is highly curved → OTM options
+    // are expensive relative to ATM (straddles look cheap vs wings/strangles).
+    // Low ν = flat smile → wings barely priced; straddles eat less theta decay.
+    final (wingsLabel, wingsColor, wingsDetail) = s.nu > 1.50
+        ? ('FAT WINGS', const Color(0xFFfbbf24),
+            'ν=${s.nu.toStringAsFixed(2)}  High vol-of-vol. OTM options are '
+            'expensive vs ATM. Spreads and defined-risk structures are more '
+            'capital-efficient than naked buys. Butterflies may be cheap.')
+        : s.nu > 0.70
+            ? ('MODERATE WINGS', const Color(0xFF60a5fa),
+                'ν=${s.nu.toStringAsFixed(2)}  Normal curvature. '
+                'Balanced trade-off between ATM and OTM pricing. '
+                'No structural edge favouring one structure over another.')
+            : ('FLAT SMILE', const Color(0xFF4ade80),
+                'ν=${s.nu.toStringAsFixed(2)}  Low vol-of-vol. Wings barely '
+                'priced. OTM options are cheap relative to ATM — strangles and '
+                'ratio spreads may offer value if direction is taken.');
+
+    // ── α  →  overall vol level calibrated by SABR ───────────────────────────
+    // α is the backbone ATM vol in the SABR parameterisation.
+    // High α → expensive ATM premium; low α → compressed ATM vol.
+    final (alphaLabel, alphaColor, alphaDetail) = s.alpha > 0.60
+        ? ('HIGH VOL LEVEL', const Color(0xFFf87171),
+            'α=${s.alpha.toStringAsFixed(2)}  ATM vol calibrated high. '
+            'Premium selling has structural edge; debit buyers face '
+            'significant time-decay headwind.')
+        : s.alpha > 0.30
+            ? ('MODERATE VOL', const Color(0xFFfbbf24),
+                'α=${s.alpha.toStringAsFixed(2)}  Mid-range ATM vol. '
+                'Neither strongly favours buyers nor sellers. '
+                'Structure selection should lean on IVR/IVP for context.')
+            : ('LOW VOL LEVEL', const Color(0xFF4ade80),
+                'α=${s.alpha.toStringAsFixed(2)}  Compressed ATM vol. '
+                'Debit structures are cheap on a historical basis. '
+                'Credit sellers face thinner premium but limited risk.');
+
+    // ── RMSE  →  fit reliability ──────────────────────────────────────────────
+    final (fitLabel, fitColor) = s.rmse < 0.005
+        ? ('EXCELLENT FIT', const Color(0xFF4ade80))
+        : s.rmse < 0.015
+            ? ('GOOD FIT', const Color(0xFF60a5fa))
+            : s.rmse < 0.030
+                ? ('MODERATE FIT', const Color(0xFFfbbf24))
+                : ('POOR FIT', const Color(0xFFf87171));
+
+    return _SabrRead(
+      skewLabel:  skewLabel,  skewColor:  skewColor,  skewDetail:  skewDetail,
+      wingsLabel: wingsLabel, wingsColor: wingsColor, wingsDetail: wingsDetail,
+      alphaLabel: alphaLabel, alphaColor: alphaColor, alphaDetail: alphaDetail,
+      fitLabel:   fitLabel,   fitColor:   fitColor,
+      isReliable: s.isReliable,
+    );
+  }
+}
+
 class _SabrCard extends ConsumerWidget {
   final VolSnapshot snap;
   const _SabrCard({required this.snap});
@@ -1827,7 +1947,7 @@ class _SabrCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(sabrCalibrationProvider(snap.ticker));
     return _Card(
-      width: 228,
+      width: 300,
       label: 'SABR CALIBRATION',
       child: async.when(
         loading: () => const Center(
@@ -1856,10 +1976,18 @@ class _SabrCard extends ConsumerWidget {
                   fontFamily: 'monospace'),
             );
           }
+
+          // Front reliable slice for interpretation; fall back to first if none reliable.
+          final front = slices.firstWhere((s) => s.isReliable,
+              orElse: () => slices.first);
+          final read = _SabrRead.from(front);
+
           final visible = slices.take(6).toList();
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── Parameter table ────────────────────────────────────────────
               Row(children: const [
                 SizedBox(
                     width: 28,
@@ -1870,24 +1998,24 @@ class _SabrCard extends ConsumerWidget {
                             fontWeight: FontWeight.w700,
                             fontFamily: 'monospace'))),
                 SizedBox(
-                    width: 36,
-                    child: Text('α',
+                    width: 38,
+                    child: Text('α (vol)',
                         style: TextStyle(
                             color: Color(0xFF4b5563),
                             fontSize: 8,
                             fontWeight: FontWeight.w700,
                             fontFamily: 'monospace'))),
                 SizedBox(
-                    width: 36,
-                    child: Text('ρ',
+                    width: 38,
+                    child: Text('ρ (skew)',
                         style: TextStyle(
                             color: Color(0xFF4b5563),
                             fontSize: 8,
                             fontWeight: FontWeight.w700,
                             fontFamily: 'monospace'))),
                 SizedBox(
-                    width: 36,
-                    child: Text('ν',
+                    width: 38,
+                    child: Text('ν (wings)',
                         style: TextStyle(
                             color: Color(0xFF4b5563),
                             fontSize: 8,
@@ -1908,19 +2036,24 @@ class _SabrCard extends ConsumerWidget {
                     SizedBox(
                         width: 28,
                         child: Text('${s.dte}d',
-                            style: const TextStyle(
-                                color: Color(0xFF6b7280),
+                            style: TextStyle(
+                                color: s.dte == front.dte
+                                    ? const Color(0xFFd1d5db)
+                                    : const Color(0xFF6b7280),
                                 fontSize: 8,
+                                fontWeight: s.dte == front.dte
+                                    ? FontWeight.w700
+                                    : FontWeight.normal,
                                 fontFamily: 'monospace'))),
                     SizedBox(
-                        width: 36,
+                        width: 38,
                         child: Text(s.alpha.toStringAsFixed(2),
                             style: const TextStyle(
                                 color: Color(0xFF60a5fa),
                                 fontSize: 8,
                                 fontFamily: 'monospace'))),
                     SizedBox(
-                        width: 36,
+                        width: 38,
                         child: Text(s.rho.toStringAsFixed(2),
                             style: TextStyle(
                                 color: s.rho < 0
@@ -1929,15 +2062,19 @@ class _SabrCard extends ConsumerWidget {
                                 fontSize: 8,
                                 fontFamily: 'monospace'))),
                     SizedBox(
-                        width: 36,
+                        width: 38,
                         child: Text(s.nu.toStringAsFixed(2),
                             style: const TextStyle(
                                 color: Color(0xFFfbbf24),
                                 fontSize: 8,
                                 fontFamily: 'monospace'))),
                     Text('${(s.rmse * 100).toStringAsFixed(1)}%',
-                        style: const TextStyle(
-                            color: Color(0xFF9ca3af),
+                        style: TextStyle(
+                            color: s.rmse < 0.015
+                                ? const Color(0xFF4ade80)
+                                : s.rmse < 0.030
+                                    ? const Color(0xFFfbbf24)
+                                    : const Color(0xFFf87171),
                             fontSize: 8,
                             fontFamily: 'monospace')),
                   ]),
@@ -1950,10 +2087,167 @@ class _SabrCard extends ConsumerWidget {
                         fontSize: 8,
                         fontFamily: 'monospace')),
               ],
+
+              // ── Interpretation ─────────────────────────────────────────────
+              const SizedBox(height: 10),
+              const Divider(color: Color(0xFF1f2937), height: 1),
+              const SizedBox(height: 8),
+              Row(children: [
+                const Text('SABR READ  ',
+                    style: TextStyle(
+                        color: Color(0xFF4b5563),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.9,
+                        fontFamily: 'monospace')),
+                Text('(${front.dte}d slice)',
+                    style: const TextStyle(
+                        color: Color(0xFF374151),
+                        fontSize: 8,
+                        fontFamily: 'monospace')),
+                if (!read.isReliable) ...[
+                  const SizedBox(width: 4),
+                  const Text('⚠ low data',
+                      style: TextStyle(
+                          color: Color(0xFFfbbf24),
+                          fontSize: 7,
+                          fontFamily: 'monospace')),
+                ],
+              ]),
+              const SizedBox(height: 6),
+
+              // Skew (ρ)
+              _SabrReadRow(
+                paramLabel: 'ρ SKEW',
+                chipLabel:  read.skewLabel,
+                chipColor:  read.skewColor,
+                detail:     read.skewDetail,
+              ),
+              const SizedBox(height: 6),
+
+              // Wings (ν)
+              _SabrReadRow(
+                paramLabel: 'ν WINGS',
+                chipLabel:  read.wingsLabel,
+                chipColor:  read.wingsColor,
+                detail:     read.wingsDetail,
+              ),
+              const SizedBox(height: 6),
+
+              // Alpha (α)
+              _SabrReadRow(
+                paramLabel: 'α LEVEL',
+                chipLabel:  read.alphaLabel,
+                chipColor:  read.alphaColor,
+                detail:     read.alphaDetail,
+              ),
+              const SizedBox(height: 6),
+
+              // Fit quality
+              Row(children: [
+                const Text('FIT  ',
+                    style: TextStyle(
+                        color: Color(0xFF4b5563),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                        fontFamily: 'monospace')),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: read.fitColor.withValues(alpha: 0.12),
+                    border: Border.all(color: read.fitColor.withValues(alpha: 0.40)),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(read.fitLabel,
+                      style: TextStyle(
+                          color: read.fitColor,
+                          fontSize: 7,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                          fontFamily: 'monospace')),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  'RMSE ${(front.rmse * 100).toStringAsFixed(2)}%  '
+                  '·  n=${front.nPoints}',
+                  style: const TextStyle(
+                      color: Color(0xFF4b5563),
+                      fontSize: 8,
+                      fontFamily: 'monospace'),
+                ),
+              ]),
+              if (front.rmse >= 0.030) ...[
+                const SizedBox(height: 3),
+                const Text(
+                  'Poor fit may indicate illiquid strikes or arb violations '
+                  'distorting the calibration. Check the ARB CHECK card.',
+                  style: TextStyle(
+                      color: Color(0xFFf87171),
+                      fontSize: 8,
+                      height: 1.4,
+                      fontFamily: 'monospace'),
+                ),
+              ],
             ],
           );
         },
       ),
+    );
+  }
+}
+
+// Small reusable row: label chip + detail text.
+class _SabrReadRow extends StatelessWidget {
+  final String paramLabel;
+  final String chipLabel;
+  final Color  chipColor;
+  final String detail;
+
+  const _SabrReadRow({
+    required this.paramLabel,
+    required this.chipLabel,
+    required this.chipColor,
+    required this.detail,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Text('$paramLabel  ',
+              style: const TextStyle(
+                  color: Color(0xFF4b5563),
+                  fontSize: 8,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  fontFamily: 'monospace')),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: chipColor.withValues(alpha: 0.12),
+              border: Border.all(color: chipColor.withValues(alpha: 0.40)),
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: Text(chipLabel,
+                style: TextStyle(
+                    color: chipColor,
+                    fontSize: 7,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                    fontFamily: 'monospace')),
+          ),
+        ]),
+        const SizedBox(height: 2),
+        Text(detail,
+            style: const TextStyle(
+                color: Color(0xFF6b7280),
+                fontSize: 8,
+                height: 1.4,
+                fontFamily: 'monospace')),
+      ],
     );
   }
 }
