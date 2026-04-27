@@ -12,6 +12,7 @@
 // All writes are upserts (on-conflict do update) so repeated fetches on the
 // same day are idempotent.
 // =============================================================================
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../schwab/schwab_models.dart';
 import '../bls/bls_models.dart';
@@ -111,8 +112,8 @@ class EconomyStorageService {
         _saveTreasury(data.treasury),
         _saveQuotes(data),
       ]);
-    } catch (_) {
-      // Silently ignore if tables don't exist yet (migration not applied)
+    } catch (e) {
+      debugPrint('[EconomyStorage] saveEconomyPulse: $e');
     }
   }
 
@@ -198,7 +199,7 @@ class EconomyStorageService {
 
   Future<void> saveBlsResponse(BlsResponse response) async {
     try {
-      final rows = <Map<String, dynamic>>[];
+      final byKey = <String, Map<String, dynamic>>{};
       for (final series in response.series) {
         final id = EconIds.blsSeriesMap[series.seriesId];
         if (id == null) continue;
@@ -206,29 +207,35 @@ class EconomyStorageService {
           if (d.value <= 0) continue; // skip "-" entries stored as 0
           final date = _blsPeriodToDate(d.year, d.period);
           if (date == null) continue;
-          rows.add({'identifier': id, 'date': _fmt(date), 'value': d.value});
+          final key = '${id}_${_fmt(date)}';
+          byKey[key] = {'identifier': id, 'date': _fmt(date), 'value': d.value};
         }
       }
-      if (rows.isEmpty) return;
+      if (byKey.isEmpty) return;
       await _db.from('economy_indicator_snapshots')
-          .upsert(rows, onConflict: 'identifier,date');
-    } catch (_) {}
+          .upsert(byKey.values.toList(), onConflict: 'identifier,date');
+    } catch (e) {
+      debugPrint('[EconomyStorage] saveBlsResponse: $e');
+    }
   }
 
   // ── BEA ────────────────────────────────────────────────────────────────────
 
   Future<void> saveBeaResponse(BeaResponse response, String identifier) async {
     try {
-      final rows = response.data.map((obs) {
+      final byDate = <String, Map<String, dynamic>>{};
+      for (final obs in response.data) {
         final date = _beaPeriodToDate(obs.timePeriod);
         final v = obs.value;
-        if (date == null || v == null) return null;
-        return {'identifier': identifier, 'date': _fmt(date), 'value': v};
-      }).whereType<Map<String, dynamic>>().toList();
-      if (rows.isEmpty) return;
+        if (date == null || v == null) continue;
+        byDate[_fmt(date)] = {'identifier': identifier, 'date': _fmt(date), 'value': v};
+      }
+      if (byDate.isEmpty) return;
       await _db.from('economy_indicator_snapshots')
-          .upsert(rows, onConflict: 'identifier,date');
-    } catch (_) {}
+          .upsert(byDate.values.toList(), onConflict: 'identifier,date');
+    } catch (e) {
+      debugPrint('[EconomyStorage] saveBeaResponse($identifier): $e');
+    }
   }
 
   // ── EIA ────────────────────────────────────────────────────────────────────
