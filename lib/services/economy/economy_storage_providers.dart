@@ -10,7 +10,7 @@
 // =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/auth/providers/auth_provider.dart';
-import '../fmp/fmp_models.dart';
+import '../schwab/schwab_models.dart';
 import 'economy_snapshot_models.dart';
 import 'economy_storage_service.dart';
 

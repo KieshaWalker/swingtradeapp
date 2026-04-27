@@ -62,23 +62,23 @@ class GexStrike {
   }
 
   Map<String, dynamic> toJson(double underlyingPrice) => {
-    'strike':    strike,
-    'gex':       dealerGex(underlyingPrice),
-    'calls_oi':  callOi,
-    'puts_oi':   putOi,
+    'strike':     strike,
+    'dealer_gex': dealerGex(underlyingPrice),
+    'call_oi':    callOi,
+    'put_oi':     putOi,
   };
 
   factory GexStrike.fromJson(Map<String, dynamic> j) => GexStrike(
-    strike:    (j['strike']   as num).toDouble(),
-    callOi:    (j['calls_oi'] as num? ?? 0).toDouble(),
-    putOi:     (j['puts_oi']  as num? ?? 0).toDouble(),
+    strike:    (j['strike']  as num).toDouble(),
+    callOi:    (j['call_oi'] as num? ?? 0).toDouble(),
+    putOi:     (j['put_oi']  as num? ?? 0).toDouble(),
     callGamma: 0,   // not persisted — reconstructed from GEX + OI
     putGamma:  0,
   );
 
   // Convenience getter for reading persisted GEX value directly
   static double gexFromJson(Map<String, dynamic> j) =>
-      (j['gex'] as num? ?? 0).toDouble();
+      (j['dealer_gex'] as num? ?? 0).toDouble();
 }
 
 // =============================================================================
@@ -263,11 +263,11 @@ class IvSnapshot {
       _         => null,
     };
     IvGexSignal? parseIvGexSignal(String? s) => switch (s) {
-      'classic_short_gamma'  => IvGexSignal.classicShortGamma,
-      'regime_shift'         => IvGexSignal.regimeShift,
-      'event_over_pos_gamma' => IvGexSignal.eventOverPosGamma,
-      'stable_gamma'         => IvGexSignal.stableGamma,
-      _                      => null,
+      'classicShortGamma'  => IvGexSignal.classicShortGamma,
+      'regimeShift'        => IvGexSignal.regimeShift,
+      'eventOverPosGamma'  => IvGexSignal.eventOverPosGamma,
+      'stableGamma'        => IvGexSignal.stableGamma,
+      _                    => null,
     };
     VannaRegime? parseVannaRegime(String? s) => switch (s) {
       'bullishOnVolCrush' => VannaRegime.bullishOnVolCrush,
@@ -544,6 +544,18 @@ class IvAnalysis {
   // Underlying spot price at analysis time — required for dealerGex() scaling.
   final double? underlyingPrice;
 
+  // ── Institutional-grade GEX fields ────────────────────────────────────────
+  // GEX contributed solely by same-day (0DTE) expiries ($M).
+  final double? gex0dte;
+  // gex0dte / |total_gex| × 100 — what fraction of total gamma is 0DTE-driven.
+  final double? gex0dtePct;
+  // Lowest significant positive-GEX support level above the zero-gamma level.
+  // The "volatility trigger": below it, dealers flip to short gamma behaviour.
+  final double? volatilityTrigger;
+  // (spot − volatilityTrigger) / spot × 100.
+  // Negative = spot is already in the transition corridor below the VT.
+  final double? spotToVtPct;
+
   const IvAnalysis({
     required this.ticker,
     required this.currentIv,
@@ -575,6 +587,10 @@ class IvAnalysis {
     this.ivGexSignal  = IvGexSignal.unknown,
     this.putWallDensity,
     this.underlyingPrice,
+    this.gex0dte,
+    this.gex0dtePct,
+    this.volatilityTrigger,
+    this.spotToVtPct,
   });
 
   factory IvAnalysis.fromJson(Map<String, dynamic> j) {
@@ -608,11 +624,11 @@ class IvAnalysis {
     };
     final sigStr = j['iv_gex_signal'] as String? ?? 'unknown';
     final ivGexSignal = switch (sigStr) {
-      'classic_short_gamma'    => IvGexSignal.classicShortGamma,
-      'regime_shift'           => IvGexSignal.regimeShift,
-      'event_over_pos_gamma'   => IvGexSignal.eventOverPosGamma,
-      'stable_gamma'           => IvGexSignal.stableGamma,
-      _                        => IvGexSignal.unknown,
+      'classicShortGamma'   => IvGexSignal.classicShortGamma,
+      'regimeShift'         => IvGexSignal.regimeShift,
+      'eventOverPosGamma'   => IvGexSignal.eventOverPosGamma,
+      'stableGamma'         => IvGexSignal.stableGamma,
+      _                     => IvGexSignal.unknown,
     };
     final gexStrikes = (j['gex_strikes'] as List? ?? [])
         .map((e) => GexStrike.fromJson(e as Map<String, dynamic>))
@@ -646,6 +662,10 @@ class IvAnalysis {
       ivGexSignal:        ivGexSignal,
       putWallDensity:     (j['put_wall_density']    as num?)?.toDouble(),
       underlyingPrice:    (j['underlying_price']    as num?)?.toDouble(),
+      gex0dte:            (j['gex_0dte']            as num?)?.toDouble(),
+      gex0dtePct:         (j['gex_0dte_pct']        as num?)?.toDouble(),
+      volatilityTrigger:  (j['volatility_trigger']  as num?)?.toDouble(),
+      spotToVtPct:        (j['spot_to_vt_pct']      as num?)?.toDouble(),
     );
   }
 

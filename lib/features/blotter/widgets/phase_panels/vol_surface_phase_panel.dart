@@ -19,7 +19,7 @@
 //
 // Providers consumed:
 //   volSurfaceProvider              — List<VolSnapshot> from Supabase
-//   tickerNextEarningsProvider(s)   — FmpEarningsDate? (FMP earnings calendar)
+//   schwabEarningsDateProvider(s)   — EarningsDate? (Schwab fundamentals)
 // =============================================================================
 
 import 'dart:math';
@@ -27,8 +27,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme.dart';
-import '../../../../services/fmp/fmp_models.dart';
-import '../../../../services/fmp/fmp_providers.dart';
+import '../../../../services/schwab/schwab_models.dart';
+import '../../../../services/schwab/schwab_providers.dart';
 import '../../../../services/fred/fred_providers.dart';
 import '../../../../services/iv/iv_providers.dart';
 import '../../../../services/iv/realized_vol_models.dart';
@@ -177,7 +177,7 @@ PhaseResult _toPhaseResult({
   required int               dte,
   required double            strike,
   required double?           spot,
-  FmpEarningsDate?           earnings,
+  EarningsDate?           earnings,
   RealizedVolResult?         rvResult,
   double?                    vixNow,
   double?                    vxvNow,
@@ -577,7 +577,7 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
   @override
   Widget build(BuildContext context) {
     final snapsAsync    = ref.watch(volSurfaceProvider);
-    final earningsAsync = ref.watch(tickerNextEarningsProvider(widget.ticker));
+    final earningsAsync = ref.watch(schwabEarningsDateProvider(widget.ticker));
     final rvAsync       = ref.watch(realizedVolProvider(widget.ticker));
     final vixAsync      = ref.watch(fredVixProvider);
     final vxvAsync      = ref.watch(fredSeriesProvider('VXVCLS'));
@@ -708,7 +708,7 @@ class _ErrorTile extends StatelessWidget {
 
 class _NoDataTile extends StatelessWidget {
   final String          ticker;
-  final FmpEarningsDate? earnings;
+  final EarningsDate? earnings;
   const _NoDataTile({required this.ticker, this.earnings});
 
   @override
@@ -752,7 +752,7 @@ class _PanelBody extends StatefulWidget {
   final PhaseResult       result;
   final String            ticker;
   final bool              isCall;
-  final FmpEarningsDate?  earnings;
+  final EarningsDate?  earnings;
   final int               dte;
   final double            strike;
   final List<VolSnapshot> allSnaps; // all snapshots for this ticker
@@ -923,7 +923,7 @@ class _SnapBadge extends StatelessWidget {
 // ── Earnings banner ───────────────────────────────────────────────────────────
 
 class _EarningsBanner extends StatelessWidget {
-  final FmpEarningsDate earnings;
+  final EarningsDate earnings;
   final int             dte;
   const _EarningsBanner({required this.earnings, required this.dte});
 

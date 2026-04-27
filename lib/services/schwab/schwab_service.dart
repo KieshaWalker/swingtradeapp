@@ -4,7 +4,6 @@
 // =============================================================================
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../fmp/fmp_models.dart';
 import 'schwab_models.dart';
 
 class SchwabReauthRequiredException implements Exception {
@@ -103,7 +102,7 @@ class SchwabService {
   /// Returns the next earnings date for [symbol] from Schwab fundamentals,
   /// or null if unavailable. Uses the same quotes endpoint (fields=fundamental)
   /// — no extra network call or edge function needed.
-  Future<DateTime?> getEarningsDate(String symbol) async {
+  Future<EarningsDate?> getEarningsDate(String symbol) async {
     try {
       final res = await _fn.invoke(
         'get-schwab-quotes',
@@ -114,7 +113,8 @@ class SchwabService {
       if (data == null || data.containsKey('error')) return null;
       final entry = data[symbol] as Map<String, dynamic>?;
       if (entry == null) return null;
-      return SchwabQuote.fromJson(symbol, entry).nextEarningsDate;
+      final dt = SchwabQuote.fromJson(symbol, entry).nextEarningsDate;
+      return dt == null ? null : EarningsDate(date: dt);
     } catch (e) {
       if (e is FunctionException && e.status == 401) throw const SchwabReauthRequiredException();
       debugPrint('SchwabService.getEarningsDate error: $e');
@@ -122,13 +122,13 @@ class SchwabService {
     }
   }
 
-  // ── Economy pulse batch (replaces FMP getEconomyPulse quotes) ────────────────
+  // ── Economy pulse batch ───────────────────────────────────────────────────────
 
   // Schwab-native symbols:
-  //  /GC  = gold front-month futures     (FMP: GC=F)
-  //  /SI  = silver futures               (FMP: SI=F)
-  //  /CL  = WTI crude front-month        (FMP: CL=F)
-  //  /NG  = natural gas futures          (FMP: NG=F)
+  //  /GC  = gold front-month futures
+  //  /SI  = silver futures
+  //  /CL  = WTI crude front-month
+  //  /NG  = natural gas futures
   //  $DXY = US Dollar Index (real index, not the UUP ETF proxy)
   Future<List<StockQuote>> getEconomyQuotes() => getQuotes(
         ['SPY', 'QQQ', 'VIXY', r'$DXY', 'DXY', 'UUP', '/GC', '/SI', '/CL', '/NG', 'HYG', 'LQD', 'COPX'],

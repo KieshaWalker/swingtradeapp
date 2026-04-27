@@ -7,7 +7,7 @@
 // Data Sources:
 // - Market quotes (SPY, QQQ, VIXY, $DXY, commodities): Schwab API → economy_quote_snapshots
 // - Treasury yields: Treasury API → economy_treasury_snapshots
-// - Economic indicators (FMP): Financial Modeling Prep API → economy_indicator_snapshots
+// - Economic indicators: Supabase → economy_indicator_snapshots
 // - BLS data: Bureau of Labor Statistics API → economy_indicator_snapshots
 // - BEA data: Bureau of Economic Analysis API → economy_indicator_snapshots
 // - EIA data: Energy Information Administration API → economy_indicator_snapshots
@@ -22,9 +22,8 @@ import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../services/economy/economy_snapshot_models.dart';
 import '../../../services/economy/economy_storage_providers.dart';
-import '../../../services/fmp/fmp_models.dart';
-import '../../../services/fmp/fmp_providers.dart';
 import '../../../services/economy/economy_storage_service.dart';
+import '../providers/api_data_providers.dart';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -90,7 +89,7 @@ class EconomyChartsTab extends ConsumerWidget {
         SizedBox(height: 8),
         _TreasuryChart(),
         SizedBox(height: 8),
-        // Economic indicators from FMP API (stored in economy_indicator_snapshots)
+        // Economic indicators (stored in economy_indicator_snapshots)
         _IndicatorChart(
           identifier: 'federalFunds',
           title: 'Fed Funds Rate',
@@ -120,7 +119,7 @@ class EconomyChartsTab extends ConsumerWidget {
         _QuoteChart(symbol: '/NG', title: 'Natural Gas', color: _green),
         SizedBox(height: 24),
 
-        // Labor Market - Economic indicators from FMP API (stored in economy_indicator_snapshots)
+        // Labor Market (stored in economy_indicator_snapshots)
         _SectionHeader('Labor Market'),
         SizedBox(height: 8),
         _IndicatorChart(
@@ -156,7 +155,7 @@ class EconomyChartsTab extends ConsumerWidget {
         ),
         SizedBox(height: 24),
 
-        // Economy - Economic indicators from FMP API (stored in economy_indicator_snapshots)
+        // Economy (stored in economy_indicator_snapshots)
         _SectionHeader('Economy'),
         SizedBox(height: 8),
         _IndicatorChart(
@@ -192,7 +191,7 @@ class EconomyChartsTab extends ConsumerWidget {
         ),
         SizedBox(height: 24),
 
-        // Housing - Economic indicators from FMP API (stored in economy_indicator_snapshots)
+        // Housing (stored in economy_indicator_snapshots)
         _SectionHeader('Housing'),
         SizedBox(height: 8),
         _IndicatorChart(
@@ -595,7 +594,7 @@ class _DataNote extends StatelessWidget {
           SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Economic indicators populate immediately from FMP history. '
+              'Economic indicators populate from Supabase history. '
               'Market & commodity charts build one point per day you visit. '
               'Tap any chart to expand.',
               style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),

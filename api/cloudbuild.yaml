@@ -15,7 +15,6 @@
 #   SUPABASE_URL
 #   SUPABASE_SERVICE_KEY
 #   SUPABASE_ANON_KEY
-#   FMP_API_KEY
 #   PYTHON_API_SECRET
 # =============================================================================
 
@@ -64,7 +63,7 @@ steps:
       - --min-instances=0
       - --max-instances=3
       - --timeout=300
-      - --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_KEY=SUPABASE_SERVICE_KEY:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,FMP_API_KEY=FMP_API_KEY:latest,PYTHON_API_SECRET=PYTHON_API_SECRET:latest
+      - --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_KEY=SUPABASE_SERVICE_KEY:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,PYTHON_API_SECRET=PYTHON_API_SECRET:latest
 
 images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPO}/${_SERVICE}:${_TAG}

@@ -13,7 +13,7 @@
 // same day are idempotent.
 // =============================================================================
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../fmp/fmp_models.dart';
+import '../schwab/schwab_models.dart';
 import '../bls/bls_models.dart';
 import '../bea/bea_models.dart';
 import '../eia/eia_models.dart';
@@ -102,7 +102,7 @@ class EconomyStorageService {
   final SupabaseClient _db;
   const EconomyStorageService(this._db);
 
-  // ── FMP (existing) ─────────────────────────────────────────────────────────
+  // ── Economy pulse storage ──────────────────────────────────────────────────
 
   Future<void> saveEconomyPulse(EconomyPulseData data) async {
     try {

@@ -2,14 +2,12 @@
 // features/economy/screens/economy_pulse_screen.dart — Economy Pulse tab
 // =============================================================================
 // Two-tab screen:
-//   Snapshot — real-time macroeconomic dashboard sourced from FMP
+//   Snapshot — real-time macroeconomic dashboard sourced from Schwab + gov APIs
 //   Charts   — day-by-day / monthly historical charts from Supabase
 //
 // Each time the Snapshot data loads the latest values are upserted into the
 // three Supabase economy snapshot tables so charts accumulate over time.
 //
-// Provider: economyPulseProvider (fmp_providers.dart)
-// Model:    EconomyPulseData     (fmp_models.dart)
 // Storage:  EconomyStorageService via economyStorageServiceProvider
 // =============================================================================
 import 'package:flutter/material.dart';
@@ -18,8 +16,8 @@ import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/economy/economy_storage_providers.dart';
-import '../../../services/fmp/fmp_models.dart';
-import '../../../services/fmp/fmp_providers.dart';
+import '../../../services/schwab/schwab_models.dart';
+import '../../../services/economy/economy_snapshot_models.dart';
 import '../../../services/economy/economy_storage_service.dart';
 import '../../../features/economy/providers/api_data_providers.dart';
 import '../../../services/fred/fred_providers.dart';
@@ -45,7 +43,7 @@ class EconomyPulseScreen extends ConsumerWidget {
 
     final storage = ref.read(economyStorageServiceProvider);
 
-    // ── Snapshot (Schwab quotes + FMP indicators) — persist on each fetch
+    // ── Snapshot (Schwab quotes + gov indicators) — persist on each fetch
     ref.listen<AsyncValue<EconomyPulseData>>(economyPulseProvider, (_, next) {
       next.whenData((data) => storage.saveEconomyPulse(data));
     });
@@ -499,7 +497,7 @@ String _fmtJobsK(double v) {
 }
 
 String _fmtGdp(double v) {
-  // FMP returns real GDP in billions
+  // Real GDP stored in billions
   if (v >= 1000) return '\$${(v / 1000).toStringAsFixed(1)}T';
   return '\$${v.toStringAsFixed(0)}B';
 }
@@ -510,7 +508,7 @@ String _fmtRetail(double v) {
 }
 
 String _fmtHousing(double v) {
-  // FMP returns housing starts in thousands of units
+  // Housing starts stored in thousands of units
   return '${v.toStringAsFixed(0)}K';
 }
 
@@ -607,7 +605,8 @@ class _QuoteTile extends StatelessWidget {
       return _Tile(child: _PlaceholderContent(label, sublabel));
     }
 
-    final positive = invertColor ? !quote!.isPositive : quote!.isPositive;
+    final isPos = quote!.changePercent >= 0;
+    final positive = invertColor ? !isPos : isPos;
     final changeColor = positive ? AppTheme.profitColor : AppTheme.lossColor;
     final sign = quote!.changePercent >= 0 ? '+' : '';
 

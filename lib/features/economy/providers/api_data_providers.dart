@@ -13,6 +13,42 @@ import '../../../services/eia/eia_models.dart';
 import '../../../services/eia/eia_service.dart';
 import '../../../services/census/census_models.dart';
 import '../../../services/census/census_service.dart';
+import '../../../services/economy/economy_snapshot_models.dart';
+import '../../../services/schwab/schwab_models.dart';
+import '../../../services/schwab/schwab_providers.dart';
+import '../../../services/schwab/schwab_reauth_provider.dart';
+import '../../../services/schwab/schwab_service.dart';
+
+// ── Economy Pulse (Schwab quotes) ─────────────────────────────────────────────
+
+final economyPulseProvider = FutureProvider<EconomyPulseData>((ref) async {
+  try {
+    final service = ref.watch(schwabServiceProvider);
+    final quotes  = await service.getEconomyQuotes();
+    StockQuote? q(String symbol) =>
+        quotes.cast<StockQuote?>().firstWhere(
+          (e) => e?.symbol == symbol,
+          orElse: () => null,
+        );
+    return EconomyPulseData(
+      fetchedAt: DateTime.now(),
+      sp500:    q('SPY'),
+      nasdaq:   q('QQQ'),
+      vix:      q('VIXY'),
+      dxy:      q(r'$DXY') ?? q('DXY'),
+      gold:     q('/GC'),
+      silver:   q('/SI'),
+      wtiCrude: q('/CL'),
+      natGas:   q('/NG'),
+      hyg:      q('HYG'),
+      lqd:      q('LQD'),
+      copx:     q('COPX'),
+    );
+  } on SchwabReauthRequiredException {
+    ref.read(schwabReauthNeededProvider.notifier).state = true;
+    rethrow;
+  }
+});
 
 // ── BLS ───────────────────────────────────────────────────────────────────────
 

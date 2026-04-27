@@ -13,7 +13,7 @@
 #   • spot_to_vt_pct                   from iv_analytics (Volatility Trigger distance)
 #   • iv_percentile                    from iv_analytics (IVP 0–100)
 #   • delta_gex, total_gex, gex_0dte_pct from iv_analytics
-#   • sma10, sma50, price_roc5         from FMP historical closes
+#   • sma10, sma50, price_roc5         from Schwab price history
 #   • vix_dev_pct, vix_rsi             VIX momentum + mean-reversion signals
 #   • vix_term_structure_ratio         VIX / VIX3M (<1 contango, >1 backwardation)
 #   • vvix_current, vvix_10ma          VVIX early warning for regime transition

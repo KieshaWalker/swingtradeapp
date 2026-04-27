@@ -44,28 +44,14 @@ final ivAnalysisProvider =
   final history = await storage.getHistory(symbol);
   final historyMaps = history.map((s) => s.toJson()).toList();
 
-  final raw = await PythonApiClient.ivAnalytics(
-    chain:    chain.rawJson,
-    spotPrice: chain.underlyingPrice,
-    history:  historyMaps,
+  // Use /iv/snapshot so all 25 extended fields (iv_rank, gamma_regime, vanna_regime, etc.)
+  // are persisted to Supabase — /iv/analytics computes but does not save extended fields.
+  final raw = await PythonApiClient.ivSnapshot(
+    chain:   chain.rawJson,
+    ticker:  symbol,
+    history: historyMaps,
   );
-  final analysis = IvAnalysis.fromJson(raw);
-
-  // Persist a local snapshot (fire-and-forget)
-  storage.saveSnapshot(IvSnapshot(
-    ticker:         symbol,
-    date:           DateTime.now().toUtc(),
-    atmIv:          analysis.currentIv,
-    skew:           analysis.skew,
-    totalGex:       analysis.totalGex,
-    maxGexStrike:   analysis.maxGexStrike,
-    putCallRatio:   analysis.putCallRatio,
-    underlyingPrice: analysis.underlyingPrice,
-    gexByStrike:    (raw['gex_strikes'] as List? ?? [])
-                        .cast<Map<String, dynamic>>(),
-  ));
-
-  return analysis;
+  return IvAnalysis.fromJson(raw);
 });
 
 // ── Raw snapshot history (for sparklines / table) ─────────────────────────────
@@ -89,9 +75,8 @@ final ivWatchlistProvider =
 Future<void> autoIngestIv(SchwabOptionsChain chain) async {
   try {
     await PythonApiClient.ivSnapshot(
-      chain:    chain.rawJson,
-      spotPrice: chain.underlyingPrice,
-      ticker:   chain.symbol,
+      chain:  chain.rawJson,
+      ticker: chain.symbol,
     );
   } catch (_) {
     // Silent — IV ingestion should never crash the chain screen

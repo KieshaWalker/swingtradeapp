@@ -48,7 +48,7 @@ dependencies:
   uuid: ^4.5.1
   shared_preferences: ^2.3.5
 
-  # HTTP client for FMP & SEC APIs
+  # HTTP client for SEC APIs and misc requests
   http: ^1.6.0
   url_launcher: ^6.3.2
 

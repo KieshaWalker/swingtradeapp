@@ -11,10 +11,10 @@
 //    → SchwabService.searchTicker → schwabTickerSearchProvider
 //    → TickerDashboardScreen (search bar autocomplete)
 //
-//  SchwabQuote  →  .toStockQuote() → StockQuote (fmp_models.dart)
+//  SchwabQuote  →  .toStockQuote() → StockQuote
 //    Edge fn: get-schwab-quotes  (Schwab GET /marketdata/v1/quotes)
 //    Response shape: { "SPY": { quote: {lastPrice,...}, realtime: bool } }
-//    → SchwabService.getQuotes → schwabQuotesProvider
+//    → SchwabService.getQuotes → quotesProvider
 //    → EconomyPulseScreen (Market Snapshot), TradeDetailScreen (_LiveQuoteCard)
 //
 //  SchwabOptionsChain  (contains SchwabExpiration[] → SchwabOptionContract[])
@@ -23,7 +23,68 @@
 //    → OptionsChainScreen (calls + puts tables, expiration picker)
 //    → OptionDecisionWizard
 // =============================================================================
-import '../fmp/fmp_models.dart';
+
+// ── Shared quote model used by all quote providers and UI widgets ─────────────
+
+class StockQuote {
+  final String symbol;
+  final String name;
+  final double price;
+  final double change;
+  final double changePercent;
+  final double open;
+  final double dayHigh;
+  final double dayLow;
+  final double previousClose;
+  final int    volume;
+  final double dividendYield; // percent, e.g. 1.35 means 1.35%
+
+  const StockQuote({
+    required this.symbol,
+    required this.name,
+    required this.price,
+    required this.change,
+    required this.changePercent,
+    required this.open,
+    required this.dayHigh,
+    required this.dayLow,
+    required this.previousClose,
+    required this.volume,
+    this.dividendYield = 0.0,
+  });
+
+  bool get isPositive => change >= 0;
+}
+
+// ── Economic indicator data point (used by economy_storage_service) ───────────
+
+class EconomicIndicatorPoint {
+  final String   identifier;
+  final DateTime date;
+  final double   value;
+
+  const EconomicIndicatorPoint({
+    required this.identifier,
+    required this.date,
+    required this.value,
+  });
+}
+
+// ── Earnings date (from Schwab fundamentals) ──────────────────────────────────
+
+class EarningsDate {
+  final DateTime date;
+  final String   time;         // 'bmo' | 'amc' | '' — Schwab does not provide this
+  final double?  epsEstimated; // null — Schwab does not provide this
+
+  const EarningsDate({required this.date, this.time = '', this.epsEstimated});
+
+  String get timeLabel => switch (time) {
+    'bmo' => 'Before market open',
+    'amc' => 'After market close',
+    _     => '',
+  };
+}
 
 // ── Instrument search result ──────────────────────────────────────────────────
 
@@ -189,6 +250,7 @@ class SchwabQuote {
         dayLow:        lowPrice,
         previousClose: closePrice,
         volume:        totalVolume,
+        dividendYield: fundamentals?.dividendYield ?? 0.0,
       );
 }
 

@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_service_key: str
     supabase_anon_key: str = ""
-    fmp_api_key: str = ""
     python_api_secret: str = ""
     port: int = 8000
     log_level: str = "INFO"

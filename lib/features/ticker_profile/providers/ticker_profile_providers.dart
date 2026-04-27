@@ -236,7 +236,7 @@ final tickerTimelineProvider =
   }
 
   // SOURCE: Supabase — ticker_earnings_reactions table (user-logged post-earnings data)
-  //         EPS estimate pre-fill comes from FMP /earnings-calendar (tickerNextEarningsProvider)
+  //         EPS estimate pre-fill comes from Schwab fundamentals (schwabEarningsDateProvider)
   for (final e in earningsAsync.valueOrNull ?? []) {
     final dir = e.direction ?? 'flat';
     final pct = e.movePct != null

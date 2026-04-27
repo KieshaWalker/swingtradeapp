@@ -9,7 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
-import '../../../services/fmp/fmp_models.dart';
+import '../../../services/schwab/schwab_models.dart';
 import '../models/ticker_profile_models.dart';
 import '../providers/ticker_profile_notifier.dart';
 import '../widgets/add_earnings_reaction_sheet.dart';
@@ -17,7 +17,7 @@ import '../widgets/add_earnings_reaction_sheet.dart';
 // ─── Earnings date card ───────────────────────────────────────────────────────
 
 class EarningsDateCard extends StatelessWidget {
-  final FmpEarningsDate earnings;
+  final EarningsDate earnings;
   const EarningsDateCard(this.earnings, {super.key});
 
   @override

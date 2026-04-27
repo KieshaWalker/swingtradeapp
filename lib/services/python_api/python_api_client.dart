@@ -99,12 +99,12 @@ class PythonApiClient {
     required String optionType, // 'call' or 'put'
   }) =>
       _post('/bs/price', {
-        's': s,
-        'k': k,
-        't': t,
-        'sigma': sigma,
-        'r': r,
-        'option_type': optionType,
+        'spot':           s,
+        'strike':         k,
+        'days_to_expiry': (t * 365).round().clamp(1, 9999),
+        'implied_vol':    sigma,
+        'r':              r,
+        'is_call':        optionType == 'call',
       });
 
   static Future<Map<String, dynamic>> bsGreeks({
@@ -192,28 +192,25 @@ class PythonApiClient {
   // ── IV Analytics ───────────────────────────────────────────────────────────
 
   /// Returns full analytics dict: gex_by_strike, total_gex, zero_gamma, etc.
+  /// spot_price is read from chain['underlyingPrice'] by the API — not a separate param.
   static Future<Map<String, dynamic>> ivAnalytics({
     required Map<String, dynamic> chain,
-    required double spotPrice,
     List<Map<String, dynamic>>? history,
   }) =>
       _post('/iv/analytics', {
         'chain': chain,
-        'spot_price': spotPrice,
         'history': ?history,
       });
 
   /// Same as ivAnalytics but also persists to Supabase iv_snapshots table.
   static Future<Map<String, dynamic>> ivSnapshot({
     required Map<String, dynamic> chain,
-    required double spotPrice,
     required String ticker,
     List<Map<String, dynamic>>? history,
     String? obsDate,
   }) =>
       _post('/iv/snapshot', {
         'chain': chain,
-        'spot_price': spotPrice,
         'ticker': ticker,
         'history': ?history,
         'obs_date': ?obsDate,

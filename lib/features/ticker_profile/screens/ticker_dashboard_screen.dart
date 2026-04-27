@@ -5,15 +5,15 @@
 //
 // Data sources:
 //   Ticker list       Supabase  trades table — unique symbols, client-side
-//   Live price        FMP  GET /quote?symbol=   (quoteProvider per card)
-//   Company name      FMP  GET /quote?symbol=   (quote.name field)
+//   Live price        Schwab  GET /marketdata/v1/quotes  (quoteProvider per card)
+//   Company name      Schwab  GET /marketdata/v1/quotes  (quote.name field)
 //   Win rate / P&L    Supabase  trades table — computed locally
 //                     (tickerAnalyticsProvider → TickerTradeAnalytics.compute())
 //   Open count        Supabase  trades table — client-side filter
-//   Search dialog     FMP  GET /search-symbol?query=  (tickerSearchProvider)
+//   Search dialog     Schwab  GET /marketdata/v1/instruments  (tickerSearchProvider)
 //                     — lets you browse any ticker even without trades
 //
-// TODO: Add Kalshi market prices alongside FMP quote on each card
+// TODO: Add Kalshi market prices alongside Schwab quote on each card
 //       kalshiMarketProvider(symbol) → GET /markets?ticker={symbol}
 //
 // Tap any card → context.push('/ticker/$symbol') → TickerProfileScreen

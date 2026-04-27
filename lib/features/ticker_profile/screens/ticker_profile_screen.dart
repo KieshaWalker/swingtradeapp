@@ -11,13 +11,12 @@
 //
 // Data sources per tab:
 //   ── Overview ────────────────────────────────────────────────────────────
-//   AppBar price      FMP  GET /quote?symbol=          (quoteProvider)
-//   Next earnings     FMP  GET /earnings-calendar      (tickerNextEarningsProvider)
+//   AppBar price      Schwab  GET /marketdata/v1/quotes  (quoteProvider)
+//   Next earnings     Schwab  GET /marketdata/v1/quotes  (schwabEarningsDateProvider)
 //   Notes             Supabase  ticker_profile_notes   (tickerNotesProvider)
 //   Insider buys      Supabase  ticker_insider_buys    (tickerInsiderBuysProvider)
 //                     (raw Form 4 discovery → SEC /live-query-api formType:4)
 //   Earnings history  Supabase  ticker_earnings_reactions (tickerEarningsReactionsProvider)
-//                     (EPS estimates pre-filled from FMP /earnings-calendar)
 //
 //   ── My Edge ─────────────────────────────────────────────────────────────
 //   All analytics     Supabase  trades table — computed locally, no API calls
@@ -42,7 +41,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
-import '../../../services/fmp/fmp_providers.dart' show tickerNextEarningsProvider;
 import '../../../services/schwab/schwab_providers.dart';
 import '../../trades/models/trade.dart';
 import '../models/ticker_profile_models.dart';
@@ -213,7 +211,7 @@ class _OverviewTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final nextEarnings = ref.watch(tickerNextEarningsProvider(symbol));
+    final nextEarnings = ref.watch(schwabEarningsDateProvider(symbol));
     final insiders = ref.watch(tickerInsiderBuysProvider(symbol));
     final earningsHistory = ref.watch(tickerEarningsReactionsProvider(symbol));
     final notes = ref.watch(tickerNotesProvider(symbol));

@@ -5,7 +5,7 @@
 //   • TradeDetailScreen  (ConsumerWidget) — receives Trade via GoRouter extra;
 //                          scrollable detail view with header, quote, details,
 //                          Greeks, notes, SEC filings sections
-//   • _LiveQuoteCard     (ConsumerWidget) — live FMP price card with open/high/
+//   • _LiveQuoteCard     (ConsumerWidget) — live price card with open/high/
 //                          low/prev-close stats; powered by quoteProvider(symbol)
 //   • _QuoteStat         — label + value column used inside _LiveQuoteCard
 //   • _StatusBadge       — OPEN/CLOSED/EXPIRED pill; color from AppTheme
@@ -37,8 +37,6 @@ import '../../../services/schwab/schwab_providers.dart';
 import '../../../services/sec/sec_models.dart';
 import '../../../services/sec/sec_providers.dart';
 import '../../../services/iv/iv_providers.dart';
-import '../../../services/fmp/fmp_providers.dart'
-    hide quoteProvider, quotesProvider;
 import '../models/trade.dart';
 import '../providers/trades_provider.dart';
 import '../services/live_greeks_service.dart';
@@ -139,7 +137,7 @@ class TradeDetailScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
 
-          // Live stock quote from FMP
+          // Live stock quote from Schwab
           _LiveQuoteCard(symbol: trade.ticker),
           const SizedBox(height: 12),
 
@@ -358,11 +356,10 @@ class _LiveGreeksCardState extends ConsumerState<_LiveGreeksCard> {
   Widget build(BuildContext context) {
     final quoteAsync = ref.watch(quoteProvider(widget.trade.ticker));
     final ivAsync    = ref.watch(ivAnalysisProvider(widget.trade.ticker));
-    final divAsync   = ref.watch(dividendInfoProvider(widget.trade.ticker));
 
     final spot          = quoteAsync.valueOrNull?.price;
     final iv            = ivAsync.valueOrNull?.currentIv;
-    final dividendYield = divAsync.valueOrNull?.annualYield ?? 0.0;
+    final dividendYield = quoteAsync.valueOrNull?.dividendYield ?? 0.0;
 
     if (spot == null || iv == null) {
       return Card(
@@ -471,8 +468,8 @@ class _LiveGreeksCardState extends ConsumerState<_LiveGreeksCard> {
 }
 
 // ----------------------------------------------------------------
-// Live quote card powered by FMP
-// Watches quoteProvider(symbol) → FmpService.getQuote()
+// Live quote card powered by Schwab
+// Watches quoteProvider(symbol) → SchwabService.getQuote()
 // Shows: price, change $/%,  open / high / low / prev close
 // ----------------------------------------------------------------
 class _LiveQuoteCard extends ConsumerWidget {

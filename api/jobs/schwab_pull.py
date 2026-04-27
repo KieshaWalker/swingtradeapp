@@ -17,7 +17,7 @@ from __future__ import annotations
 #   4. IV analytics → upsert iv_snapshots
 #   5. Greek grid aggregation → upsert greek_grid_snapshots
 #   6. ATM greek snapshots (4/7/31 DTE buckets) → upsert greek_snapshots
-#   7. Realized vol (from FMP) → log result
+#   7. Realized vol (from Schwab price history) → log result
 # =============================================================================
 
 import logging
@@ -51,8 +51,6 @@ async def run_schwab_pull() -> dict:
         "Authorization": f"Bearer {settings.supabase_service_key}",
         "Content-Type": "application/json",
     }
-    fmp_key = settings.fmp_api_key
-
     # Fetch watched tickers + user_id (needed for user-scoped tables like greek_snapshots)
     tickers_resp = db.table("watched_tickers").select("ticker,user_id").execute()
     rows = tickers_resp.data or []
@@ -81,7 +79,7 @@ async def run_schwab_pull() -> dict:
     async with httpx.AsyncClient(timeout=60.0) as client:
         # ── Fetch VIX + supplementary vol indexes once per pipeline run ─────────
         # All fetched once here and reused across every ticker to avoid redundant
-        # API calls. FMP timeseries=65 gives 65 trading days oldest→newest.
+        # API calls via the get-schwab-pricehistory edge function.
         vix_closes: list[float] = []
         vix_current: float | None = None
         vix_10ma: float | None = None
@@ -92,68 +90,68 @@ async def run_schwab_pull() -> dict:
         vvix_current: float | None = None
         vvix_10ma: float | None = None
         breadth_proxy: float | None = None              # RSP/SPY 5d return ratio z-score
-        if fmp_key:
-            # VIX
-            vix_closes, _ = await _fetch_fmp_closes(client, "^VIX", fmp_key, days=65)
-            if vix_closes:
-                vix_current = vix_closes[-1]
-                ma10_data = vix_closes[-10:] if len(vix_closes) >= 10 else []
-                vix_10ma = sum(ma10_data) / len(ma10_data) if ma10_data else None
-                if vix_10ma and vix_10ma > 0 and vix_current is not None:
-                    vix_dev_pct = (vix_current - vix_10ma) / vix_10ma * 100
-                vix_rsi = compute_wilder_rsi(vix_closes)
-                hmm_result = classify_vix_regime(vix_closes)
 
-            # VIX3M term structure — ratio <1 = contango (tailwind for premium selling)
-            vix3m_closes, _ = await _fetch_fmp_closes(client, "^VIX3M", fmp_key, days=5)
-            if vix3m_closes and vix_current is not None and vix3m_closes[-1] > 0:
-                vix_term_structure_ratio = vix_current / vix3m_closes[-1]
+        # VIX
+        vix_closes, _ = await _fetch_schwab_closes(client, edge_base, headers, "$VIX.X", days=65)
+        if vix_closes:
+            vix_current = vix_closes[-1]
+            ma10_data = vix_closes[-10:] if len(vix_closes) >= 10 else []
+            vix_10ma = sum(ma10_data) / len(ma10_data) if ma10_data else None
+            if vix_10ma and vix_10ma > 0 and vix_current is not None:
+                vix_dev_pct = (vix_current - vix_10ma) / vix_10ma * 100
+            vix_rsi = compute_wilder_rsi(vix_closes)
+            hmm_result = classify_vix_regime(vix_closes)
 
-            # VVIX — rising above 120 while VIX < 20 is an early regime-transition warning
-            vvix_closes, _ = await _fetch_fmp_closes(client, "^VVIX", fmp_key, days=15)
-            if vvix_closes:
-                vvix_current = vvix_closes[-1]
-                vvix_ma10 = vvix_closes[-10:] if len(vvix_closes) >= 10 else vvix_closes
-                vvix_10ma = sum(vvix_ma10) / len(vvix_ma10)
+        # VIX3M term structure — ratio <1 = contango (tailwind for premium selling)
+        vix3m_closes, _ = await _fetch_schwab_closes(client, edge_base, headers, "$VIX3M.X", days=5)
+        if vix3m_closes and vix_current is not None and vix3m_closes[-1] > 0:
+            vix_term_structure_ratio = vix_current / vix3m_closes[-1]
 
-            # Breadth proxy: RSP (equal-weight) vs SPY (cap-weight) 5d return ratio.
-            # When RSP underperforms SPY the market is narrow (few mega-caps driving index).
-            # z-score < -1.5 signals breadth divergence; signals are context-only (no bias override).
-            spy_closes, _ = await _fetch_fmp_closes(client, "SPY", fmp_key, days=25)
-            rsp_closes, _ = await _fetch_fmp_closes(client, "RSP", fmp_key, days=25)
-            if len(spy_closes) >= 10 and len(rsp_closes) >= 10:
-                spy_rets = [
-                    (spy_closes[i] - spy_closes[i - 5]) / spy_closes[i - 5]
-                    for i in range(5, len(spy_closes))
-                    if spy_closes[i - 5] > 0
+        # VVIX — rising above 120 while VIX < 20 is an early regime-transition warning
+        vvix_closes, _ = await _fetch_schwab_closes(client, edge_base, headers, "$VVIX.X", days=15)
+        if vvix_closes:
+            vvix_current = vvix_closes[-1]
+            vvix_ma10 = vvix_closes[-10:] if len(vvix_closes) >= 10 else vvix_closes
+            vvix_10ma = sum(vvix_ma10) / len(vvix_ma10)
+
+        # Breadth proxy: RSP (equal-weight) vs SPY (cap-weight) 5d return ratio.
+        # When RSP underperforms SPY the market is narrow (few mega-caps driving index).
+        # z-score < -1.5 signals breadth divergence; signals are context-only (no bias override).
+        spy_closes, _ = await _fetch_schwab_closes(client, edge_base, headers, "SPY", days=25)
+        rsp_closes, _ = await _fetch_schwab_closes(client, edge_base, headers, "RSP", days=25)
+        if len(spy_closes) >= 10 and len(rsp_closes) >= 10:
+            spy_rets = [
+                (spy_closes[i] - spy_closes[i - 5]) / spy_closes[i - 5]
+                for i in range(5, len(spy_closes))
+                if spy_closes[i - 5] > 0
+            ]
+            rsp_rets = [
+                (rsp_closes[i] - rsp_closes[i - 5]) / rsp_closes[i - 5]
+                for i in range(5, len(rsp_closes))
+                if rsp_closes[i - 5] > 0
+            ]
+            n = min(len(spy_rets), len(rsp_rets))
+            if n >= 5:
+                ratios = [
+                    rsp_rets[i] / spy_rets[i] if abs(spy_rets[i]) > 1e-6 else 1.0
+                    for i in range(n)
                 ]
-                rsp_rets = [
-                    (rsp_closes[i] - rsp_closes[i - 5]) / rsp_closes[i - 5]
-                    for i in range(5, len(rsp_closes))
-                    if rsp_closes[i - 5] > 0
-                ]
-                n = min(len(spy_rets), len(rsp_rets))
-                if n >= 5:
-                    ratios = [
-                        rsp_rets[i] / spy_rets[i] if abs(spy_rets[i]) > 1e-6 else 1.0
-                        for i in range(n)
-                    ]
-                    ratio_mean = sum(ratios) / len(ratios)
-                    ratio_std = (sum((r - ratio_mean) ** 2 for r in ratios) / len(ratios)) ** 0.5
-                    if ratio_std > 1e-6:
-                        breadth_proxy = (ratios[-1] - ratio_mean) / ratio_std
+                ratio_mean = sum(ratios) / len(ratios)
+                ratio_std = (sum((r - ratio_mean) ** 2 for r in ratios) / len(ratios)) ** 0.5
+                if ratio_std > 1e-6:
+                    breadth_proxy = (ratios[-1] - ratio_mean) / ratio_std
 
-            log.info(
-                "vix_computed current=%.2f 10ma=%s dev_pct=%s rsi=%s hmm=%s ts_ratio=%s vvix=%s breadth_z=%s",
-                vix_current or 0,
-                f"{vix_10ma:.2f}" if vix_10ma else "—",
-                f"{vix_dev_pct:.1f}%" if vix_dev_pct else "—",
-                f"{vix_rsi:.1f}" if vix_rsi else "—",
-                hmm_result.state.value if hmm_result else "—",
-                f"{vix_term_structure_ratio:.3f}" if vix_term_structure_ratio else "—",
-                f"{vvix_current:.1f}" if vvix_current else "—",
-                f"{breadth_proxy:.2f}" if breadth_proxy else "—",
-            )
+        log.info(
+            "vix_computed current=%.2f 10ma=%s dev_pct=%s rsi=%s hmm=%s ts_ratio=%s vvix=%s breadth_z=%s",
+            vix_current or 0,
+            f"{vix_10ma:.2f}" if vix_10ma else "—",
+            f"{vix_dev_pct:.1f}%" if vix_dev_pct else "—",
+            f"{vix_rsi:.1f}" if vix_rsi else "—",
+            hmm_result.state.value if hmm_result else "—",
+            f"{vix_term_structure_ratio:.3f}" if vix_term_structure_ratio else "—",
+            f"{vvix_current:.1f}" if vvix_current else "—",
+            f"{breadth_proxy:.2f}" if breadth_proxy else "—",
+        )
 
         for row in rows:
             ticker  = row["ticker"]
@@ -208,18 +206,16 @@ async def run_schwab_pull() -> dict:
                 # ── Step 6: ATM greek snapshots (greek chart time-series) ─────
                 _upsert_greek_snapshots(db, ticker, today, spot, chain, user_id)
 
-                # ── Step 7: Realized vol (FMP historical prices) ──────────────
-                closes:  list[float] = []
-                volumes: list[float] = []
-                if fmp_key:
-                    closes, volumes = await _fetch_fmp_closes(client, ticker, fmp_key, days=65)
-                    if closes:
-                        rv = rv_compute(closes)
-                        log.info("rv_computed ticker=%s rv20d=%s rv60d=%s", ticker, rv.rv20d, rv.rv60d)
+                # ── Step 7: Realized vol (Schwab price history) ───────────────
+                closes, volumes = await _fetch_schwab_closes(
+                    client, edge_base, headers, ticker, days=65
+                )
+                if closes:
+                    rv = rv_compute(closes)
+                    log.info("rv_computed ticker=%s rv20d=%s rv60d=%s", ticker, rv.rv20d, rv.rv60d)
 
                 # ── Step 8: SMA + current regime classification ───────────────
-                # SMA computed from already-fetched FMP closes (trading days).
-                # Filter out zero/None values to guard against bad FMP entries.
+                # Filter out zero/None values to guard against bad entries.
                 clean_closes  = [c for c in closes  if c and c > 0]
                 clean_volumes = [v for v in volumes if v and v > 0]
 
@@ -614,24 +610,26 @@ def _upsert_regime_snapshot(db, today: str, regime) -> None:
     ).execute()
 
 
-async def _fetch_fmp_closes(
-    client: httpx.AsyncClient, ticker: str, fmp_key: str, days: int = 65
+async def _fetch_schwab_closes(
+    client: httpx.AsyncClient,
+    edge_base: str,
+    headers: dict,
+    ticker: str,
+    days: int = 65,
 ) -> tuple[list[float], list[float]]:
-    """Return (closes, volumes) oldest→newest. Volumes may be empty if field absent."""
+    """Return (closes, volumes) oldest→newest via the get-schwab-pricehistory edge function."""
     try:
-        url = (
-            f"https://financialmodelingprep.com/stable/historical-price-eod/full"
-            f"?symbol={ticker}&timeseries={days}&apikey={fmp_key}"
+        resp = await client.post(
+            f"{edge_base}/get-schwab-pricehistory",
+            json={"symbol": ticker, "days": days},
+            headers=headers,
+            timeout=30.0,
         )
-        resp = await client.get(url, timeout=30.0)
         if resp.status_code != 200:
+            log.warning("pricehistory_failed ticker=%s status=%s", ticker, resp.status_code)
             return [], []
         data = resp.json()
-        hist = data if isinstance(data, list) else data.get("historical", [])
-        closes  = [float(d["close"])  for d in hist if "close"  in d]
-        volumes = [float(d["volume"]) for d in hist if "volume" in d]
-        closes.reverse()   # oldest → newest
-        volumes.reverse()
-        return closes, volumes
-    except Exception:
+        return data.get("closes", []), data.get("volumes", [])
+    except Exception as exc:
+        log.warning("pricehistory_error ticker=%s error=%s", ticker, exc)
         return [], []

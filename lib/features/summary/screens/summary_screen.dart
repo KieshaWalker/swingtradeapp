@@ -16,6 +16,7 @@ import '../../trades/providers/trade_block_provider.dart';
 import '../../trades/providers/trades_provider.dart';
 import '../../macro/macro_score_card.dart';
 import '../../macro/fred_sync_widget.dart';
+import '../widgets/ticker_insights_section.dart';
 
 // ── Format helper ─────────────────────────────────────────────────────────────
 
@@ -310,6 +311,12 @@ class _Body extends ConsumerWidget {
           ...open.take(3).map((t) => _OpenTradeRow(trade: t)),
           const SizedBox(height: 14),
         ],
+
+        // Ticker insights (watched + open positions)
+        _sectionHeader('Ticker Insights', Icons.radar_rounded),
+        const SizedBox(height: 10),
+        const TickerInsightsSection(),
+        const SizedBox(height: 22),
 
         // Performance stats + breakdowns
         if (closed.isNotEmpty) ...[
@@ -776,7 +783,7 @@ class _OpenTradeRow extends ConsumerWidget {
                   style: const TextStyle(
                       color: AppTheme.neutralColor, fontSize: 11));
             }
-            final chgColor = quote.isPositive
+            final chgColor = quote.changePercent >= 0
                 ? AppTheme.profitColor
                 : AppTheme.lossColor;
             return RichText(
@@ -791,7 +798,7 @@ class _OpenTradeRow extends ConsumerWidget {
                   ),
                   TextSpan(
                     text:
-                        '${quote.isPositive ? '+' : ''}${quote.changePercent.toStringAsFixed(2)}%',
+                        '${quote.changePercent >= 0 ? '+' : ''}${quote.changePercent.toStringAsFixed(2)}%',
                     style: TextStyle(color: chgColor),
                   ),
                   const TextSpan(

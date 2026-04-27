@@ -131,7 +131,7 @@ def calibrate_slice(
     sse = 0.0
     for K, iv_mkt in clean:
         iv_model = sabr_iv(F=F, K=K, T=T, alpha=best_alpha, beta=beta, rho=best_rho, nu=best_nu)
-        diff = (iv_model - iv_mkt) if iv_model > 0 else iv_mkt
+        diff = (iv_model - iv_mkt) if iv_model > 0 else 1.0  # large penalty for invalid fit
         sse += diff * diff
     rmse = math.sqrt(sse / len(clean))
 

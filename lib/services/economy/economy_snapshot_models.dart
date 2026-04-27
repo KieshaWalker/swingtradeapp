@@ -5,9 +5,94 @@
 //   economy_quote_snapshots       → QuoteSnapshot
 //   economy_treasury_snapshots    → TreasurySnapshot
 //
-// EconomicIndicatorPoint (from fmp_models.dart) is reused directly for
+// EconomicIndicatorPoint (from schwab_models.dart) is reused directly for
 // economy_indicator_snapshots rows.
 // =============================================================================
+import '../schwab/schwab_models.dart';
+
+// ── Treasury yield curve snapshot ─────────────────────────────────────────────
+
+class TreasuryRates {
+  final DateTime date;
+  final double? year1;
+  final double? year2;
+  final double? year5;
+  final double? year10;
+  final double? year20;
+  final double? year30;
+
+  const TreasuryRates({
+    required this.date,
+    this.year1,
+    this.year2,
+    this.year5,
+    this.year10,
+    this.year20,
+    this.year30,
+  });
+}
+
+// ── Composite economy pulse snapshot (Schwab quotes + economic indicators) ────
+// Economic indicator fields are nullable — populated separately via BLS/BEA/FRED.
+
+class EconomyPulseData {
+  final DateTime fetchedAt;
+  // Market quotes (from Schwab)
+  final StockQuote? sp500;
+  final StockQuote? nasdaq;
+  final StockQuote? vix;
+  final StockQuote? dxy;
+  final StockQuote? gold;
+  final StockQuote? silver;
+  final StockQuote? wtiCrude;
+  final StockQuote? natGas;
+  final StockQuote? hyg;
+  final StockQuote? lqd;
+  final StockQuote? copx;
+  // Treasury yields
+  final TreasuryRates? treasury;
+  // Economic indicators (null — shown in BLS/BEA/EIA/FRED tabs)
+  final EconomicIndicatorPoint? fedFunds;
+  final EconomicIndicatorPoint? unemployment;
+  final EconomicIndicatorPoint? nfp;
+  final EconomicIndicatorPoint? initialClaims;
+  final EconomicIndicatorPoint? cpi;
+  final EconomicIndicatorPoint? gdp;
+  final EconomicIndicatorPoint? retailSales;
+  final EconomicIndicatorPoint? consumerSentiment;
+  final EconomicIndicatorPoint? mortgageRate;
+  final EconomicIndicatorPoint? housingStarts;
+  final EconomicIndicatorPoint? recessionProb;
+
+  const EconomyPulseData({
+    required this.fetchedAt,
+    this.sp500,
+    this.nasdaq,
+    this.vix,
+    this.dxy,
+    this.gold,
+    this.silver,
+    this.wtiCrude,
+    this.natGas,
+    this.hyg,
+    this.lqd,
+    this.copx,
+    this.treasury,
+    this.fedFunds,
+    this.unemployment,
+    this.nfp,
+    this.initialClaims,
+    this.cpi,
+    this.gdp,
+    this.retailSales,
+    this.consumerSentiment,
+    this.mortgageRate,
+    this.housingStarts,
+    this.recessionProb,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class QuoteSnapshot {
   final String symbol;

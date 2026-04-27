@@ -1,17 +1,14 @@
 // =============================================================================
 // services/schwab/schwab_providers.dart
-// Drop-in replacements for fmp_providers quoteProvider / quotesProvider.
-// All existing widgets continue to work with zero changes.
 // =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../fmp/fmp_models.dart';
 import 'schwab_models.dart';
 import 'schwab_reauth_provider.dart';
 import 'schwab_service.dart';
 
 final schwabServiceProvider = Provider<SchwabService>((_) => SchwabService());
 
-// ── Drop-in quote providers (same signatures as fmp_providers) ────────────────
+// ── Quote providers ───────────────────────────────────────────────────────────
 
 final quoteProvider = FutureProvider.family<StockQuote?, String>((ref, symbol) async {
   try {
@@ -32,7 +29,7 @@ final quotesProvider =
   }
 });
 
-// ── Ticker search provider (replaces FMP tickerSearchProvider) ────────────────
+// ── Ticker search provider ────────────────────────────────────────────────────
 
 final tickerSearchProvider =
     FutureProvider.family<List<SchwabInstrument>, String>((ref, query) async {
@@ -68,7 +65,7 @@ final schwabOptionsChainProvider =
 // null = no earnings date available (index ETF, no data, etc.)
 
 final schwabEarningsDateProvider =
-    FutureProvider.family<DateTime?, String>((ref, symbol) async {
+    FutureProvider.family<EarningsDate?, String>((ref, symbol) async {
   if (symbol.isEmpty) return null;
   try {
     return await ref.watch(schwabServiceProvider).getEarningsDate(symbol);
