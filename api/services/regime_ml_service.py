@@ -45,13 +45,28 @@ def load_trained_model(supabase_client) -> bool:
 
     Returns True if a model was successfully loaded.
     Called at API lifespan startup and after /regime/train.
+
+    The stored auc_roc is the walk-forward OOS AUC.  Models that don't clear
+    MIN_OOS_AUC are rejected — a model that can't beat chance on proper
+    out-of-sample folds is worse than the hand-tuned heuristic.
     """
     global _inference_fn, _model_meta
-    from .regime_ml_trainer import load_latest_model, make_inference_fn
+    from .regime_ml_trainer import load_latest_model, make_inference_fn, MIN_OOS_AUC
 
     stored = load_latest_model(supabase_client)
     if not stored:
         log.info("regime_ml no_trained_model_found — using hand-tuned weights")
+        _inference_fn = None
+        _model_meta   = None
+        return False
+
+    # Reject models that failed the walk-forward AUC gate at training time.
+    oos_auc = float(stored.get("auc_roc", 0.0) or 0.0)
+    if oos_auc < MIN_OOS_AUC:
+        log.warning(
+            "regime_ml model_rejected oos_auc=%.3f < min=%.3f — using hand-tuned weights",
+            oos_auc, MIN_OOS_AUC,
+        )
         _inference_fn = None
         _model_meta   = None
         return False
@@ -66,9 +81,9 @@ def load_trained_model(supabase_client) -> bool:
     _inference_fn = fn
     _model_meta   = {k: v for k, v in stored.items() if k != "model_json"}
     log.info(
-        "regime_ml model_loaded type=%s auc=%.3f trained=%s",
+        "regime_ml model_loaded type=%s oos_auc=%.3f trained=%s",
         stored.get("model_type"),
-        stored.get("auc_roc", 0),
+        oos_auc,
         stored.get("trained_at", ""),
     )
     return True
