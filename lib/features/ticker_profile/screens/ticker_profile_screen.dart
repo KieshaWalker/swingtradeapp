@@ -41,7 +41,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
+import '../../../services/iv/iv_models.dart';
+import '../../../services/iv/iv_storage_service.dart';
 import '../../../services/schwab/schwab_providers.dart';
+import '../../current_regime/models/regime_ml_models.dart';
+import '../../current_regime/providers/regime_ml_provider.dart';
+import '../../greek_grid/models/greek_grid_models.dart';
+import '../../greek_grid/providers/greek_grid_providers.dart';
 import '../../trades/models/trade.dart';
 import '../models/ticker_profile_models.dart';
 import '../providers/ticker_profile_notifier.dart';
@@ -52,6 +58,12 @@ import '../widgets/add_sr_level_sheet.dart';
 import '../widgets/add_ticker_note_sheet.dart';
 import 'ticker_profile_cards.dart';
 import 'ticker_profile_shared_widgets.dart';
+
+final _tickerIvSnapshotProvider =
+    FutureProvider.family<IvSnapshot?, String>((ref, symbol) async {
+  final map = await IvStorageService().getLatestBatch([symbol]);
+  return map[symbol];
+});
 
 class TickerProfileScreen extends ConsumerStatefulWidget {
   final String symbol;
@@ -194,6 +206,181 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
   }
 }
 
+// ─── Ticker Insights Overview ─────────────────────────────────────────────────
+
+class _TickerInsightsOverview extends ConsumerWidget {
+  final String symbol;
+  const _TickerInsightsOverview({required this.symbol});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ivAsync     = ref.watch(_tickerIvSnapshotProvider(symbol));
+    final regimeAsync = ref.watch(regimeMlProvider);
+    final greekAsync  = ref.watch(greekGridProvider(symbol));
+
+    final regime = regimeAsync.valueOrNull?.tickers
+        .where((r) => r.ticker == symbol)
+        .firstOrNull;
+
+    final latestAtm = greekAsync.whenOrNull(data: (points) {
+      if (points.isEmpty) return null;
+      final latestDate = (points.toList()
+            ..sort((a, b) => b.obsDate.compareTo(a.obsDate)))
+          .first
+          .obsDate;
+      return points
+          .where((p) =>
+              p.obsDate.year == latestDate.year &&
+              p.obsDate.month == latestDate.month &&
+              p.obsDate.day == latestDate.day &&
+              p.strikeBand == StrikeBand.atm)
+          .firstOrNull;
+    });
+
+    final ivSnap = ivAsync.valueOrNull;
+    if (ivSnap == null && regime == null && latestAtm == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.borderColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (ivSnap != null) _buildIvSection(ivSnap),
+          if (regime != null) ...[
+            if (ivSnap != null) const SizedBox(height: 12),
+            _buildRegimeSection(regime),
+          ],
+          if (latestAtm != null) ...[
+            if (ivSnap != null || regime != null) const SizedBox(height: 12),
+            _buildGreekSection(latestAtm),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIvSection(IvSnapshot snap) {
+    final chips = <Widget>[];
+    if (snap.ivRank != null) {
+      chips.add(_chip('IVR ${snap.ivRank!.toStringAsFixed(0)}%', _ivRatingColor(snap.ivRating)));
+    }
+    if (snap.gammaRegime != null) {
+      final isPos = snap.gammaRegime == GammaRegime.positive;
+      chips.add(_chip(isPos ? '+GEX' : '−GEX', isPos ? AppTheme.profitColor : AppTheme.lossColor));
+    }
+    if (snap.ivGexSignal != null && snap.ivGexSignal != IvGexSignal.unknown) {
+      chips.add(_chip(snap.ivGexSignal!.label,
+          snap.ivGexSignal!.isDangerous ? AppTheme.lossColor : AppTheme.profitColor));
+    }
+    if (snap.vannaRegime != null && snap.vannaRegime != VannaRegime.unknown) {
+      final vr = snap.vannaRegime!;
+      final isBullish =
+          vr == VannaRegime.bullishOnVolCrush || vr == VannaRegime.bullishOnVolSpike;
+      chips.add(_chip(vr.label, isBullish ? AppTheme.profitColor : AppTheme.lossColor));
+    }
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('IV ANALYTICS'),
+        const SizedBox(height: 6),
+        Wrap(spacing: 5, runSpacing: 4, children: chips),
+      ],
+    );
+  }
+
+  Widget _buildRegimeSection(TickerRegimeResult r) {
+    final isPos    = r.currentRegime == 'positive';
+    final color    = isPos ? AppTheme.profitColor : AppTheme.lossColor;
+    final scoreStr = '${r.mlScore >= 0 ? '+' : ''}${r.mlScore.toStringAsFixed(2)}';
+    final confStr  = '${(r.confidence * 100).toStringAsFixed(0)}% conf';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('REGIME'),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            _chip(r.bucket.shortLabel, color),
+            const SizedBox(width: 6),
+            Text(scoreStr,
+                style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+            const SizedBox(width: 5),
+            Text('·  $confStr',
+                style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11)),
+          ],
+        ),
+        if (r.strategyBias.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(r.strategyBias,
+              style: const TextStyle(color: Colors.white54, fontSize: 11, height: 1.3),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis),
+        ],
+        if (r.signals.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          ...r.signals.take(2).map((s) => Text('• $s',
+              style: const TextStyle(color: Colors.white38, fontSize: 10, height: 1.4))),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildGreekSection(GreekGridPoint p) {
+    final chips = <Widget>[
+      if (p.delta != null) _chip('Δ ${p.delta!.toStringAsFixed(2)}', AppTheme.neutralColor),
+      if (p.gamma != null) _chip('Γ ${p.gamma!.toStringAsFixed(3)}', AppTheme.neutralColor),
+      if (p.theta != null) _chip('Θ ${p.theta!.toStringAsFixed(2)}', AppTheme.lossColor),
+      if (p.iv != null) _chip('IV ${(p.iv! * 100).toStringAsFixed(0)}%', const Color(0xFF60A5FA)),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label('ATM GREEKS'),
+        const SizedBox(height: 6),
+        Wrap(spacing: 5, runSpacing: 4, children: chips),
+      ],
+    );
+  }
+
+  static Widget _label(String text) => Text(
+        text,
+        style: const TextStyle(
+          color: AppTheme.neutralColor,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+        ),
+      );
+
+  static Widget _chip(String label, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Text(label,
+            style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+      );
+
+  static Color _ivRatingColor(IvRating? rating) => switch (rating) {
+        IvRating.extreme   => AppTheme.lossColor,
+        IvRating.expensive => const Color(0xFFFFAB40),
+        IvRating.fair      => AppTheme.neutralColor,
+        IvRating.cheap     => AppTheme.profitColor,
+        _                  => AppTheme.neutralColor,
+      };
+}
+
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 
 class _OverviewTab extends ConsumerWidget {
@@ -219,6 +406,10 @@ class _OverviewTab extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // IV / Regime / Greek insights
+        _TickerInsightsOverview(symbol: symbol),
+        const SizedBox(height: 20),
+
         // Next earnings card
         SectionHeader('Next Earnings'),
         nextEarnings.when(

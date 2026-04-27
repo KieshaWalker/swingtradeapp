@@ -254,7 +254,7 @@ class EconomyStorageService {
 
   Future<void> saveCensusResponse(CensusResponse response, String identifier) async {
     try {
-      final rows = response.toRetailRows().map((r) {
+      final rawRows = response.toRetailRows().map((r) {
         if (r.value == null) return null;
         final parts = r.period.split('-');
         if (parts.length < 2) return null;
@@ -267,9 +267,23 @@ class EconomyStorageService {
           'value': r.value!,
         };
       }).whereType<Map<String, dynamic>>().toList();
-      if (rows.isEmpty) return;
+      if (rawRows.isEmpty) return;
+
+      // Census EITS endpoints return multiple rows per period (different
+      // category_code / data_type_code combinations). Deduplicate by keeping
+      // the highest value per date, which corresponds to the aggregate total.
+      final byDate = <String, Map<String, dynamic>>{};
+      for (final row in rawRows) {
+        final date = row['date'] as String;
+        final v = row['value'] as double;
+        final existing = byDate[date];
+        if (existing == null || v > (existing['value'] as double)) {
+          byDate[date] = row;
+        }
+      }
+
       await _db.from('economy_indicator_snapshots')
-          .upsert(rows, onConflict: 'identifier,date');
+          .upsert(byDate.values.toList(), onConflict: 'identifier,date');
     } catch (_) {}
   }
 
