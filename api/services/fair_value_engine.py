@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # =============================================================================
 # services/fair_value_engine.py
 # =============================================================================
@@ -26,7 +28,7 @@ from core.constants import (
 )
 from services.black_scholes import bs_price, bs_vanna, bs_charm, bs_vomma
 from services.sabr import sabr_alpha, sabr_iv
-from services.heston import heston_correction
+from services.heston import HestonParams, heston_correction, heston_price
 
 
 @dataclass
@@ -41,6 +43,7 @@ class FairValueResult:
     vanna: float | None = None
     charm: float | None = None
     volga: float | None = None
+    heston_fair_value: float | None = None   # set when calibrated HestonParams provided
 
 
 def compute(
@@ -53,6 +56,7 @@ def compute(
     r: float = DEFAULT_R,
     calibrated_rho: float | None = None,
     calibrated_nu: float | None = None,
+    heston_params: HestonParams | None = None,
 ) -> FairValueResult:
     """Full BS → SABR → Heston pricing pipeline.
 
@@ -66,6 +70,8 @@ def compute(
         r: Risk-free rate (default 4.33% SOFR).
         calibrated_rho: Surface-calibrated SABR rho (overrides -0.7 default).
         calibrated_nu: Surface-calibrated SABR nu (overrides 0.40 default).
+        heston_params: Calibrated Heston parameters. When provided, Heston
+            replaces the SABR+correction pipeline as the model_fair_value.
 
     Returns:
         FairValueResult with all model prices and edge_bps.
@@ -96,12 +102,19 @@ def compute(
     sabr_vol_ = max(FV_SABR_VOL_MIN, min(FV_SABR_VOL_MAX, sabr_vol_raw))
     sabr_val = bs_price(F, strike, T, r, sabr_vol_, is_call)
 
-    # 3. Heston correction (first-order stochastic vol expansion)
+    # 3a. Heston price — used as model_fair_value when calibrated params available
+    heston_val: float | None = None
+    if heston_params is not None:
+        heston_val = heston_price(F, strike, T, r, heston_params, is_call)
+
+    # 3b. Fallback: first-order SABR + heston correction
     vanna = bs_vanna(F, strike, T, sabr_vol_, is_call)
     vomma = bs_vomma(F, strike, T, r, sabr_vol_, is_call)
     charm = bs_charm(F, strike, T, r, sabr_vol_, is_call)
     heston_delta = heston_correction(T, vanna, vomma)
-    model_price = max(0.0, sabr_val + heston_delta)
+    sabr_corrected = max(0.0, sabr_val + heston_delta)
+
+    model_price = heston_val if heston_val is not None else sabr_corrected
 
     edge_bps = (
         (model_price - broker_mid) / broker_mid * 10_000
@@ -120,4 +133,5 @@ def compute(
         vanna=vanna,
         charm=charm,
         volga=vomma,
+        heston_fair_value=heston_val,
     )
