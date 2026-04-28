@@ -344,21 +344,22 @@ class _PulseBody extends ConsumerWidget {
   final EconomyPulseData quotes;
   const _PulseBody({required this.quotes});
 
-  // Extract the latest EconomicIndicatorPoint from a FredSeries AsyncValue.
+  // Observations are newest-first from the FRED edge function (sort_order=desc).
+  // Use obs.first for latest, obs[1] for previous.
+
   EconomicIndicatorPoint? _point(AsyncValue<FredSeries> av, String id) =>
       av.whenOrNull(data: (s) {
         if (s.observations.isEmpty) return null;
-        final o = s.observations.last;
+        final o = s.observations.first;
         return EconomicIndicatorPoint(identifier: id, date: o.date, value: o.value);
       });
 
-  // Build a StockQuote from latest two FRED observations for price + DoD change%.
   StockQuote? _fredQuote(AsyncValue<FredSeries> av, String symbol) =>
       av.whenOrNull(data: (s) {
         final obs = s.observations;
         if (obs.isEmpty) return null;
-        final latest = obs.last;
-        final prev = obs.length >= 2 ? obs[obs.length - 2] : null;
+        final latest = obs.first;
+        final prev = obs.length >= 2 ? obs[1] : null;
         final change = prev != null ? latest.value - prev.value : 0.0;
         final changePct = (prev != null && prev.value != 0)
             ? change / prev.value * 100
@@ -383,20 +384,20 @@ class _PulseBody extends ConsumerWidget {
       av.whenOrNull(data: (s) {
         final obs = s.observations;
         if (obs.length < 2) return null;
-        final change = (obs.last.value - obs[obs.length - 2].value) * 1000;
+        final change = (obs.first.value - obs[1].value) * 1000;
         return EconomicIndicatorPoint(
-            identifier: 'nfp', date: obs.last.date, value: change);
+            identifier: 'nfp', date: obs.first.date, value: change);
       });
 
-  // CPI: compute YoY% from CPIAUCSL level using the observation closest to 12 months prior.
+  // CPI: compute YoY% from CPIAUCSL level using observation closest to 12 months prior.
   EconomicIndicatorPoint? _cpiYoY(AsyncValue<FredSeries> av) =>
       av.whenOrNull(data: (s) {
         final obs = s.observations;
         if (obs.length < 2) return null;
-        final latest = obs.last;
+        final latest = obs.first;
         final target = DateTime(latest.date.year - 1, latest.date.month, latest.date.day);
         FredObservation? yearAgo;
-        int minDiff = 999;
+        int minDiff = 999999;
         for (final o in obs) {
           final diff = o.date.difference(target).inDays.abs();
           if (diff < minDiff) {
@@ -410,13 +411,11 @@ class _PulseBody extends ConsumerWidget {
             identifier: 'cpi_yoy', date: latest.date, value: yoy);
       });
 
-  // Extract latest yield value from a GS* treasury series.
   double? _yieldValue(AsyncValue<FredSeries> av) =>
-      av.whenOrNull(data: (s) => s.observations.isEmpty ? null : s.observations.last.value);
+      av.whenOrNull(data: (s) => s.observations.isEmpty ? null : s.observations.first.value);
 
-  // Extract latest yield date from a GS* treasury series.
   DateTime? _yieldDate(AsyncValue<FredSeries> av) =>
-      av.whenOrNull(data: (s) => s.observations.isEmpty ? null : s.observations.last.date);
+      av.whenOrNull(data: (s) => s.observations.isEmpty ? null : s.observations.first.date);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

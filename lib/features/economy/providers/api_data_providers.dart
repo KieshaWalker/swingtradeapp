@@ -35,7 +35,7 @@ final economyPulseProvider = FutureProvider<EconomyPulseData>((ref) async {
       sp500:    q('SPY'),
       nasdaq:   q('QQQ'),
       vix:      q('VIXY'),
-      dxy:      q(r'$DXY') ?? q('DXY'),
+      dxy:      q(r'$DXY') ?? q('DXY') ?? q('UUP'),
       gold:     q('/GC'),
       silver:   q('/SI'),
       wtiCrude: q('/CL'),
