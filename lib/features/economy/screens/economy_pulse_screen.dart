@@ -512,7 +512,7 @@ class _PulseBody extends ConsumerWidget {
             ),
             _QuoteTile(
               label: 'WTI Crude',
-              sublabel: '$/bbl',
+              sublabel: r'$/bbl',
               quote: _fredQuote(crude, 'WTI'),
               pricePrefix: '\$',
             ),
