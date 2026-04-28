@@ -1,16 +1,6 @@
 // =============================================================================
 // services/fred/fred_providers.dart
 // =============================================================================
-// Riverpod providers for FRED data fetch + storage.
-//
-// Pattern (same as EIA gasoline chart):
-//   1. fredSeriesProvider(id) — fetches from FRED API (runs once, cached)
-//   2. Widget listens via ref.listen → on data: saveToSupabase → invalidate
-//      macroScoreProvider so the score recomputes with fresh data.
-//
-// Bootstrap: first fetch pulls limit=500 (~2 years of daily data) to
-// immediately seed the Z-score history used by the macro scoring engine.
-// =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'fred_models.dart';
@@ -22,15 +12,21 @@ final _fredService = FredService();
 FredStorageService get _storage =>
     FredStorageService(Supabase.instance.client);
 
-// ── Individual series providers ───────────────────────────────────────────────
+// ── Generic family provider ───────────────────────────────────────────────────
 
-/// Fetch a FRED series. [limit] defaults to 500 for initial history bootstrap.
+/// Fetch a FRED series (500 observations) — for charts and macro score.
 final fredSeriesProvider =
     FutureProvider.family<FredSeries, String>((ref, seriesId) async {
   return _fredService.getSeries(seriesId, limit: 500);
 });
 
-// Convenience typed providers so widgets don't need to pass raw series IDs.
+/// Fetch a small FRED series slice (15 observations) — for snapshot latest value.
+final fredSnapshotProvider =
+    FutureProvider.family<FredSeries, String>((ref, seriesId) async {
+  return _fredService.getSeries(seriesId, limit: 15);
+});
+
+// ── Existing chart / macro-score providers (limit 500) ───────────────────────
 
 final fredVixProvider = FutureProvider<FredSeries>(
     (ref) => _fredService.getSeries(FredSeriesIds.vix, limit: 500));
@@ -53,25 +49,116 @@ final fredSpreadProvider = FutureProvider<FredSeries>(
 final fredFedFundsProvider = FutureProvider<FredSeries>(
     (ref) => _fredService.getSeries(FredSeriesIds.fedFunds, limit: 500));
 
-// ── Save helpers (called from ref.listen side-effects) ────────────────────────
+// ── New snapshot providers (limit 500 so history is stored to Supabase) ──────
 
-Future<void> saveFredVix(FredSeries s) =>
-    _storage.saveQuoteSeries(s);       // stored as symbol='VIXCLS'
+// Interest rates
+final fredMortgageRateProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.mortgageRate30y, limit: 500));
 
-Future<void> saveFredGold(FredSeries s) =>
-    _storage.saveQuoteSeries(s);       // stored as symbol='GOLDAMGBD228NLBM'
+final fredTreasury1yProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.treasury1y, limit: 500));
 
-Future<void> saveFredSilver(FredSeries s) =>
-    _storage.saveQuoteSeries(s);       // stored as symbol='SLVPRUSD'
+final fredTreasury2yProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.treasury2y, limit: 500));
 
+final fredTreasury5yProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.treasury5y, limit: 500));
+
+final fredTreasury10yProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.treasury10y, limit: 500));
+
+final fredTreasury20yProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.treasury20y, limit: 500));
+
+final fredTreasury30yProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.treasury30y, limit: 500));
+
+// Commodities
+final fredCrudeOilProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.crudeOilWti, limit: 500));
+
+final fredNatGasProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.natGasHenryHub, limit: 500));
+
+// Labor market
+final fredUnemploymentRateProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.unemploymentRate, limit: 500));
+
+final fredNonfarmPayrollsProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.nonfarmPayrolls, limit: 500));
+
+final fredInitialClaimsProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.initialClaims, limit: 500));
+
+final fredConsumerSentimentProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.consumerSentiment, limit: 500));
+
+// Economy
+final fredCpiProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.cpiAllItems, limit: 500));
+
+final fredRealGdpProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.realGdp, limit: 500));
+
+final fredRetailSalesProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.retailSales, limit: 500));
+
+final fredRecessionProbProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.recessionProb, limit: 500));
+
+// Housing
+final fredHousingStartsProvider = FutureProvider<FredSeries>(
+    (ref) => _fredService.getSeries(FredSeriesIds.housingStarts, limit: 500));
+
+// ── Save helpers ──────────────────────────────────────────────────────────────
+
+// Existing
+Future<void> saveFredVix(FredSeries s) => _storage.saveQuoteSeries(s);
+Future<void> saveFredGold(FredSeries s) => _storage.saveQuoteSeries(s);
+Future<void> saveFredSilver(FredSeries s) => _storage.saveQuoteSeries(s);
 Future<void> saveFredHyOas(FredSeries s) =>
     _storage.saveIndicatorSeries(s, FredStorageIds.hyOas);
-
 Future<void> saveFredIgOas(FredSeries s) =>
     _storage.saveIndicatorSeries(s, FredStorageIds.igOas);
-
 Future<void> saveFredSpread(FredSeries s) =>
     _storage.saveIndicatorSeries(s, FredStorageIds.spread2s10s);
-
 Future<void> saveFredFedFunds(FredSeries s) =>
     _storage.saveIndicatorSeries(s, FredStorageIds.fedFunds);
+
+// New
+Future<void> saveFredMortgageRate(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.mortgageRate30y);
+Future<void> saveFredTreasury1y(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.treasury1y);
+Future<void> saveFredTreasury2y(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.treasury2y);
+Future<void> saveFredTreasury5y(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.treasury5y);
+Future<void> saveFredTreasury10y(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.treasury10y);
+Future<void> saveFredTreasury20y(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.treasury20y);
+Future<void> saveFredTreasury30y(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.treasury30y);
+Future<void> saveFredCrudeOil(FredSeries s) =>
+    _storage.saveQuoteSeries(s);
+Future<void> saveFredNatGas(FredSeries s) =>
+    _storage.saveQuoteSeries(s);
+Future<void> saveFredUnemploymentRate(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.unemploymentRate);
+Future<void> saveFredNonfarmPayrolls(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.nonfarmPayrolls);
+Future<void> saveFredInitialClaims(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.initialClaims);
+Future<void> saveFredConsumerSentiment(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.consumerSentiment);
+Future<void> saveFredCpi(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.cpiAllItems);
+Future<void> saveFredRealGdp(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.realGdp);
+Future<void> saveFredRetailSales(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.retailSales);
+Future<void> saveFredRecessionProb(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.recessionProb);
+Future<void> saveFredHousingStarts(FredSeries s) =>
+    _storage.saveIndicatorSeries(s, FredStorageIds.housingStarts);

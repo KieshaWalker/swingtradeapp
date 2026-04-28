@@ -20,6 +20,7 @@ import '../../../services/schwab/schwab_models.dart';
 import '../../../services/economy/economy_snapshot_models.dart';
 import '../../../services/economy/economy_storage_service.dart';
 import '../../../features/economy/providers/api_data_providers.dart';
+import '../../../services/fred/fred_models.dart';
 import '../../../services/fred/fred_providers.dart';
 import '../../../services/bls/bls_models.dart';
 import '../../../services/bea/bea_models.dart';
@@ -181,6 +182,44 @@ class EconomyPulseScreen extends ConsumerWidget {
       ),
     );
 
+    // ── FRED — persist all snapshot series ───────────────────────────────────
+    ref.listen<AsyncValue<FredSeries>>(fredMortgageRateProvider,
+        (_, next) => next.whenData(saveFredMortgageRate));
+    ref.listen<AsyncValue<FredSeries>>(fredTreasury1yProvider,
+        (_, next) => next.whenData(saveFredTreasury1y));
+    ref.listen<AsyncValue<FredSeries>>(fredTreasury2yProvider,
+        (_, next) => next.whenData(saveFredTreasury2y));
+    ref.listen<AsyncValue<FredSeries>>(fredTreasury5yProvider,
+        (_, next) => next.whenData(saveFredTreasury5y));
+    ref.listen<AsyncValue<FredSeries>>(fredTreasury10yProvider,
+        (_, next) => next.whenData(saveFredTreasury10y));
+    ref.listen<AsyncValue<FredSeries>>(fredTreasury20yProvider,
+        (_, next) => next.whenData(saveFredTreasury20y));
+    ref.listen<AsyncValue<FredSeries>>(fredTreasury30yProvider,
+        (_, next) => next.whenData(saveFredTreasury30y));
+    ref.listen<AsyncValue<FredSeries>>(fredCrudeOilProvider,
+        (_, next) => next.whenData(saveFredCrudeOil));
+    ref.listen<AsyncValue<FredSeries>>(fredNatGasProvider,
+        (_, next) => next.whenData(saveFredNatGas));
+    ref.listen<AsyncValue<FredSeries>>(fredUnemploymentRateProvider,
+        (_, next) => next.whenData(saveFredUnemploymentRate));
+    ref.listen<AsyncValue<FredSeries>>(fredNonfarmPayrollsProvider,
+        (_, next) => next.whenData(saveFredNonfarmPayrolls));
+    ref.listen<AsyncValue<FredSeries>>(fredInitialClaimsProvider,
+        (_, next) => next.whenData(saveFredInitialClaims));
+    ref.listen<AsyncValue<FredSeries>>(fredConsumerSentimentProvider,
+        (_, next) => next.whenData(saveFredConsumerSentiment));
+    ref.listen<AsyncValue<FredSeries>>(fredCpiProvider,
+        (_, next) => next.whenData(saveFredCpi));
+    ref.listen<AsyncValue<FredSeries>>(fredRealGdpProvider,
+        (_, next) => next.whenData(saveFredRealGdp));
+    ref.listen<AsyncValue<FredSeries>>(fredRetailSalesProvider,
+        (_, next) => next.whenData(saveFredRetailSales));
+    ref.listen<AsyncValue<FredSeries>>(fredRecessionProbProvider,
+        (_, next) => next.whenData(saveFredRecessionProb));
+    ref.listen<AsyncValue<FredSeries>>(fredHousingStartsProvider,
+        (_, next) => next.whenData(saveFredHousingStarts));
+
     return DefaultTabController(
       length: 8,
       child: Scaffold(
@@ -222,6 +261,24 @@ class EconomyPulseScreen extends ConsumerWidget {
                 ref.invalidate(fredIgOasProvider);
                 ref.invalidate(fredSpreadProvider);
                 ref.invalidate(fredFedFundsProvider);
+                ref.invalidate(fredMortgageRateProvider);
+                ref.invalidate(fredTreasury1yProvider);
+                ref.invalidate(fredTreasury2yProvider);
+                ref.invalidate(fredTreasury5yProvider);
+                ref.invalidate(fredTreasury10yProvider);
+                ref.invalidate(fredTreasury20yProvider);
+                ref.invalidate(fredTreasury30yProvider);
+                ref.invalidate(fredCrudeOilProvider);
+                ref.invalidate(fredNatGasProvider);
+                ref.invalidate(fredUnemploymentRateProvider);
+                ref.invalidate(fredNonfarmPayrollsProvider);
+                ref.invalidate(fredInitialClaimsProvider);
+                ref.invalidate(fredConsumerSentimentProvider);
+                ref.invalidate(fredCpiProvider);
+                ref.invalidate(fredRealGdpProvider);
+                ref.invalidate(fredRetailSalesProvider);
+                ref.invalidate(fredRecessionProbProvider);
+                ref.invalidate(fredHousingStartsProvider);
                 ref.invalidate(kalshiMacroEventsProvider);
               },
             ),
@@ -265,7 +322,7 @@ class EconomyPulseScreen extends ConsumerWidget {
                   ],
                 ),
               ),
-              data: (data) => _PulseBody(data: data),
+              data: (data) => _PulseBody(quotes: data),
             ),
             const EconomyChartsTab(),
             const BlsTab(),
@@ -283,184 +340,254 @@ class EconomyPulseScreen extends ConsumerWidget {
 
 // ─── Body ─────────────────────────────────────────────────────────────────────
 
-class _PulseBody extends StatelessWidget {
-  final EconomyPulseData data;
-  const _PulseBody({required this.data});
+class _PulseBody extends ConsumerWidget {
+  final EconomyPulseData quotes;
+  const _PulseBody({required this.quotes});
+
+  // Extract the latest EconomicIndicatorPoint from a FredSeries AsyncValue.
+  EconomicIndicatorPoint? _point(AsyncValue<FredSeries> av, String id) =>
+      av.whenOrNull(data: (s) {
+        if (s.observations.isEmpty) return null;
+        final o = s.observations.last;
+        return EconomicIndicatorPoint(identifier: id, date: o.date, value: o.value);
+      });
+
+  // Build a StockQuote from latest two FRED observations for price + DoD change%.
+  StockQuote? _fredQuote(AsyncValue<FredSeries> av, String symbol) =>
+      av.whenOrNull(data: (s) {
+        final obs = s.observations;
+        if (obs.isEmpty) return null;
+        final latest = obs.last;
+        final prev = obs.length >= 2 ? obs[obs.length - 2] : null;
+        final change = prev != null ? latest.value - prev.value : 0.0;
+        final changePct = (prev != null && prev.value != 0)
+            ? change / prev.value * 100
+            : 0.0;
+        return StockQuote(
+          symbol: symbol,
+          name: symbol,
+          price: latest.value,
+          change: change,
+          changePercent: changePct,
+          open: prev?.value ?? latest.value,
+          dayHigh: latest.value,
+          dayLow: latest.value,
+          previousClose: prev?.value ?? latest.value,
+          volume: 0,
+          dividendYield: 0.0,
+        );
+      });
+
+  // NFP: PAYEMS is in thousands of persons; return MoM change converted to persons.
+  EconomicIndicatorPoint? _nfpChange(AsyncValue<FredSeries> av) =>
+      av.whenOrNull(data: (s) {
+        final obs = s.observations;
+        if (obs.length < 2) return null;
+        final change = (obs.last.value - obs[obs.length - 2].value) * 1000;
+        return EconomicIndicatorPoint(
+            identifier: 'nfp', date: obs.last.date, value: change);
+      });
+
+  // CPI: compute YoY% from CPIAUCSL level using the observation closest to 12 months prior.
+  EconomicIndicatorPoint? _cpiYoY(AsyncValue<FredSeries> av) =>
+      av.whenOrNull(data: (s) {
+        final obs = s.observations;
+        if (obs.length < 2) return null;
+        final latest = obs.last;
+        final target = DateTime(latest.date.year - 1, latest.date.month, latest.date.day);
+        FredObservation? yearAgo;
+        int minDiff = 999;
+        for (final o in obs) {
+          final diff = o.date.difference(target).inDays.abs();
+          if (diff < minDiff) {
+            minDiff = diff;
+            yearAgo = o;
+          }
+        }
+        if (yearAgo == null || yearAgo.value == 0 || minDiff > 45) return null;
+        final yoy = (latest.value / yearAgo.value - 1) * 100;
+        return EconomicIndicatorPoint(
+            identifier: 'cpi_yoy', date: latest.date, value: yoy);
+      });
+
+  // Extract latest yield value from a GS* treasury series.
+  double? _yieldValue(AsyncValue<FredSeries> av) =>
+      av.whenOrNull(data: (s) => s.observations.isEmpty ? null : s.observations.last.value);
+
+  // Extract latest yield date from a GS* treasury series.
+  DateTime? _yieldDate(AsyncValue<FredSeries> av) =>
+      av.whenOrNull(data: (s) => s.observations.isEmpty ? null : s.observations.last.date);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // ── FRED snapshot providers ───────────────────────────────────────────────
+    final dff      = ref.watch(fredFedFundsProvider);
+    final mortgage = ref.watch(fredMortgageRateProvider);
+    final gs2      = ref.watch(fredTreasury2yProvider);
+    final gs5      = ref.watch(fredTreasury5yProvider);
+    final gs10     = ref.watch(fredTreasury10yProvider);
+    final gs30     = ref.watch(fredTreasury30yProvider);
+    final gold     = ref.watch(fredGoldProvider);
+    final silver   = ref.watch(fredSilverProvider);
+    final crude    = ref.watch(fredCrudeOilProvider);
+    final natGas   = ref.watch(fredNatGasProvider);
+    final unrate   = ref.watch(fredUnemploymentRateProvider);
+    final payems   = ref.watch(fredNonfarmPayrollsProvider);
+    final icsa     = ref.watch(fredInitialClaimsProvider);
+    final umcsent  = ref.watch(fredConsumerSentimentProvider);
+    final cpi      = ref.watch(fredCpiProvider);
+    final gdp      = ref.watch(fredRealGdpProvider);
+    final retail   = ref.watch(fredRetailSalesProvider);
+    final recProb  = ref.watch(fredRecessionProbProvider);
+    final housing  = ref.watch(fredHousingStartsProvider);
+
     final fetchTime =
-        '${data.fetchedAt.hour.toString().padLeft(2, '0')}:${data.fetchedAt.minute.toString().padLeft(2, '0')}';
+        '${quotes.fetchedAt.hour.toString().padLeft(2, '0')}:${quotes.fetchedAt.minute.toString().padLeft(2, '0')}';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        // Timestamp
         Text(
           'Updated $fetchTime',
           style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11),
         ),
         const SizedBox(height: 16),
 
-        // ── Market Snapshot ────────────────────────────────────────────────
+        // ── Market Snapshot (Schwab live quotes) ──────────────────────────
         _SectionHeader('Market Snapshot'),
         _TileGrid(
           children: [
-            _QuoteTile(label: 'S&P 500', sublabel: 'SPY', quote: data.sp500),
-            _QuoteTile(
-              label: 'Nasdaq 100',
-              sublabel: 'QQQ',
-              quote: data.nasdaq,
-            ),
+            _QuoteTile(label: 'S&P 500', sublabel: 'SPY', quote: quotes.sp500),
+            _QuoteTile(label: 'Nasdaq 100', sublabel: 'QQQ', quote: quotes.nasdaq),
             _QuoteTile(
               label: 'VIX',
               sublabel: 'Fear Index',
-              quote: data.vix,
+              quote: quotes.vix,
               invertColor: true,
             ),
-            _QuoteTile(
-              label: 'Dollar Index',
-              sublabel: r'DXY',
-              quote: data.dxy,
-            ),
+            _QuoteTile(label: 'Dollar Index', sublabel: 'DXY', quote: quotes.dxy),
           ],
         ),
         const SizedBox(height: 20),
 
-        // ── Interest Rates ────────────────────────────────────────────────
+        // ── Interest Rates (FRED) ─────────────────────────────────────────
         _SectionHeader('Interest Rates'),
         _TileGrid(
           children: [
             _EconTile(
               label: 'Fed Funds',
               sublabel: 'Target Rate',
-              point: data.fedFunds,
+              point: _point(dff, FredStorageIds.fedFunds),
               format: _fmtPct,
             ),
             _EconTile(
               label: 'Mortgage 30Y',
               sublabel: 'Fixed Rate Avg',
-              point: data.mortgageRate,
+              point: _point(mortgage, FredStorageIds.mortgageRate30y),
               format: _fmtPct,
             ),
-            _YieldTile(
-              label: '2Y Treasury',
-              value: data.treasury?.year2,
-              date: data.treasury?.date,
-            ),
-            _YieldTile(
-              label: '10Y Treasury',
-              value: data.treasury?.year10,
-              date: data.treasury?.date,
-            ),
-            _YieldTile(
-              label: '5Y Treasury',
-              value: data.treasury?.year5,
-              date: data.treasury?.date,
-            ),
-            _YieldTile(
-              label: '30Y Treasury',
-              value: data.treasury?.year30,
-              date: data.treasury?.date,
-            ),
+            _YieldTile(label: '2Y Treasury',  value: _yieldValue(gs2),  date: _yieldDate(gs2)),
+            _YieldTile(label: '10Y Treasury', value: _yieldValue(gs10), date: _yieldDate(gs10)),
+            _YieldTile(label: '5Y Treasury',  value: _yieldValue(gs5),  date: _yieldDate(gs5)),
+            _YieldTile(label: '30Y Treasury', value: _yieldValue(gs30), date: _yieldDate(gs30)),
           ],
         ),
         const SizedBox(height: 20),
 
-        // ── Commodities ───────────────────────────────────────────────────
+        // ── Commodities (FRED daily prices) ───────────────────────────────
         _SectionHeader('Commodities'),
         _TileGrid(
           children: [
             _QuoteTile(
               label: 'Gold',
-              sublabel: '/GC',
-              quote: data.gold,
+              sublabel: 'LBMA Fix',
+              quote: _fredQuote(gold, 'GOLD'),
               pricePrefix: '\$',
             ),
             _QuoteTile(
               label: 'Silver',
-              sublabel: '/SI',
-              quote: data.silver,
+              sublabel: 'Spot',
+              quote: _fredQuote(silver, 'SILVER'),
               pricePrefix: '\$',
             ),
             _QuoteTile(
               label: 'WTI Crude',
-              sublabel: '/CL',
-              quote: data.wtiCrude,
+              sublabel: '$/bbl',
+              quote: _fredQuote(crude, 'WTI'),
               pricePrefix: '\$',
             ),
             _QuoteTile(
               label: 'Natural Gas',
-              sublabel: '/NG',
-              quote: data.natGas,
+              sublabel: 'Henry Hub',
+              quote: _fredQuote(natGas, 'NATGAS'),
               pricePrefix: '\$',
             ),
           ],
         ),
         const SizedBox(height: 20),
 
-        // ── Labor Market ──────────────────────────────────────────────────
+        // ── Labor Market (FRED) ───────────────────────────────────────────
         _SectionHeader('Labor Market'),
         _TileGrid(
           children: [
             _EconTile(
               label: 'Unemployment',
               sublabel: 'Rate',
-              point: data.unemployment,
+              point: _point(unrate, FredStorageIds.unemploymentRate),
               format: _fmtPct,
               warnHigh: true,
             ),
             _EconTile(
               label: 'Non-Farm Payrolls',
               sublabel: 'Jobs Added',
-              point: data.nfp,
+              point: _nfpChange(payems),
               format: _fmtJobsK,
               showSign: true,
             ),
             _EconTile(
               label: 'Initial Claims',
               sublabel: 'Weekly Jobless',
-              point: data.initialClaims,
+              point: _point(icsa, FredStorageIds.initialClaims),
               format: _fmtJobsK,
               warnHigh: true,
             ),
             _EconTile(
               label: 'Consumer Sentiment',
               sublabel: 'Univ. of Michigan',
-              point: data.consumerSentiment,
+              point: _point(umcsent, FredStorageIds.consumerSentiment),
               format: _fmtNum,
             ),
           ],
         ),
         const SizedBox(height: 20),
 
-        // ── Economy ───────────────────────────────────────────────────────
+        // ── Economy (FRED) ────────────────────────────────────────────────
         _SectionHeader('Economy'),
         _TileGrid(
           children: [
             _EconTile(
               label: 'CPI',
-              sublabel: 'Inflation Rate',
-              point: data.cpi,
+              sublabel: 'Inflation YoY',
+              point: _cpiYoY(cpi),
               format: _fmtPct,
               warnHigh: true,
             ),
             _EconTile(
               label: 'Real GDP',
-              sublabel: 'Billions USD',
-              point: data.gdp,
+              sublabel: 'Chained 2017\$',
+              point: _point(gdp, FredStorageIds.realGdp),
               format: _fmtGdp,
             ),
             _EconTile(
               label: 'Retail Sales',
-              sublabel: 'Monthly (M)',
-              point: data.retailSales,
+              sublabel: 'Ex-auto (M)',
+              point: _point(retail, FredStorageIds.retailSales),
               format: _fmtRetail,
             ),
             _EconTile(
               label: 'Recession Prob.',
               sublabel: 'Smoothed Model',
-              point: data.recessionProb,
+              point: _point(recProb, FredStorageIds.recessionProb),
               format: _fmtPct,
               warnHigh: true,
             ),
@@ -468,14 +595,14 @@ class _PulseBody extends StatelessWidget {
         ),
         const SizedBox(height: 20),
 
-        // ── Housing ───────────────────────────────────────────────────────
+        // ── Housing (FRED) ────────────────────────────────────────────────
         _SectionHeader('Housing'),
         _TileGrid(
           children: [
             _EconTile(
               label: 'Housing Starts',
-              sublabel: 'New Units (K)',
-              point: data.housingStarts,
+              sublabel: 'New Units (K, SAAR)',
+              point: _point(housing, FredStorageIds.housingStarts),
               format: _fmtHousing,
             ),
           ],
