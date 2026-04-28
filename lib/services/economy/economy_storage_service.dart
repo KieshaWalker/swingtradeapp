@@ -242,19 +242,22 @@ class EconomyStorageService {
 
   Future<void> saveEiaResponse(EiaResponse response, String identifier) async {
     try {
-      final rows = response.data.map((d) {
-        if (d.value == null) return null;
+      final byDate = <String, Map<String, dynamic>>{};
+      for (final d in response.data) {
+        if (d.value == null) continue;
         // EIA period is "2024-03-20" or "2024-03" or "2024"
         final date = DateTime.tryParse(d.period) ??
             DateTime.tryParse('${d.period}-01') ??
             DateTime.tryParse('${d.period}-01-01');
-        if (date == null) return null;
-        return {'identifier': identifier, 'date': _fmt(date), 'value': d.value!};
-      }).whereType<Map<String, dynamic>>().toList();
-      if (rows.isEmpty) return;
+        if (date == null) continue;
+        byDate[_fmt(date)] = {'identifier': identifier, 'date': _fmt(date), 'value': d.value!};
+      }
+      if (byDate.isEmpty) return;
       await _db.from('economy_indicator_snapshots')
-          .upsert(rows, onConflict: 'identifier,date');
-    } catch (_) {}
+          .upsert(byDate.values.toList(), onConflict: 'identifier,date');
+    } catch (e) {
+      debugPrint('[EconomyStorage] saveEiaResponse($identifier): $e');
+    }
   }
 
   // ── Census ─────────────────────────────────────────────────────────────────
@@ -291,7 +294,9 @@ class EconomyStorageService {
 
       await _db.from('economy_indicator_snapshots')
           .upsert(byDate.values.toList(), onConflict: 'identifier,date');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[EconomyStorage] saveCensusResponse: $e');
+    }
   }
 
   // ── Read ───────────────────────────────────────────────────────────────────
@@ -346,7 +351,9 @@ class EconomyStorageService {
       await _db
           .from('us_unemployment_rate_history')
           .upsert(rows, onConflict: 'rate_date');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[EconomyStorage] saveUnemploymentHistory: $e');
+    }
   }
 
   Future<List<UnemploymentRatePoint>> getUnemploymentHistory() async {
@@ -378,7 +385,9 @@ class EconomyStorageService {
       await _db
           .from('us_gasoline_price_history')
           .upsert(rows, onConflict: 'date');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[EconomyStorage] saveGasolinePriceHistory: $e');
+    }
   }
 
   Future<List<GasolinePricePoint>> getGasolinePriceHistory() async {
