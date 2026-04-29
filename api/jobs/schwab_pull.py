@@ -14,6 +14,7 @@ from __future__ import annotations
 #   1. Fetch options chain from Schwab (via Supabase Edge Functions)
 #   2. Parse chain → upsert vol_surface_snapshots
 #   3. SABR calibration → upsert sabr_calibrations
+#   3.5 Heston calibration → upsert heston_calibrations
 #   4. IV analytics → upsert iv_snapshots
 #   5. Greek grid aggregation → upsert greek_grid_snapshots
 #   6. ATM greek snapshots (4/7/31 DTE buckets) → upsert greek_snapshots

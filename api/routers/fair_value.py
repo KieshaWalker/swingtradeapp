@@ -47,6 +47,7 @@ def _fetch_heston_params(ticker: str) -> tuple[HestonParams, float] | None:
         .select("kappa,theta,xi,rho,v0,rmse_iv,n_points,converged")
         .eq("ticker", ticker)
         .order("obs_date", desc=True)
+        .order("id", desc=True)
         .limit(1)
         .execute()
     )
