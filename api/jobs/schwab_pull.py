@@ -189,17 +189,21 @@ async def run_schwab_pull() -> dict:
                 if slices:
                     _upsert_sabr_calibrations(db, ticker, today, slices, user_id)
 
-                # ── Step 3.5: Heston calibration ─────────────────────────────
+                # ── Step 3b: Heston calibration ──────────────────────────────────
                 heston_result = None
-                if points:
+                if points:  # need a surface to calibrate against
                     try:
-                        heston_result = calibrate_heston(points, spot)
-                        if heston_result is not None:
+                        heston_result = calibrate_heston(surface_points=points, spot=spot)
+                        if heston_result and heston_result.is_reliable:
                             _upsert_heston_calibration(db, ticker, today, heston_result, user_id)
                             log.info(
-                                "heston_calibrated ticker=%s rmse=%.4f n=%d converged=%s reliable=%s",
+                                "heston_calibrated ticker=%s rmse_iv=%.4f n=%d converged=%s",
+                                ticker, heston_result.rmse_iv, heston_result.n_points, heston_result.converged,
+                            )
+                        elif heston_result:
+                            log.warning(
+                                "heston_calibration_unreliable ticker=%s rmse_iv=%.4f n=%d",
                                 ticker, heston_result.rmse_iv, heston_result.n_points,
-                                heston_result.converged, heston_result.is_reliable,
                             )
                     except Exception as exc:
                         log.warning("heston_calibration_failed ticker=%s error=%s", ticker, exc)
