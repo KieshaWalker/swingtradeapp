@@ -3,10 +3,12 @@
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
 import '../models/vol_surface_models.dart';
 import '../providers/vol_surface_provider.dart';
+import '../services/vol_surface_repository.dart';
 import '../widgets/vol_heatmap.dart';
 import '../widgets/vol_smile_chart.dart';
 import '../widgets/vol_surface_guide.dart';
@@ -37,6 +39,7 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
   String _ivMode = 'otm';
   VolSnapshot? _activeSnap;
   VolSnapshot? _baseSnap;
+  bool _pointsLoading = false;
   late final TabController _tabs;
 
   @override
@@ -59,6 +62,34 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
     }
   }
 
+  Future<void> _selectSnap(VolSnapshot s) async {
+    setState(() {
+      _activeSnap = s;
+      _pointsLoading = s.points.isEmpty && s.id != null;
+    });
+    if (s.points.isEmpty && s.id != null) {
+      try {
+        final pts = await VolSurfaceRepository(
+          Supabase.instance.client,
+        ).loadPoints(s.id!);
+        if (!mounted) return;
+        setState(() {
+          _activeSnap = VolSnapshot(
+            id: s.id,
+            ticker: s.ticker,
+            obsDate: s.obsDate,
+            spotPrice: s.spotPrice,
+            points: pts,
+            parsedAt: s.parsedAt,
+          );
+          _pointsLoading = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _pointsLoading = false);
+      }
+    }
+  }
+
   // ── Build ───────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -77,7 +108,7 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
       final latest =
           snaps.reduce((a, b) => a.obsDate.isAfter(b.obsDate) ? a : b);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _activeSnap = latest);
+        if (mounted) _selectSnap(latest);
       });
     }
 
@@ -124,7 +155,7 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
               _Sidebar(
                 snaps:        snaps,
                 activeSnap:   _activeSnap,
-                onSelectSnap: (s) => setState(() => _activeSnap = s),
+                onSelectSnap: _selectSnap,
                 onDeleteSnap: _deleteSnap,
               ),
               Expanded(
@@ -135,9 +166,9 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
                   snaps:              snaps,
                   activeSnap:         _activeSnap,
                   baseSnap:           _baseSnap,
-                  onActiveSnapChanged: (s) => setState(() => _activeSnap = s),
+                  onActiveSnapChanged: _selectSnap,
                   onBaseSnapChanged:   (s) => setState(() => _baseSnap = s),
-                  loading:            snapsAsync.isLoading,
+                  loading:            snapsAsync.isLoading || _pointsLoading,
                 ),
               ),
             ]);
@@ -145,14 +176,14 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
           return _NarrowLayout(
             snaps:            snaps,
             activeSnap:       _activeSnap,
-            onSelectSnap:     (s) => setState(() => _activeSnap = s),
+            onSelectSnap:     _selectSnap,
             onDeleteSnap:     _deleteSnap,
             tabs:             _tabs,
             ivMode:           _ivMode,
             onIvModeChanged:  (m) => setState(() => _ivMode = m),
             baseSnap:         _baseSnap,
             onBaseSnapChanged:(s) => setState(() => _baseSnap = s),
-            loading:          snapsAsync.isLoading,
+            loading:          snapsAsync.isLoading || _pointsLoading,
           );
         },
       ),
@@ -346,8 +377,9 @@ class _DatasetTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${snap.ticker} · ${snap.points.length} rows'
-                  '${snap.spotPrice != null ? ' · \$${snap.spotPrice!.toStringAsFixed(2)}' : ''}',
+                  snap.ticker +
+                  (snap.points.isNotEmpty ? ' · ${snap.points.length} rows' : '') +
+                  (snap.spotPrice != null ? ' · \$${snap.spotPrice!.toStringAsFixed(2)}' : ''),
                   style: const TextStyle(
                       color:     Color(0xFF6b7280),
                       fontSize:  10,

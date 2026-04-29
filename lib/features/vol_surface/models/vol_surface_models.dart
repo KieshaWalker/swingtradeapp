@@ -327,7 +327,7 @@ class VolSnapshot {
         ticker:     r['ticker'] as String,
         obsDate:    DateTime.parse(r['obs_date'] as String),
         spotPrice:  (r['spot_price'] as num?)?.toDouble(),
-        points:     (r['points'] as List)
+        points:     (r['points'] as List? ?? [])
             .map((p) => VolPoint.fromJson(p as Map<String, dynamic>))
             .toList(),
         parsedAt:   DateTime.parse(r['parsed_at'] as String),

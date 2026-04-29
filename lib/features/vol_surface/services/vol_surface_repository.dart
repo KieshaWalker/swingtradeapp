@@ -10,14 +10,28 @@ class VolSurfaceRepository {
 
   VolSurfaceRepository(this._db);
 
+  /// Returns all snapshot metadata without the heavy `points` JSONB.
+  /// Use [loadPoints] to fetch points for a single snapshot on demand.
   Future<List<VolSnapshot>> loadAll() async {
     final response = await _db
         .from(_table)
-        .select('id,ticker,obs_date,spot_price,points,parsed_at')
+        .select('id,ticker,obs_date,spot_price,parsed_at')
         .order('ticker', ascending: true)
         .order('obs_date', ascending: true);
     return (response as List<dynamic>)
         .map((r) => VolSnapshot.fromRow(r as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Fetches the full `points` array for a single snapshot by id.
+  Future<List<VolPoint>> loadPoints(String id) async {
+    final response = await _db
+        .from(_table)
+        .select('points')
+        .eq('id', id)
+        .single();
+    return (response['points'] as List)
+        .map((p) => VolPoint.fromJson(p as Map<String, dynamic>))
         .toList();
   }
 

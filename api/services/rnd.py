@@ -24,8 +24,11 @@ from typing import List, Optional
 
 import numpy as np
 
-# np.trapz was renamed to np.trapezoid in NumPy 2.0; support both.
-_trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))
+# np.trapezoid added in NumPy 2.0; np.trapz is the legacy name.
+try:
+    _trapz = np.trapezoid  # type: ignore[attr-defined]
+except AttributeError:
+    _trapz = np.trapz  # type: ignore[attr-defined]
 
 from core.constants import (
     DEFAULT_R,
