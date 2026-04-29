@@ -11,6 +11,7 @@ import '../models/vol_surface_models.dart';
 import '../providers/sabr_calibration_provider.dart';
 import '../../../services/iv/iv_models.dart';
 import '../../../services/iv/iv_storage_service.dart';
+import '../../../services/iv/iv_providers.dart';
 import '../../../services/iv/realized_vol_models.dart';
 import '../../../services/iv/realized_vol_providers.dart';
 import '../../../services/vol_surface/arb_checker.dart';
@@ -438,8 +439,9 @@ class VolSurfaceInterpretation extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final a = _A.from(snap);
-    final ivSnap = ref.watch(_ivSnapProvider(snap.ticker)).valueOrNull;
+    final ivSnap   = ref.watch(_ivSnapProvider(snap.ticker)).valueOrNull;
     final rvResult = ref.watch(realizedVolProvider(snap.ticker)).valueOrNull;
+    final ivAnalysis = ref.watch(ivAnalysisProvider(snap.ticker)).valueOrNull;
 
     // Verdict
     final bool isFail = a.termShape == _Term.backwardation && a.atmPct > 0.70;
@@ -532,6 +534,7 @@ class VolSurfaceInterpretation extends ConsumerWidget {
                   _ReadsCard(a: a, ivSnap: ivSnap),
                   _SabrCard(snap: snap),
                   _ArbCard(snap: snap),
+                  _RndCard(ivAnalysis: ivAnalysis),
                 ],
               ),
             ),
@@ -2405,6 +2408,203 @@ class _ArbCardState extends State<_ArbCard> {
         },
       ),
     );
+  }
+}
+
+// ── Shared card shell ─────────────────────────────────────────────────────────
+
+// ── Risk-Neutral Density card ─────────────────────────────────────────────────
+
+class _RndCard extends StatelessWidget {
+  final IvAnalysis? ivAnalysis;
+  const _RndCard({this.ivAnalysis});
+
+  @override
+  Widget build(BuildContext context) {
+    final rnd = ivAnalysis?.rnd ?? [];
+
+    // Front slice: first reliable, else first available
+    final RndSlice? slice = rnd.isEmpty
+        ? null
+        : rnd.firstWhere((s) => s.reliable, orElse: () => rnd.first);
+
+    return _Card(
+      width: 260,
+      label: slice != null
+          ? 'IMPLIED DISTRIBUTION  (${slice.dte}d)'
+          : 'IMPLIED DISTRIBUTION',
+      child: slice == null
+          ? const Text(
+              'No surface data.\nLoad the options chain to compute\nthe risk-neutral density.',
+              style: TextStyle(
+                  color: Color(0xFF4b5563),
+                  fontSize: 9,
+                  height: 1.5,
+                  fontFamily: 'monospace'),
+            )
+          : _RndContent(slice: slice),
+    );
+  }
+}
+
+class _RndContent extends StatelessWidget {
+  final RndSlice slice;
+  const _RndContent({required this.slice});
+
+  @override
+  Widget build(BuildContext context) {
+    final m = slice.moments;
+    final spot = slice.nearestByProbAbove(0.50)?.strike;
+
+    // ── Skewness chip ──────────────────────────────────────────────────────────
+    final (skewLabel, skewColor, skewDetail) = m.skewness < -0.40
+        ? ('CRASH RISK', const Color(0xFFf87171),
+            'Left tail fat (skew=${m.skewness.toStringAsFixed(2)}). '
+            'Market assigns excess probability to sharp downside moves. '
+            'OTM puts are structurally bid; put spreads cost more than equivalent call spreads.')
+        : m.skewness > 0.40
+            ? ('LOTTERY TAIL', const Color(0xFF4ade80),
+                'Right tail fat (skew=${m.skewness.toStringAsFixed(2)}). '
+                'Market prices in rare but explosive upside. '
+                'Far OTM calls trade rich; typical in biotech / catalyst names.')
+            : ('SYMMETRIC', const Color(0xFF60a5fa),
+                'Near-symmetric distribution (skew=${m.skewness.toStringAsFixed(2)}). '
+                'Balanced tail pricing — no structural directional bias '
+                'implied by the option surface.');
+
+    // ── Kurtosis chip ──────────────────────────────────────────────────────────
+    final (kurtLabel, kurtColor, kurtDetail) = m.kurtosis > 1.50
+        ? ('FAT TAILS', const Color(0xFFfbbf24),
+            'Excess kurtosis ${m.kurtosis.toStringAsFixed(2)} — distribution significantly '
+            'fatter than lognormal. Binary-outcome risk elevated; '
+            'standard delta-based hedges underestimate tail exposure.')
+        : m.kurtosis < -0.50
+            ? ('THIN TAILS', const Color(0xFF4ade80),
+                'Excess kurtosis ${m.kurtosis.toStringAsFixed(2)} — thinner than lognormal. '
+                'Market discounts extreme moves; wings are relatively cheap.')
+            : ('NORMAL TAILS', const Color(0xFF60a5fa),
+                'Excess kurtosis ${m.kurtosis.toStringAsFixed(2)} — tails consistent with '
+                'lognormal pricing. No unusual tail-risk premium.');
+
+    // ── Reliability warning ────────────────────────────────────────────────────
+    final bool warn = !slice.reliable;
+
+    // ── Strike probability table ───────────────────────────────────────────────
+    // Pick 5 representative probability levels to display.
+    final targets = [0.85, 0.65, 0.50, 0.35, 0.15];
+    final tableRows = targets
+        .map((p) => slice.nearestByProbAbove(p))
+        .whereType<RndPoint>()
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Skew chip + detail ─────────────────────────────────────────────────
+        _SabrReadRow(
+          paramLabel: 'SKEW',
+          chipLabel:  skewLabel,
+          chipColor:  skewColor,
+          detail:     skewDetail,
+        ),
+        const SizedBox(height: 6),
+
+        // ── Kurtosis chip + detail ─────────────────────────────────────────────
+        _SabrReadRow(
+          paramLabel: 'TAILS',
+          chipLabel:  kurtLabel,
+          chipColor:  kurtColor,
+          detail:     kurtDetail,
+        ),
+        const SizedBox(height: 10),
+
+        // ── Moments summary line ───────────────────────────────────────────────
+        Text(
+          'σ_rnd=${(m.impliedVol * 100).toStringAsFixed(1)}%  '
+          'ρ=${slice.sabrRho.toStringAsFixed(2)}  '
+          'ν=${slice.sabrNu.toStringAsFixed(2)}',
+          style: const TextStyle(
+              color: Color(0xFF6b7280),
+              fontSize: 8,
+              fontFamily: 'monospace'),
+        ),
+
+        // ── Fit warning ────────────────────────────────────────────────────────
+        if (warn) ...[
+          const SizedBox(height: 3),
+          const Text(
+            '⚠ Low-confidence fit — interpret with caution',
+            style: TextStyle(
+                color: Color(0xFFfbbf24),
+                fontSize: 8,
+                fontFamily: 'monospace'),
+          ),
+        ],
+
+        // ── Probability table ──────────────────────────────────────────────────
+        const SizedBox(height: 10),
+        const Divider(color: Color(0xFF1f2937), height: 1),
+        const SizedBox(height: 6),
+        Row(children: const [
+          SizedBox(width: 56,
+              child: Text('STRIKE', style: TextStyle(color: Color(0xFF4b5563), fontSize: 8, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+          SizedBox(width: 52,
+              child: Text('P(ABOVE)', style: TextStyle(color: Color(0xFF4b5563), fontSize: 8, fontWeight: FontWeight.w700, fontFamily: 'monospace'))),
+          Text('P(BELOW)', style: TextStyle(color: Color(0xFF4b5563), fontSize: 8, fontWeight: FontWeight.w700, fontFamily: 'monospace')),
+        ]),
+        const SizedBox(height: 4),
+        for (final p in tableRows) ...[
+          _ProbRow(point: p, isAtm: spot != null && p.strike == spot),
+          const SizedBox(height: 2),
+        ],
+      ],
+    );
+  }
+}
+
+class _ProbRow extends StatelessWidget {
+  final RndPoint point;
+  final bool isAtm;
+  const _ProbRow({required this.point, required this.isAtm});
+
+  @override
+  Widget build(BuildContext context) {
+    final strikeStr = point.strike >= 1000
+        ? point.strike.toStringAsFixed(0)
+        : point.strike.toStringAsFixed(2);
+    final abovePct = (point.probAbove * 100).toStringAsFixed(1);
+    final belowPct = (point.probBelow * 100).toStringAsFixed(1);
+    final color = isAtm ? const Color(0xFFd1d5db) : const Color(0xFF6b7280);
+
+    return Row(children: [
+      SizedBox(
+        width: 56,
+        child: Row(children: [
+          Text('\$$strikeStr', style: TextStyle(color: color, fontSize: 8, fontFamily: 'monospace')),
+          if (isAtm) ...[
+            const SizedBox(width: 3),
+            const Text('ATM', style: TextStyle(color: Color(0xFF4b5563), fontSize: 7, fontFamily: 'monospace')),
+          ],
+        ]),
+      ),
+      SizedBox(
+        width: 52,
+        child: Text('$abovePct%',
+            style: TextStyle(
+                color: point.probAbove > 0.5
+                    ? const Color(0xFF4ade80)
+                    : const Color(0xFFf87171),
+                fontSize: 8,
+                fontFamily: 'monospace')),
+      ),
+      Text('$belowPct%',
+          style: TextStyle(
+              color: point.probBelow > 0.5
+                  ? const Color(0xFFf87171)
+                  : const Color(0xFF4ade80),
+              fontSize: 8,
+              fontFamily: 'monospace')),
+    ]);
   }
 }
 

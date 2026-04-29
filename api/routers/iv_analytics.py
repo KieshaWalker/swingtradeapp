@@ -22,6 +22,34 @@ class IvSnapshotRequest(IvAnalyticsRequest):
     obs_date: str | None = None
 
 
+def _rnd_slice_to_dict(s) -> dict:
+    return {
+        "dte": s.dte,
+        "expiry": s.expiry,
+        "sabr_alpha": s.sabr_alpha,
+        "sabr_rho": s.sabr_rho,
+        "sabr_nu": s.sabr_nu,
+        "sabr_rmse": s.sabr_rmse,
+        "reliable": s.reliable,
+        "moments": {
+            "mean": s.moments.mean,
+            "variance": s.moments.variance,
+            "implied_vol": s.moments.implied_vol,
+            "skewness": s.moments.skewness,
+            "kurtosis": s.moments.kurtosis,
+        },
+        "strikes": [
+            {
+                "strike": p.strike,
+                "density": p.density,
+                "prob_above": p.prob_above,
+                "prob_below": p.prob_below,
+            }
+            for p in s.strikes
+        ],
+    }
+
+
 def _result_to_dict(result, spot: float = 0.0) -> dict:
     return {
         "ticker": result.ticker,
@@ -61,6 +89,7 @@ def _result_to_dict(result, spot: float = 0.0) -> dict:
             }
             for g in result.gex_strikes
         ],
+        "rnd": [_rnd_slice_to_dict(s) for s in result.rnd],
     }
 
 
@@ -109,5 +138,6 @@ def iv_snapshot_endpoint(req: IvSnapshotRequest):
         "max_vex_strike": result.max_vex_strike,
         "skew_avg_52w": result.skew_avg_52w,
         "skew_z_score": result.skew_z_score,
+        "rnd": [_rnd_slice_to_dict(s) for s in result.rnd] or None,
     }, on_conflict="ticker,date").execute()
     return {**_result_to_dict(result, spot), "persisted": True, "date": today}

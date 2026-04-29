@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from core.constants import DEFAULT_R
+from core.supabase_client import get_supabase
 from services.fair_value_engine import compute
+from services.heston import HestonParams
 
 router = APIRouter()
 
@@ -17,6 +21,7 @@ class FairValueRequest(BaseModel):
     r: float = DEFAULT_R
     calibrated_rho: float | None = None
     calibrated_nu: float | None = None
+    ticker: str | None = None   # when provided, Heston params are fetched from DB
 
 
 class FairValueResponse(BaseModel):
@@ -30,10 +35,47 @@ class FairValueResponse(BaseModel):
     vanna: float | None
     charm: float | None
     volga: float | None
+    heston_fair_value: float | None = None
+    heston_rmse: float | None = None
+
+
+def _fetch_heston_params(ticker: str) -> tuple[HestonParams, float] | None:
+    """Return (HestonParams, rmse_iv) from the most recent reliable calibration, or None."""
+    db = get_supabase()
+    resp = (
+        db.table("heston_calibrations")
+        .select("kappa,theta,xi,rho,v0,rmse_iv,n_points,converged")
+        .eq("ticker", ticker)
+        .order("obs_date", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = resp.data or []
+    if not rows:
+        return None
+    r = rows[0]
+    # Only use calibrations with < 2 vol-point RMSE and at least 8 quotes
+    if r["rmse_iv"] is None or r["rmse_iv"] >= 0.02 or (r["n_points"] or 0) < 8:
+        return None
+    params = HestonParams(
+        kappa=r["kappa"],
+        theta=r["theta"],
+        xi=r["xi"],
+        rho=r["rho"],
+        V0=r["v0"],
+    )
+    return params, float(r["rmse_iv"])
 
 
 @router.post("/compute", response_model=FairValueResponse)
 def fair_value_compute(req: FairValueRequest):
+    heston_params: HestonParams | None = None
+    heston_rmse: float | None = None
+    if req.ticker:
+        fetched = _fetch_heston_params(req.ticker)
+        if fetched is not None:
+            heston_params, heston_rmse = fetched
+
     result = compute(
         spot=req.spot,
         strike=req.strike,
@@ -44,6 +86,7 @@ def fair_value_compute(req: FairValueRequest):
         r=req.r,
         calibrated_rho=req.calibrated_rho,
         calibrated_nu=req.calibrated_nu,
+        heston_params=heston_params,
     )
     return FairValueResponse(
         bs_fair_value=result.bs_fair_value,
@@ -56,4 +99,6 @@ def fair_value_compute(req: FairValueRequest):
         vanna=result.vanna,
         charm=result.charm,
         volga=result.volga,
+        heston_fair_value=result.heston_fair_value,
+        heston_rmse=heston_rmse,
     )

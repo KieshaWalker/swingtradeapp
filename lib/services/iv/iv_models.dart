@@ -163,6 +163,103 @@ class SecondOrderStrike {
   }
 }
 
+// =============================================================================
+// Risk-Neutral Density models (Breeden-Litzenberger)
+// =============================================================================
+
+/// One strike on the RND density curve
+class RndPoint {
+  final double strike;
+  final double density;    // q(K), normalised
+  final double probAbove;  // P(S_T > K)
+  final double probBelow;  // P(S_T ≤ K)
+
+  const RndPoint({
+    required this.strike,
+    required this.density,
+    required this.probAbove,
+    required this.probBelow,
+  });
+
+  factory RndPoint.fromJson(Map<String, dynamic> j) => RndPoint(
+    strike:    (j['strike']     as num).toDouble(),
+    density:   (j['density']    as num).toDouble(),
+    probAbove: (j['prob_above'] as num).toDouble(),
+    probBelow: (j['prob_below'] as num).toDouble(),
+  );
+}
+
+/// Implied moments extracted from the risk-neutral density
+class RndMoments {
+  final double mean;
+  final double variance;
+  final double impliedVol;   // lognormal cross-check
+  final double skewness;     // negative = left-tail (crash); positive = right-tail (lottery)
+  final double kurtosis;     // excess kurtosis; 0 = lognormal; >0 = fat tails
+
+  const RndMoments({
+    required this.mean,
+    required this.variance,
+    required this.impliedVol,
+    required this.skewness,
+    required this.kurtosis,
+  });
+
+  factory RndMoments.fromJson(Map<String, dynamic> j) => RndMoments(
+    mean:       (j['mean']        as num).toDouble(),
+    variance:   (j['variance']    as num).toDouble(),
+    impliedVol: (j['implied_vol'] as num).toDouble(),
+    skewness:   (j['skewness']    as num).toDouble(),
+    kurtosis:   (j['kurtosis']    as num).toDouble(),
+  );
+}
+
+/// One DTE slice of the risk-neutral density
+class RndSlice {
+  final int dte;
+  final String expiry;
+  final List<RndPoint> strikes;
+  final RndMoments moments;
+  final double sabrAlpha;
+  final double sabrRho;
+  final double sabrNu;
+  final double sabrRmse;
+  final bool reliable;
+
+  const RndSlice({
+    required this.dte,
+    required this.expiry,
+    required this.strikes,
+    required this.moments,
+    required this.sabrAlpha,
+    required this.sabrRho,
+    required this.sabrNu,
+    required this.sabrRmse,
+    required this.reliable,
+  });
+
+  factory RndSlice.fromJson(Map<String, dynamic> j) => RndSlice(
+    dte:       (j['dte'] as num).toInt(),
+    expiry:    j['expiry'] as String? ?? '',
+    strikes:   (j['strikes'] as List? ?? [])
+                   .map((e) => RndPoint.fromJson(e as Map<String, dynamic>))
+                   .toList(),
+    moments:   RndMoments.fromJson(j['moments'] as Map<String, dynamic>),
+    sabrAlpha: (j['sabr_alpha'] as num).toDouble(),
+    sabrRho:   (j['sabr_rho']   as num).toDouble(),
+    sabrNu:    (j['sabr_nu']    as num).toDouble(),
+    sabrRmse:  (j['sabr_rmse']  as num).toDouble(),
+    reliable:  j['reliable'] as bool? ?? false,
+  );
+
+  /// Find the strike point closest to [targetProb] prob_above (e.g. 0.5 ≈ ATM).
+  RndPoint? nearestByProbAbove(double targetProb) {
+    if (strikes.isEmpty) return null;
+    return strikes.reduce((a, b) =>
+        (a.probAbove - targetProb).abs() < (b.probAbove - targetProb).abs() ? a : b);
+  }
+}
+
 /// One point on the volatility skew curve (per strike)
 class SkewPoint {
   final double strike;
@@ -556,6 +653,11 @@ class IvAnalysis {
   // Negative = spot is already in the transition corridor below the VT.
   final double? spotToVtPct;
 
+  // ── Risk-Neutral Density ─────────────────────────────────────────────────
+  // One slice per DTE with a valid SABR calibration.
+  // Empty if SABR calibration fails for all expirations.
+  final List<RndSlice> rnd;
+
   const IvAnalysis({
     required this.ticker,
     required this.currentIv,
@@ -591,6 +693,7 @@ class IvAnalysis {
     this.gex0dtePct,
     this.volatilityTrigger,
     this.spotToVtPct,
+    this.rnd = const [],
   });
 
   factory IvAnalysis.fromJson(Map<String, dynamic> j) {
@@ -666,6 +769,9 @@ class IvAnalysis {
       gex0dtePct:         (j['gex_0dte_pct']        as num?)?.toDouble(),
       volatilityTrigger:  (j['volatility_trigger']  as num?)?.toDouble(),
       spotToVtPct:        (j['spot_to_vt_pct']      as num?)?.toDouble(),
+      rnd:                (j['rnd'] as List? ?? [])
+                              .map((e) => RndSlice.fromJson(e as Map<String, dynamic>))
+                              .toList(),
     );
   }
 

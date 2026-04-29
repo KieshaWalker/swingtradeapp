@@ -29,6 +29,7 @@ from core.config import settings
 from core.supabase_client import get_supabase
 from core.chain_utils import parse_expirations, _dte_from_key
 from services.sabr_calibrator import calibrate_snapshot
+from services.heston_calibrator import calibrate_heston
 from services.iv_analytics import analyse as iv_analyse
 from services.greek_grid_ingester import ingest as grid_ingest
 from services.realized_vol import compute as rv_compute
@@ -187,6 +188,21 @@ async def run_schwab_pull() -> dict:
                 nu_history = _fetch_nu_history(db, ticker, user_id) if slices else []
                 if slices:
                     _upsert_sabr_calibrations(db, ticker, today, slices, user_id)
+
+                # ── Step 3.5: Heston calibration ─────────────────────────────
+                heston_result = None
+                if points:
+                    try:
+                        heston_result = calibrate_heston(points, spot)
+                        if heston_result is not None:
+                            _upsert_heston_calibration(db, ticker, today, heston_result, user_id)
+                            log.info(
+                                "heston_calibrated ticker=%s rmse=%.4f n=%d converged=%s reliable=%s",
+                                ticker, heston_result.rmse_iv, heston_result.n_points,
+                                heston_result.converged, heston_result.is_reliable,
+                            )
+                    except Exception as exc:
+                        log.warning("heston_calibration_failed ticker=%s error=%s", ticker, exc)
 
                 # ── Step 4: IV analytics + vvol rank ─────────────────────────
                 history = _fetch_iv_history(db, ticker)
@@ -479,6 +495,26 @@ def _upsert_vol_surface(
             "obs_date":   today,
             "spot_price": spot,
             "points":     points,
+        },
+        on_conflict="user_id,ticker,obs_date",
+    ).execute()
+
+
+def _upsert_heston_calibration(db, ticker: str, today: str, result, user_id: str) -> None:
+    p = result.params
+    db.table("heston_calibrations").upsert(
+        {
+            "user_id":   user_id,
+            "ticker":    ticker,
+            "obs_date":  today,
+            "kappa":     p.kappa,
+            "theta":     p.theta,
+            "xi":        p.xi,
+            "rho":       p.rho,
+            "v0":        p.V0,
+            "rmse_iv":   result.rmse_iv,
+            "n_points":  result.n_points,
+            "converged": result.converged,
         },
         on_conflict="user_id,ticker,obs_date",
     ).execute()

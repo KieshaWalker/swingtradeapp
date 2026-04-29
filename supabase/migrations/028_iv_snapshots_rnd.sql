@@ -1,0 +1,36 @@
+-- =============================================================================
+-- 028_iv_snapshots_rnd.sql
+-- =============================================================================
+-- Adds the risk-neutral density (Breeden-Litzenberger) result to iv_snapshots
+-- so the Dart client can read it without recomputing on every screen load.
+--
+-- Column: rnd  jsonb
+--   Array of RND slices, one per DTE with a valid SABR calibration.
+--   Schema mirrors the Python RndSlice dataclass:
+--   [
+--     {
+--       "dte": 21,
+--       "expiry": "2025-06-20",
+--       "sabr_alpha": 0.32,
+--       "sabr_rho": -0.65,
+--       "sabr_nu": 0.41,
+--       "sabr_rmse": 0.008,
+--       "reliable": true,
+--       "moments": {
+--         "mean": 512.40,
+--         "variance": 1234.56,
+--         "implied_vol": 0.218,
+--         "skewness": -0.72,
+--         "kurtosis": 1.85
+--       },
+--       "strikes": [
+--         { "strike": 490.00, "density": 0.00412, "prob_above": 0.831, "prob_below": 0.169 },
+--         ...
+--       ]
+--     },
+--     ...
+--   ]
+-- =============================================================================
+
+alter table iv_snapshots
+  add column if not exists rnd jsonb;

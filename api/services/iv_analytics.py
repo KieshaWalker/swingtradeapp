@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # =============================================================================
 # services/iv_analytics.py
 # =============================================================================
@@ -15,6 +17,7 @@ import math
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone
+from services.rnd import RndSlice, compute_rnd_surface
 
 _log = logging.getLogger(__name__)
 
@@ -190,6 +193,7 @@ class IvAnalysisResult:
     gex_0dte_pct: float | None      # gex_0dte / |total_gex| × 100
     volatility_trigger: float | None  # lowest significant positive-GEX support above ZGL
     spot_to_vt_pct: float | None    # (spot − VT) / spot × 100; <0 = in transition corridor
+    rnd: list[RndSlice]             # Breeden-Litzenberger density per DTE; empty if SABR fails
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -334,6 +338,7 @@ def analyse(
     gamma_slope = _compute_gamma_slope(gex_strikes, spot)
     iv_gex_signal = _compute_iv_gex_signal(gamma_regime, iv_percentile)
     put_wall_density = _compute_put_wall_density(gex_strikes, spot)
+    rnd_slices = compute_rnd_surface(expirations=expirations, spot=spot, r=r)
 
     return IvAnalysisResult(
         ticker=ticker,
@@ -369,6 +374,7 @@ def analyse(
         gex_0dte_pct=gex_0dte_pct,
         volatility_trigger=volatility_trigger,
         spot_to_vt_pct=spot_to_vt_pct,
+        rnd=rnd_slices,
     )
 
 
