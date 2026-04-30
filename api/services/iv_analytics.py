@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone
 from services.rnd import RndSlice, compute_rnd_surface
+from core.chain_utils import normalize_chain
 
 _log = logging.getLogger(__name__)
 
@@ -216,13 +217,16 @@ def analyse(
     Returns:
         IvAnalysisResult with all computed analytics.
     """
+    chain = normalize_chain(chain)
+
     raw_rate = risk_free_rate if risk_free_rate is not None else DEFAULT_R
     r = raw_rate / 100 if raw_rate > 0.5 else raw_rate
 
     ticker = chain.get("symbol", "")
     spot = float(chain.get("underlyingPrice", 0))
-    atm_iv = float(chain.get("volatility", 0))
     expirations = chain.get("expirations", [])
+    chain_vol = float(chain.get("volatility") or 0)
+    atm_iv = chain_vol if chain_vol > 0 else _compute_atm_iv_from_chain(expirations, spot)
 
     # ── IVR & IVP ──────────────────────────────────────────────────────────────
     iv_rank: float | None = None
@@ -376,6 +380,35 @@ def analyse(
         spot_to_vt_pct=spot_to_vt_pct,
         rnd=rnd_slices,
     )
+
+
+# ── ATM IV from chain contracts ───────────────────────────────────────────────
+
+def _compute_atm_iv_from_chain(expirations: list[dict], spot: float) -> float:
+    """Compute ATM IV from near-ATM contract IVs when the chain-level volatility field is 0.
+
+    Uses the same expiration picker logic but falls back to the shortest DTE if
+    no preferred expiration exists.  Returns 0.0 if no valid IV data found.
+    """
+    if not expirations or spot <= 0:
+        return 0.0
+    exp = _pick_expiration(expirations)
+    if not exp:
+        return 0.0
+    strike_ivs: dict[float, list[float]] = {}
+    for c in exp.get("calls", []):
+        iv = float(c.get("volatility") or c.get("impliedVolatility") or 0)
+        if iv > 0:
+            strike_ivs.setdefault(float(c["strikePrice"]), []).append(iv)
+    for p in exp.get("puts", []):
+        iv = float(p.get("volatility") or p.get("impliedVolatility") or 0)
+        if iv > 0:
+            strike_ivs.setdefault(float(p["strikePrice"]), []).append(iv)
+    if not strike_ivs:
+        return 0.0
+    atm_strike = min(strike_ivs, key=lambda k: abs(k - spot))
+    ivs = strike_ivs[atm_strike]
+    return sum(ivs) / len(ivs)
 
 
 # ── Expiration picker ─────────────────────────────────────────────────────────

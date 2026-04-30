@@ -156,7 +156,7 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
             _hasIngested = true;
             autoIngestIv(chain);
             autoIngestGreeks(chain);
-            autoIngestVolSurface(widget.symbol).then((_) {
+            autoIngestVolSurface(widget.symbol, chain: chain).then((_) {
               if (mounted) ref.invalidate(volSurfaceProvider);
             });
             _fetchScores(chain);

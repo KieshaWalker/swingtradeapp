@@ -1855,18 +1855,19 @@ class _SabrRead {
   final Color  fitColor;
   final bool   isReliable;
 
+  // Cross-parameter synthesis — combines ρ, ν, α into a single actionable read.
+  final String synthesis;
+
   const _SabrRead({
     required this.skewLabel,  required this.skewColor,  required this.skewDetail,
     required this.wingsLabel, required this.wingsColor, required this.wingsDetail,
     required this.alphaLabel, required this.alphaColor, required this.alphaDetail,
     required this.fitLabel,   required this.fitColor,   required this.isReliable,
+    required this.synthesis,
   });
 
   factory _SabrRead.from(SabrSlice s) {
     // ── ρ  →  skew direction ──────────────────────────────────────────────────
-    // Negative ρ = strong negative correlation between spot and vol
-    // (equity crash puts cost more than calls — classic put skew).
-    // Positive ρ = melt-up / squeeze skew (uncommon for single stocks).
     final (skewLabel, skewColor, skewDetail) = s.rho < -0.40
         ? ('STRONG PUT SKEW', const Color(0xFFf87171),
             'ρ=${s.rho.toStringAsFixed(2)}  Crash-risk priced into puts. '
@@ -1887,9 +1888,6 @@ class _SabrRead {
                     'priced at similar IV for equivalent distances from spot.');
 
     // ── ν  →  wing convexity (vol-of-vol) ────────────────────────────────────
-    // High ν = vol-of-vol is high → smile is highly curved → OTM options
-    // are expensive relative to ATM (straddles look cheap vs wings/strangles).
-    // Low ν = flat smile → wings barely priced; straddles eat less theta decay.
     final (wingsLabel, wingsColor, wingsDetail) = s.nu > 1.50
         ? ('FAT WINGS', const Color(0xFFfbbf24),
             'ν=${s.nu.toStringAsFixed(2)}  High vol-of-vol. OTM options are '
@@ -1906,8 +1904,6 @@ class _SabrRead {
                 'ratio spreads may offer value if direction is taken.');
 
     // ── α  →  overall vol level calibrated by SABR ───────────────────────────
-    // α is the backbone ATM vol in the SABR parameterisation.
-    // High α → expensive ATM premium; low α → compressed ATM vol.
     final (alphaLabel, alphaColor, alphaDetail) = s.alpha > 0.60
         ? ('HIGH VOL LEVEL', const Color(0xFFf87171),
             'α=${s.alpha.toStringAsFixed(2)}  ATM vol calibrated high. '
@@ -1938,7 +1934,176 @@ class _SabrRead {
       alphaLabel: alphaLabel, alphaColor: alphaColor, alphaDetail: alphaDetail,
       fitLabel:   fitLabel,   fitColor:   fitColor,
       isReliable: s.isReliable,
+      synthesis:  _synthesize(s),
     );
+  }
+
+  // Cross-parameter synthesis: combines ρ (skew), ν (wings), α (vol level)
+  // into one actionable trader narrative. Priority: skew direction first,
+  // then wing shape, then vol regime.
+  static String _synthesize(SabrSlice s) {
+    final rho   = s.rho;
+    final nu    = s.nu;
+    final alpha = s.alpha;
+
+    // ── Strong put skew variants ──────────────────────────────────────────────
+    if (rho < -0.40 && nu > 1.50) {
+      return 'Crash-bid surface. Extreme put skew (ρ=${rho.toStringAsFixed(2)}) '
+          'combined with high vol-of-vol (ν=${nu.toStringAsFixed(2)}) prices a '
+          'gap-down scenario with elevated tail risk. OTM puts are structurally '
+          'expensive on both skew and wing grounds — avoid naked short puts below '
+          'spot. Bull call spreads and call diagonals are cheap by comparison; '
+          'risk-reversals (long call / short put) are the structurally favoured trade.';
+    }
+    if (rho < -0.40 && nu < 0.70) {
+      return 'Heavy directional skew with a flat smile. The surface prices a '
+          'grind-lower (ρ=${rho.toStringAsFixed(2)}) rather than a sharp gap: '
+          'near-ATM put spreads capture the skew premium without paying up for '
+          'expensive wings. Strangles are not especially rich despite the skew — '
+          'wings are barely priced (ν=${nu.toStringAsFixed(2)}). Bearish debit '
+          'spreads and bear put spreads have the best risk/reward here.';
+    }
+    if (rho < -0.40) {
+      return 'Strong put skew dominates (ρ=${rho.toStringAsFixed(2)}). Crash '
+          'protection is priced in; put buyers face elevated premium. Selling '
+          'OTM call spreads above resistance may have edge if the bias is neutral '
+          'to bearish. Risk-reversals (short put / long call) are expensive to '
+          'enter — wait for a vol spike before buying protection.';
+    }
+
+    // ── Upside / call skew ────────────────────────────────────────────────────
+    if (rho > 0.20 && nu > 1.00) {
+      return 'Upside skew with elevated wings. Calls are bid over equivalent puts '
+          '(ρ=${rho.toStringAsFixed(2)}) and vol-of-vol is elevated '
+          '(ν=${nu.toStringAsFixed(2)}), suggesting active call-buying or squeeze '
+          'positioning. OTM call premiums are elevated — prefer call spreads over '
+          'naked long calls. Risk-reversals lean bullish; confirm with open interest.';
+    }
+    if (rho > 0.20) {
+      return 'Call skew — unusual for equities. Upside positioning visible '
+          '(ρ=${rho.toStringAsFixed(2)}); OTM calls priced richer than equivalent '
+          'puts. Risk-reversals lean bullish. Wings are not especially fat '
+          '(ν=${nu.toStringAsFixed(2)}), so naked long calls carry less curvature '
+          'risk than usual. Confirm with open interest before fading the skew.';
+    }
+
+    // ── Symmetric / mild put skew — differentiate by wing shape and vol level ─
+    if (nu > 1.50 && alpha > 0.60) {
+      return 'High-vol, wide-smile environment. ATM vol is elevated '
+          '(α=${alpha.toStringAsFixed(2)}) and OTM wings are expensive '
+          '(ν=${nu.toStringAsFixed(2)}). Premium sellers have structural edge — '
+          'iron condors and credit spreads capture elevated premium but need wide '
+          'leg placement to clear the wing cost. Butterflies may be overpriced. '
+          'Let theta work; manage winners at 50%.';
+    }
+    if (nu > 1.50 && alpha < 0.30) {
+      return 'Cheap ATM vol with expensive wings. ATM straddles are inexpensive '
+          '(α=${alpha.toStringAsFixed(2)}) while OTM wings command a premium '
+          '(ν=${nu.toStringAsFixed(2)}). Classic butterfly opportunity: long the '
+          'ATM straddle, short OTM strangles to pocket the wing premium. Long '
+          'calendar spreads also benefit — sell elevated near-term wing, '
+          'buy cheaper back-month ATM vol.';
+    }
+    if (nu > 1.50) {
+      return 'Wide smile at moderate vol. OTM options are expensive relative to '
+          'ATM (ν=${nu.toStringAsFixed(2)}); defined-risk credit structures — '
+          'iron condors, credit spreads — are more capital-efficient than buying '
+          'OTM options outright. Straddle vs strangle edge exists for short-vol '
+          'traders willing to manage the wings.';
+    }
+    if (nu < 0.70 && alpha > 0.60) {
+      return 'Expensive ATM with a flat smile. Vol is elevated at the money '
+          '(α=${alpha.toStringAsFixed(2)}) but OTM wings are barely priced '
+          '(ν=${nu.toStringAsFixed(2)}). Short ATM premium with cheap OTM '
+          'protection is attractive: jade lizard, back-ratio spreads, or '
+          'selling ATM straddles hedged with OTM wings. Avoid naked short '
+          'straddles given the high absolute vol level.';
+    }
+    if (nu < 0.70 && alpha < 0.30) {
+      return 'Low-vol, flat-smile regime. Cheapest premium environment on both '
+          'ATM (α=${alpha.toStringAsFixed(2)}) and OTM (ν=${nu.toStringAsFixed(2)}) '
+          'dimensions. Directional debit trades — long calls, long puts, debit '
+          'spreads — offer the best risk/reward when vol is this compressed. '
+          'Gamma is inexpensive; a catalyst move is under-priced by the surface.';
+    }
+    if (nu < 0.70) {
+      return 'Flat smile, moderate vol. Wings are barely priced '
+          '(ν=${nu.toStringAsFixed(2)}); strangles and ratio spreads may offer '
+          'value for traders with a directional view. No structural edge favouring '
+          'a particular strategy — lean on IVR/IVP percentile for vol regime context.';
+    }
+
+    // ── Moderate wings, differentiate by vol level ────────────────────────────
+    if (alpha > 0.60) {
+      return 'Normal surface structure with elevated ATM vol '
+          '(α=${alpha.toStringAsFixed(2)}). Credit spreads and iron condors have '
+          'structural edge — premium is historically elevated. Monitor IVR/IVP '
+          'percentile to confirm before putting on credit; exit positions at 50% '
+          'profit to avoid late-cycle gamma risk.';
+    }
+    if (alpha < 0.30) {
+      return 'Normal surface structure with compressed ATM vol '
+          '(α=${alpha.toStringAsFixed(2)}). Debit structures are historically '
+          'cheap. Long debit spreads, long straddles near catalysts, or long '
+          'single legs with defined risk are favoured. Credit sellers face '
+          'thinner premium — wait for vol to expand before shorting.';
+    }
+
+    return 'Balanced surface within normal equity ranges '
+        '(ρ=${rho.toStringAsFixed(2)}, ν=${nu.toStringAsFixed(2)}, '
+        'α=${alpha.toStringAsFixed(2)}). No single structural edge identified. '
+        'Let IVR/IVP percentile, open-interest distribution, and directional '
+        'thesis drive strategy selection rather than surface shape alone.';
+  }
+
+  // Term-structure note comparing front vs back reliable slice.
+  // Returns null if there is insufficient data for a meaningful comparison.
+  static String? termNote(List<SabrSlice> slices) {
+    final reliable = slices.where((s) => s.isReliable).toList();
+    if (reliable.length < 2) return null;
+
+    final front = reliable.first;
+    final back  = reliable.last;
+
+    // ν term structure — most informative for event detection
+    if (front.nu > back.nu * 1.35) {
+      return 'Front ν (${front.nu.toStringAsFixed(2)}) >> '
+          'back ν (${back.nu.toStringAsFixed(2)}) — near-term event vol priced in. '
+          'Front OTM options are expensive; selling front-month premium into the '
+          'event and buying back-month protection (calendar spreads) may offer edge '
+          'if vol crush is expected post-catalyst.';
+    }
+    if (back.nu > front.nu * 1.35) {
+      return 'Back ν (${back.nu.toStringAsFixed(2)}) >> '
+          'front ν (${front.nu.toStringAsFixed(2)}) — longer-dated wing uncertainty '
+          'elevated. Calendar spreads (short back-dated OTM, long front ATM) may '
+          'exploit the wing premium differential.';
+    }
+
+    // α (ATM vol) term structure
+    if (front.alpha > back.alpha * 1.30) {
+      return 'Inverted vol term structure: front α (${front.alpha.toStringAsFixed(2)}) '
+          '>> back α (${back.alpha.toStringAsFixed(2)}). Near-term premium is '
+          'elevated vs longer-dated — classic pre-event inversion. Calendar spreads '
+          '(sell front ATM, buy back ATM) benefit from vol-term normalisation.';
+    }
+    if (back.alpha > front.alpha * 1.20) {
+      return 'Contango vol term structure: back α (${back.alpha.toStringAsFixed(2)}) '
+          '>> front α (${front.alpha.toStringAsFixed(2)}). Longer-dated premium '
+          'elevated; diagonal spreads or back-month credit may have edge.';
+    }
+
+    // ρ flip across term — skew changing sign or direction
+    if ((front.rho < -0.25 && back.rho > 0.0) ||
+        (front.rho > 0.0 && back.rho < -0.25)) {
+      return 'Skew direction shifts across the term structure '
+          '(front ρ ${front.rho.toStringAsFixed(2)} → '
+          'back ρ ${back.rho.toStringAsFixed(2)}). '
+          'Unusual divergence — check for data quality or illiquidity in '
+          'back-dated strikes before trading on the back-month skew.';
+    }
+
+    return null;
   }
 }
 
@@ -2192,6 +2357,60 @@ class _SabrCard extends ConsumerWidget {
                       fontFamily: 'monospace'),
                 ),
               ],
+
+              // ── Surface Read (cross-param synthesis) ───────────────────────
+              const SizedBox(height: 10),
+              const Divider(color: Color(0xFF1f2937), height: 1),
+              const SizedBox(height: 8),
+              Row(children: [
+                const Text('SURFACE READ  ',
+                    style: TextStyle(
+                        color: Color(0xFF4b5563),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.9,
+                        fontFamily: 'monospace')),
+                const Text('ρ × ν × α',
+                    style: TextStyle(
+                        color: Color(0xFF374151),
+                        fontSize: 8,
+                        fontFamily: 'monospace')),
+              ]),
+              const SizedBox(height: 5),
+              Text(read.synthesis,
+                  style: const TextStyle(
+                      color: Color(0xFF9ca3af),
+                      fontSize: 8,
+                      height: 1.5,
+                      fontFamily: 'monospace')),
+
+              // ── Term structure note (only shown when data supports it) ─────
+              Builder(builder: (_) {
+                final note = _SabrRead.termNote(slices);
+                if (note == null) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 10),
+                    const Divider(color: Color(0xFF1f2937), height: 1),
+                    const SizedBox(height: 8),
+                    const Text('TERM STRUCTURE',
+                        style: TextStyle(
+                            color: Color(0xFF4b5563),
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.9,
+                            fontFamily: 'monospace')),
+                    const SizedBox(height: 5),
+                    Text(note,
+                        style: const TextStyle(
+                            color: Color(0xFF9ca3af),
+                            fontSize: 8,
+                            height: 1.5,
+                            fontFamily: 'monospace')),
+                  ],
+                );
+              }),
             ],
           );
         },

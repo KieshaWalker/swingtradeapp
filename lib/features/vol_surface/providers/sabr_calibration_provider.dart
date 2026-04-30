@@ -116,11 +116,16 @@ class _SabrCalibrationNotifier
       ..sort((a, b) => b.obsDate.compareTo(a.obsDate));
 
     if (filtered.isEmpty) {
-      // No surface data yet — fall back to last persisted calibration.
       return ref.read(_sabrRepoProvider).loadLatest(ticker);
     }
 
     final latest = filtered.first;
+
+    // Points are lazy-loaded — if none present yet, use persisted calibration.
+    if (latest.points.isEmpty) {
+      return ref.read(_sabrRepoProvider).loadLatest(ticker);
+    }
+
     final points = latest.points.map((p) => p.toJson()).toList();
     final raw = await PythonApiClient.sabrCalibrate(
       points:    points,

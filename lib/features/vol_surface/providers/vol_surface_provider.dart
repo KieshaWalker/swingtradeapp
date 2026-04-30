@@ -3,6 +3,7 @@
 // =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../services/schwab/schwab_models.dart';
 import '../../../services/schwab/schwab_service.dart';
 import '../models/vol_surface_models.dart';
 import '../services/vol_surface_parser.dart';
@@ -39,19 +40,26 @@ final volSurfaceProvider =
 );
 
 /// Called from OptionsChainScreen once per chain load to silently persist a
-/// full vol surface snapshot. Fetches its own wide chain (strikeCount: 150)
-/// independently of the screen's display chain so the vol surface always has
-/// complete strike coverage across all expirations — not just the ±10 ATM
-/// strikes the screen shows. Errors are swallowed to never disrupt the UI.
-Future<void> autoIngestVolSurface(String symbol) async {
+/// vol surface snapshot from the already-fetched chain. Pass the live chain
+/// so the heatmap always reflects exactly what the options chain screen shows.
+/// If the chain has too few strikes (user narrowed the view), a fresh wide
+/// fetch is done at strikeCount: 40 to ensure surface coverage.
+/// Errors are swallowed to never disrupt the UI.
+Future<void> autoIngestVolSurface(
+  String symbol, {
+  SchwabOptionsChain? chain,
+}) async {
   try {
-    final chain = await SchwabService().getOptionsChain(
-      symbol,
-      contractType: 'ALL',
-      strikeCount:  40, // Schwab Apigee TooBigBody limit hit at ~150; 40 covers ±40 ATM strikes across all expirations
-    );
-    if (chain == null || chain.expirations.isEmpty) return;
-    final snap = VolSurfaceParser.fromChain(chain);
+    SchwabOptionsChain? source = chain;
+    if (source == null || source.expirations.length < 2) {
+      source = await SchwabService().getOptionsChain(
+        symbol,
+        contractType: 'ALL',
+        strikeCount: 40,
+      );
+    }
+    if (source == null || source.expirations.isEmpty) return;
+    final snap = VolSurfaceParser.fromChain(source);
     if (snap.points.isEmpty) return;
     await VolSurfaceRepository(Supabase.instance.client).save(snap);
   } catch (_) {
