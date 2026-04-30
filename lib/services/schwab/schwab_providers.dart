@@ -53,7 +53,38 @@ final schwabOptionsChainProvider =
           contractType: params.contractType,
           strikeCount: params.strikeCount,
           expirationDate: params.expirationDate,
+          
         );
+  } on SchwabReauthRequiredException {
+    ref.read(schwabReauthNeededProvider.notifier).state = true;
+    return null;
+  }
+});
+
+// ── Movers provider ───────────────────────────────────────────────────────────
+// symbolId: $DJI | $COMPX | $SPX | NYSE | NASDAQ | OTCBB |
+//           INDEX_ALL | EQUITY_ALL | OPTION_ALL | OPTION_PUT | OPTION_CALL
+
+final moversProvider =
+    FutureProvider.family<List<SchwabMover>, MoversParams>((ref, params) async {
+  try {
+    return await ref.watch(schwabServiceProvider).getMovers(
+          params.symbolId,
+          sort:      params.sort,
+          frequency: params.frequency,
+        );
+  } on SchwabReauthRequiredException {
+    ref.read(schwabReauthNeededProvider.notifier).state = true;
+    return [];
+  }
+});
+
+// ── Fundamentals provider ─────────────────────────────────────────────────────
+
+final schwabFundamentalsProvider =
+    FutureProvider.family<SchwabFundamentals?, String>((ref, symbol) async {
+  try {
+    return await ref.watch(schwabServiceProvider).getFundamentals(symbol);
   } on SchwabReauthRequiredException {
     ref.read(schwabReauthNeededProvider.notifier).state = true;
     return null;
@@ -74,6 +105,28 @@ final schwabEarningsDateProvider =
     return null;
   }
 });
+
+class MoversParams {
+  final String symbolId;
+  final String sort;
+  final int    frequency;
+
+  const MoversParams({
+    required this.symbolId,
+    this.sort      = 'PERCENT_CHANGE_UP',
+    this.frequency = 0,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is MoversParams &&
+      other.symbolId  == symbolId &&
+      other.sort      == sort &&
+      other.frequency == frequency;
+
+  @override
+  int get hashCode => Object.hash(symbolId, sort, frequency);
+}
 
 class OptionsChainParams {
   final String symbol;

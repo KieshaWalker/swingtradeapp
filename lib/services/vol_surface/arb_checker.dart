@@ -134,14 +134,11 @@ final arbCheckProvider =
 
 /// Call this with a loaded VolSnapshot to get the arb result from Python.
 Future<ArbCheckResult> checkArbForSnap(VolSnapshot snap) async {
-  try {
-    final points = snap.points.map((p) => p.toJson()).toList();
-    final raw = await PythonApiClient.arbCheck(
-      points:    points,
-      spotPrice: snap.spotPrice ?? 0,
-    );
-    return ArbCheckResult.fromJson(raw);
-  } catch (_) {
-    return ArbCheckResult.empty;
-  }
+  if (snap.points.isEmpty) return ArbCheckResult.empty;
+  final points = snap.points.map((p) => p.toJson()).toList();
+  final raw = await PythonApiClient.arbCheck(
+    points:    points,
+    spotPrice: snap.spotPrice ?? 0,
+  );
+  return ArbCheckResult.fromJson(raw);
 }

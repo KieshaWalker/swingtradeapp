@@ -97,6 +97,28 @@ class SchwabService {
     }
   }
 
+  // ── Fundamentals ─────────────────────────────────────────────────────────────
+
+  Future<SchwabFundamentals?> getFundamentals(String symbol) async {
+    try {
+      final res = await _fn.invoke(
+        'get-schwab-quotes',
+        body: {'symbols': [symbol]},
+      );
+      if (res.status != 200) return null;
+      final data = res.data as Map<String, dynamic>?;
+      if (data == null || data.containsKey('error')) return null;
+      final entry = data[symbol] as Map<String, dynamic>?;
+      if (entry == null) return null;
+      final f = entry['fundamental'] as Map<String, dynamic>?;
+      return f != null ? SchwabFundamentals.fromJson(f) : null;
+    } catch (e) {
+      if (e is FunctionException && e.status == 401) throw const SchwabReauthRequiredException();
+      debugPrint('SchwabService.getFundamentals error: $e');
+      return null;
+    }
+  }
+
   // ── Earnings date ────────────────────────────────────────────────────────────
 
   /// Returns the next earnings date for [symbol] from Schwab fundamentals,
@@ -113,12 +135,46 @@ class SchwabService {
       if (data == null || data.containsKey('error')) return null;
       final entry = data[symbol] as Map<String, dynamic>?;
       if (entry == null) return null;
-      final dt = SchwabQuote.fromJson(symbol, entry).nextEarningsDate;
-      return dt == null ? null : EarningsDate(date: dt);
+      final fund = SchwabQuote.fromJson(symbol, entry).fundamentals;
+      final next = fund?.nextEarningsDate;
+      final last = fund?.lastEarningsDate;
+      // Return null only when Schwab has no fundamental data at all (e.g. indices).
+      // When next is null but last is present the caller can show "date TBA".
+      if (next == null && last == null) return null;
+      return EarningsDate(
+        date:             next ?? DateTime(9999),
+        lastEarningsDate: last,
+      );
     } catch (e) {
       if (e is FunctionException && e.status == 401) throw const SchwabReauthRequiredException();
       debugPrint('SchwabService.getEarningsDate error: $e');
       return null;
+    }
+  }
+
+  // ── Movers ───────────────────────────────────────────────────────────────────
+
+  Future<List<SchwabMover>> getMovers(
+    String symbolId, {
+    String sort      = 'PERCENT_CHANGE_UP',
+    int    frequency = 0,
+  }) async {
+    try {
+      final res = await _fn.invoke(
+        'get-schwab-movers',
+        body: {'symbolId': symbolId, 'sort': sort, 'frequency': frequency},
+      );
+      if (res.status != 200) return [];
+      final data = res.data as Map<String, dynamic>?;
+      if (data == null || data.containsKey('error')) return [];
+      final list = data['movers'] as List<dynamic>? ?? [];
+      return list
+          .map((e) => SchwabMover.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      if (e is FunctionException && e.status == 401) throw const SchwabReauthRequiredException();
+      debugPrint('SchwabService.getMovers error: $e');
+      return [];
     }
   }
 

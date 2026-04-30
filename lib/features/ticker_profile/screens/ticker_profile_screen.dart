@@ -398,10 +398,11 @@ class _OverviewTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final nextEarnings = ref.watch(schwabEarningsDateProvider(symbol));
-    final insiders = ref.watch(tickerInsiderBuysProvider(symbol));
+    final nextEarnings   = ref.watch(schwabEarningsDateProvider(symbol));
+    final fundamentals   = ref.watch(schwabFundamentalsProvider(symbol));
+    final insiders       = ref.watch(tickerInsiderBuysProvider(symbol));
     final earningsHistory = ref.watch(tickerEarningsReactionsProvider(symbol));
-    final notes = ref.watch(tickerNotesProvider(symbol));
+    final notes          = ref.watch(tickerNotesProvider(symbol));
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -416,8 +417,19 @@ class _OverviewTab extends ConsumerWidget {
           loading: () => const LoadingCard(),
           error: (e, _) => const ErrorCard('Could not load earnings date'),
           data: (e) => e == null
-              ? EmptyCard('No upcoming earnings in the next 6 months')
+              ? const EmptyCard('No earnings data available (index or ETF)')
               : EarningsDateCard(e),
+        ),
+        const SizedBox(height: 20),
+
+        // Fundamentals
+        SectionHeader('Fundamentals'),
+        fundamentals.when(
+          loading: () => const LoadingCard(),
+          error: (e, _) => const ErrorCard('Could not load fundamentals'),
+          data: (f) => f == null
+              ? const EmptyCard('No fundamental data available')
+              : FundamentalsCard(f),
         ),
         const SizedBox(height: 20),
 

@@ -22,7 +22,42 @@
 //    → SchwabService.getOptionsChain → schwabOptionsChainProvider (family by symbol)
 //    → OptionsChainScreen (calls + puts tables, expiration picker)
 //    → OptionDecisionWizard
+//
+//  SchwabMover
+//    Edge fn: get-schwab-movers  (Schwab GET /marketdata/v1/movers/{symbol_id})
+//    → SchwabService.getMovers → moversProvider (family by MoversParams)
 // =============================================================================
+
+// ── Movers ────────────────────────────────────────────────────────────────────
+
+class SchwabMover {
+  final String symbol;
+  final String description;
+  final double last;         // last quoted price
+  final double change;       // percent change (default) or value change
+  final String direction;    // "up" | "down"
+  final int    totalVolume;
+
+  const SchwabMover({
+    required this.symbol,
+    required this.description,
+    required this.last,
+    required this.change,
+    required this.direction,
+    required this.totalVolume,
+  });
+
+  bool get isUp => direction == 'up';
+
+  factory SchwabMover.fromJson(Map<String, dynamic> j) => SchwabMover(
+        symbol:      j['symbol']      as String? ?? '',
+        description: j['description'] as String? ?? '',
+        last:        (j['last']        as num? ?? 0).toDouble(),
+        change:      (j['change']      as num? ?? 0).toDouble(),
+        direction:   j['direction']    as String? ?? '',
+        totalVolume: (j['totalVolume'] as num? ?? 0).toInt(),
+      );
+}
 
 // ── Shared quote model used by all quote providers and UI widgets ─────────────
 
@@ -73,11 +108,12 @@ class EconomicIndicatorPoint {
 // ── Earnings date (from Schwab fundamentals) ──────────────────────────────────
 
 class EarningsDate {
-  final DateTime date;
-  final String   time;         // 'bmo' | 'amc' | '' — Schwab does not provide this
-  final double?  epsEstimated; // null — Schwab does not provide this
+  final DateTime  date;
+  final String    time;           // 'bmo' | 'amc' | '' — Schwab does not provide this
+  final double?   epsEstimated;   // null — Schwab does not provide this
+  final DateTime? lastEarningsDate;
 
-  const EarningsDate({required this.date, this.time = '', this.epsEstimated});
+  const EarningsDate({required this.date, this.time = '', this.epsEstimated, this.lastEarningsDate});
 
   String get timeLabel => switch (time) {
     'bmo' => 'Before market open',
@@ -133,53 +169,210 @@ class SchwabInstrument {
 }
 
 // ── Fundamentals (from fields=fundamental on quotes endpoint) ─────────────────
-// Schwab returns nextEarningsDate as "2025-07-24 00:00:00.000" or "".
+// Full FundamentalInst from Schwab. Dates returned as "2026-07-24 00:00:00.000"
+// or "" when unknown. Volume keys exist under two names in Schwab's spec
+// (e.g. vol10DayAvg / avg10DaysVolume) — fromJson tries both.
 
 class SchwabFundamentals {
-  final DateTime? nextEarningsDate;
-  final double    peRatio;
-  final double    eps;
-  final double    beta;
-  final double    marketCap;       // in dollars
-  final double    dividendYield;   // percent
+  // ── Price range ──────────────────────────────────────────────────────────────
   final double    high52;
   final double    low52;
+
+  // ── Valuation ────────────────────────────────────────────────────────────────
+  final double    peRatio;
+  final double    pegRatio;
+  final double    pbRatio;
+  final double    prRatio;           // price/revenue
+  final double    pcfRatio;          // price/cash-flow
+
+  // ── Profitability ────────────────────────────────────────────────────────────
+  final double    grossMarginTTM;
+  final double    grossMarginMRQ;
+  final double    netProfitMarginTTM;
+  final double    netProfitMarginMRQ;
+  final double    operatingMarginTTM;
+  final double    operatingMarginMRQ;
+  final double    returnOnEquity;
+  final double    returnOnAssets;
+  final double    returnOnInvestment;
+
+  // ── Liquidity / leverage ─────────────────────────────────────────────────────
+  final double    quickRatio;
+  final double    currentRatio;
+  final double    interestCoverage;
+  final double    totalDebtToCapital;
+  final double    ltDebtToEquity;
+  final double    totalDebtToEquity;
+
+  // ── EPS / growth ─────────────────────────────────────────────────────────────
+  final double    eps;
+  final double    epsTTM;
+  final double    epsChangePercentTTM;
+  final double    epsChangeYear;
+  final double    epsChange;
+  final double    revChangeYear;
+  final double    revChangeTTM;
+  final double    revChangeIn;
+
+  // ── Market / share data ──────────────────────────────────────────────────────
+  final double    marketCap;
+  final double    marketCapFloat;
+  final double    sharesOutstanding;
+  final double    bookValuePerShare;
+  final double    shortIntToFloat;
+  final double    shortIntDayToCover;
+  final double    beta;
+
+  // ── Dividends ────────────────────────────────────────────────────────────────
+  final double    dividendYield;
+  final double    dividendAmount;
+  final double    dividendPayAmount;
+  final double    divGrowthRate3Year;
+  final int       dividendFreq;
+  final DateTime? dividendDate;
+  final DateTime? dividendPayDate;
+  final DateTime? nextDividendDate;
+  final DateTime? nextDividendPayDate;
+  final DateTime? declarationDate;
+
+  // ── Volume ───────────────────────────────────────────────────────────────────
+  final double    vol1DayAvg;
   final double    vol10DayAvg;
   final double    vol3MonthAvg;
 
+  // ── Earnings dates ───────────────────────────────────────────────────────────
+  final DateTime? nextEarningsDate;
+  final DateTime? lastEarningsDate;
+
+  // ── Fund-specific ────────────────────────────────────────────────────────────
+  final double    fundLeverageFactor;
+  final String    fundStrategy;
+
   const SchwabFundamentals({
+    this.high52                = 0,
+    this.low52                 = 0,
+    this.peRatio               = 0,
+    this.pegRatio              = 0,
+    this.pbRatio               = 0,
+    this.prRatio               = 0,
+    this.pcfRatio              = 0,
+    this.grossMarginTTM        = 0,
+    this.grossMarginMRQ        = 0,
+    this.netProfitMarginTTM    = 0,
+    this.netProfitMarginMRQ    = 0,
+    this.operatingMarginTTM    = 0,
+    this.operatingMarginMRQ    = 0,
+    this.returnOnEquity        = 0,
+    this.returnOnAssets        = 0,
+    this.returnOnInvestment    = 0,
+    this.quickRatio            = 0,
+    this.currentRatio          = 0,
+    this.interestCoverage      = 0,
+    this.totalDebtToCapital    = 0,
+    this.ltDebtToEquity        = 0,
+    this.totalDebtToEquity     = 0,
+    this.eps                   = 0,
+    this.epsTTM                = 0,
+    this.epsChangePercentTTM   = 0,
+    this.epsChangeYear         = 0,
+    this.epsChange             = 0,
+    this.revChangeYear         = 0,
+    this.revChangeTTM          = 0,
+    this.revChangeIn           = 0,
+    this.marketCap             = 0,
+    this.marketCapFloat        = 0,
+    this.sharesOutstanding     = 0,
+    this.bookValuePerShare     = 0,
+    this.shortIntToFloat       = 0,
+    this.shortIntDayToCover    = 0,
+    this.beta                  = 0,
+    this.dividendYield         = 0,
+    this.dividendAmount        = 0,
+    this.dividendPayAmount     = 0,
+    this.divGrowthRate3Year    = 0,
+    this.dividendFreq          = 0,
+    this.dividendDate,
+    this.dividendPayDate,
+    this.nextDividendDate,
+    this.nextDividendPayDate,
+    this.declarationDate,
+    this.vol1DayAvg            = 0,
+    this.vol10DayAvg           = 0,
+    this.vol3MonthAvg          = 0,
     this.nextEarningsDate,
-    required this.peRatio,
-    required this.eps,
-    required this.beta,
-    required this.marketCap,
-    required this.dividendYield,
-    required this.high52,
-    required this.low52,
-    required this.vol10DayAvg,
-    required this.vol3MonthAvg,
+    this.lastEarningsDate,
+    this.fundLeverageFactor    = 0,
+    this.fundStrategy          = '',
   });
 
-  factory SchwabFundamentals.fromJson(Map<String, dynamic> f) {
-    // Schwab format: "2025-07-24 00:00:00.000" — replace space with T to parse
-    DateTime? earningsDate;
-    final raw = f['nextEarningsDate'] as String? ?? '';
-    if (raw.isNotEmpty && raw != '0001-01-01 00:00:00.000') {
-      earningsDate = DateTime.tryParse(raw.replaceFirst(' ', 'T'));
-    }
-    return SchwabFundamentals(
-      nextEarningsDate: earningsDate,
-      peRatio:      (f['peRatio']      as num? ?? 0).toDouble(),
-      eps:          (f['eps']          as num? ?? 0).toDouble(),
-      beta:         (f['beta']         as num? ?? 0).toDouble(),
-      marketCap:    (f['marketCap']    as num? ?? 0).toDouble(),
-      dividendYield:(f['dividendYield']as num? ?? 0).toDouble(),
-      high52:       (f['high52']       as num? ?? 0).toDouble(),
-      low52:        (f['low52']        as num? ?? 0).toDouble(),
-      vol10DayAvg:  (f['vol10DayAvg']  as num? ?? 0).toDouble(),
-      vol3MonthAvg: (f['vol3MonthAvg'] as num? ?? 0).toDouble(),
-    );
+  static DateTime? _parseDate(Map<String, dynamic> f, String key) {
+    final raw = f[key] as String? ?? '';
+    if (raw.isEmpty || raw.startsWith('0001-01-01')) return null;
+    return DateTime.tryParse(raw.replaceFirst(' ', 'T'));
   }
+
+  static double _d(Map<String, dynamic> f, String key, [String? altKey]) {
+    final v = f[key] ?? (altKey != null ? f[altKey] : null);
+    return (v as num? ?? 0).toDouble();
+  }
+
+  factory SchwabFundamentals.fromJson(Map<String, dynamic> f) => SchwabFundamentals(
+        high52:                _d(f, 'high52'),
+        low52:                 _d(f, 'low52'),
+        peRatio:               _d(f, 'peRatio'),
+        pegRatio:              _d(f, 'pegRatio'),
+        pbRatio:               _d(f, 'pbRatio'),
+        prRatio:               _d(f, 'prRatio'),
+        pcfRatio:              _d(f, 'pcfRatio'),
+        grossMarginTTM:        _d(f, 'grossMarginTTM'),
+        grossMarginMRQ:        _d(f, 'grossMarginMRQ'),
+        netProfitMarginTTM:    _d(f, 'netProfitMarginTTM'),
+        netProfitMarginMRQ:    _d(f, 'netProfitMarginMRQ'),
+        operatingMarginTTM:    _d(f, 'operatingMarginTTM'),
+        operatingMarginMRQ:    _d(f, 'operatingMarginMRQ'),
+        returnOnEquity:        _d(f, 'returnOnEquity'),
+        returnOnAssets:        _d(f, 'returnOnAssets'),
+        returnOnInvestment:    _d(f, 'returnOnInvestment'),
+        quickRatio:            _d(f, 'quickRatio'),
+        currentRatio:          _d(f, 'currentRatio'),
+        interestCoverage:      _d(f, 'interestCoverage'),
+        totalDebtToCapital:    _d(f, 'totalDebtToCapital'),
+        ltDebtToEquity:        _d(f, 'ltDebtToEquity'),
+        totalDebtToEquity:     _d(f, 'totalDebtToEquity'),
+        eps:                   _d(f, 'eps'),
+        epsTTM:                _d(f, 'epsTTM'),
+        epsChangePercentTTM:   _d(f, 'epsChangePercentTTM'),
+        epsChangeYear:         _d(f, 'epsChangeYear'),
+        epsChange:             _d(f, 'epsChange'),
+        revChangeYear:         _d(f, 'revChangeYear'),
+        revChangeTTM:          _d(f, 'revChangeTTM'),
+        revChangeIn:           _d(f, 'revChangeIn'),
+        marketCap:             _d(f, 'marketCap'),
+        marketCapFloat:        _d(f, 'marketCapFloat'),
+        sharesOutstanding:     _d(f, 'sharesOutstanding'),
+        bookValuePerShare:     _d(f, 'bookValuePerShare'),
+        shortIntToFloat:       _d(f, 'shortIntToFloat'),
+        shortIntDayToCover:    _d(f, 'shortIntDayToCover'),
+        beta:                  _d(f, 'beta'),
+        dividendYield:         _d(f, 'dividendYield'),
+        dividendAmount:        _d(f, 'dividendAmount'),
+        dividendPayAmount:     _d(f, 'dividendPayAmount'),
+        divGrowthRate3Year:    _d(f, 'divGrowthRate3Year'),
+        dividendFreq:          (f['dividendFreq'] as num? ?? 0).toInt(),
+        dividendDate:          _parseDate(f, 'dividendDate'),
+        dividendPayDate:       _parseDate(f, 'dividendPayDate'),
+        nextDividendDate:      _parseDate(f, 'nextDividendDate'),
+        nextDividendPayDate:   _parseDate(f, 'nextDividendPayDate'),
+        declarationDate:       _parseDate(f, 'declarationDate'),
+        // Schwab exposes volume under two key names depending on context
+        vol1DayAvg:            _d(f, 'vol1DayAvg',   'avg1DayVolume'),
+        vol10DayAvg:           _d(f, 'vol10DayAvg',  'avg10DaysVolume'),
+        vol3MonthAvg:          _d(f, 'vol3MonthAvg', 'avg3MonthVolume'),
+        nextEarningsDate:      _parseDate(f, 'nextEarningsDate'),
+        lastEarningsDate:      _parseDate(f, 'lastEarningsDate'),
+        fundLeverageFactor:    _d(f, 'fundLeverageFactor'),
+        fundStrategy:          f['fundStrategy'] as String? ?? '',
+      );
 }
 
 // ── Quote ─────────────────────────────────────────────────────────────────────

@@ -26,6 +26,7 @@ import '../../../services/bls/bls_models.dart';
 import '../../../services/bea/bea_models.dart';
 import '../../../services/eia/eia_models.dart';
 import '../../../services/census/census_models.dart';
+import '../../../services/schwab/schwab_providers.dart';
 import '../widgets/economy_charts_tab.dart';
 import '../widgets/bls_tab.dart';
 import '../widgets/bea_tab.dart';
@@ -469,6 +470,10 @@ class _PulseBody extends ConsumerWidget {
         ),
         const SizedBox(height: 20),
 
+        // ── Market Movers (Schwab) ────────────────────────────────────────
+        const _MoversSection(),
+        const SizedBox(height: 20),
+
         // ── Interest Rates (FRED) ─────────────────────────────────────────
         _SectionHeader('Interest Rates'),
         _TileGrid(
@@ -608,6 +613,187 @@ class _PulseBody extends ConsumerWidget {
         ),
       ],
     );
+  }
+}
+
+// ─── Market Movers ────────────────────────────────────────────────────────────
+
+class _MoversSection extends ConsumerStatefulWidget {
+  const _MoversSection();
+
+  @override
+  ConsumerState<_MoversSection> createState() => _MoversSectionState();
+}
+
+class _MoversSectionState extends ConsumerState<_MoversSection> {
+  String _symbolId = r'$SPX';
+  String _sort     = 'PERCENT_CHANGE_UP';
+
+  static const _indices = [r'$SPX', r'$COMPX', r'$DJI'];
+  static const _indexLabels = ['S&P 500', 'Nasdaq', 'Dow Jones'];
+
+  @override
+  Widget build(BuildContext context) {
+    final movers = ref.watch(
+      moversProvider(MoversParams(symbolId: _symbolId, sort: _sort)),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader('Market Movers'),
+        // Index selector + up/down toggle
+        Row(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: List.generate(_indices.length, (i) {
+                    final selected = _symbolId == _indices[i];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        label: Text(_indexLabels[i]),
+                        selected: selected,
+                        onSelected: (_) => setState(() => _symbolId = _indices[i]),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: Icon(
+                _sort == 'PERCENT_CHANGE_UP'
+                    ? Icons.trending_up
+                    : Icons.trending_down,
+                color: _sort == 'PERCENT_CHANGE_UP'
+                    ? AppTheme.profitColor
+                    : AppTheme.lossColor,
+              ),
+              tooltip: _sort == 'PERCENT_CHANGE_UP' ? 'Showing gainers' : 'Showing losers',
+              onPressed: () => setState(() {
+                _sort = _sort == 'PERCENT_CHANGE_UP'
+                    ? 'PERCENT_CHANGE_DOWN'
+                    : 'PERCENT_CHANGE_UP';
+              }),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        movers.when(
+          loading: () => const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ),
+          ),
+          error: (e, _) => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Could not load movers',
+                style: TextStyle(color: AppTheme.neutralColor)),
+          ),
+          data: (list) => list.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('No movers data available',
+                      style: TextStyle(color: AppTheme.neutralColor)),
+                )
+              : Container(
+                  decoration: BoxDecoration(
+                    color: AppTheme.cardColor,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.borderColor),
+                  ),
+                  child: Column(
+                    children: List.generate(list.length, (i) {
+                      final m = list[i];
+                      final isUp = m.isUp;
+                      final changeColor =
+                          isUp ? AppTheme.profitColor : AppTheme.lossColor;
+                      final sign = isUp ? '+' : '';
+                      return Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            child: Row(
+                              children: [
+                                // Rank
+                                SizedBox(
+                                  width: 20,
+                                  child: Text('${i + 1}',
+                                      style: const TextStyle(
+                                          color: AppTheme.neutralColor,
+                                          fontSize: 11)),
+                                ),
+                                const SizedBox(width: 8),
+                                // Symbol + name
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(m.symbol,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13)),
+                                      Text(m.description,
+                                          style: const TextStyle(
+                                              color: AppTheme.neutralColor,
+                                              fontSize: 11),
+                                          overflow: TextOverflow.ellipsis),
+                                    ],
+                                  ),
+                                ),
+                                // Volume
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 12),
+                                  child: Text(
+                                    _fmtVolume(m.totalVolume),
+                                    style: const TextStyle(
+                                        color: AppTheme.neutralColor,
+                                        fontSize: 11),
+                                  ),
+                                ),
+                                // Price + change
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text('\$${m.last.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13)),
+                                    Text('$sign${m.change.toStringAsFixed(2)}%',
+                                        style: TextStyle(
+                                            color: changeColor,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (i < list.length - 1)
+                            Divider(
+                                height: 1,
+                                color: AppTheme.borderColor.withValues(alpha: 0.5)),
+                        ],
+                      );
+                    }),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  static String _fmtVolume(int v) {
+    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
+    if (v >= 1000)    return '${(v / 1000).toStringAsFixed(0)}K';
+    return '$v';
   }
 }
 

@@ -441,7 +441,7 @@ class VolSurfaceInterpretation extends ConsumerWidget {
     final a = _A.from(snap);
     final ivSnap   = ref.watch(_ivSnapProvider(snap.ticker)).valueOrNull;
     final rvResult = ref.watch(realizedVolProvider(snap.ticker)).valueOrNull;
-    final ivAnalysis = ref.watch(ivAnalysisProvider(snap.ticker)).valueOrNull;
+    final ivAsync    = ref.watch(ivAnalysisProvider(snap.ticker));
 
     // Verdict
     final bool isFail = a.termShape == _Term.backwardation && a.atmPct > 0.70;
@@ -534,7 +534,7 @@ class VolSurfaceInterpretation extends ConsumerWidget {
                   _ReadsCard(a: a, ivSnap: ivSnap),
                   _SabrCard(snap: snap),
                   _ArbCard(snap: snap),
-                  _RndCard(ivAnalysis: ivAnalysis),
+                  _RndCard(ivAsync: ivAsync),
                 ],
               ),
             ),
@@ -2497,8 +2497,10 @@ class _ArbCardState extends State<_ArbCard> {
   void didUpdateWidget(_ArbCard old) {
     super.didUpdateWidget(old);
     if (old.snap.ticker != widget.snap.ticker ||
-        old.snap.obsDateStr != widget.snap.obsDateStr) {
-      setState(() => _future = checkArbForSnap(widget.snap));
+        old.snap.obsDateStr != widget.snap.obsDateStr ||
+        old.snap.points.length != widget.snap.points.length) {
+      final f = checkArbForSnap(widget.snap);
+      setState(() => _future = f);
     }
   }
 
@@ -2635,33 +2637,58 @@ class _ArbCardState extends State<_ArbCard> {
 // ── Risk-Neutral Density card ─────────────────────────────────────────────────
 
 class _RndCard extends StatelessWidget {
-  final IvAnalysis? ivAnalysis;
-  const _RndCard({this.ivAnalysis});
+  final AsyncValue<IvAnalysis> ivAsync;
+  const _RndCard({required this.ivAsync});
 
   @override
   Widget build(BuildContext context) {
-    final rnd = ivAnalysis?.rnd ?? [];
-
-    // Front slice: first reliable, else first available
-    final RndSlice? slice = rnd.isEmpty
-        ? null
-        : rnd.firstWhere((s) => s.reliable, orElse: () => rnd.first);
-
-    return _Card(
-      width: 260,
-      label: slice != null
-          ? 'IMPLIED DISTRIBUTION  (${slice.dte}d)'
-          : 'IMPLIED DISTRIBUTION',
-      child: slice == null
-          ? const Text(
-              'No surface data.\nLoad the options chain to compute\nthe risk-neutral density.',
-              style: TextStyle(
-                  color: Color(0xFF4b5563),
-                  fontSize: 9,
-                  height: 1.5,
-                  fontFamily: 'monospace'),
-            )
-          : _RndContent(slice: slice),
+    return ivAsync.when(
+      loading: () => _Card(
+        width: 260,
+        label: 'IMPLIED DISTRIBUTION',
+        child: const Center(
+          child: SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+                strokeWidth: 1.5, color: Color(0xFF4b5563)),
+          ),
+        ),
+      ),
+      error: (e, _) => _Card(
+        width: 260,
+        label: 'IMPLIED DISTRIBUTION',
+        child: Text(
+          'RND unavailable.\n${e.toString().split(':').first}',
+          style: const TextStyle(
+              color: Color(0xFFf87171),
+              fontSize: 9,
+              height: 1.5,
+              fontFamily: 'monospace'),
+        ),
+      ),
+      data: (ivAnalysis) {
+        final rnd = ivAnalysis.rnd;
+        final RndSlice? slice = rnd.isEmpty
+            ? null
+            : rnd.firstWhere((s) => s.reliable, orElse: () => rnd.first);
+        return _Card(
+          width: 260,
+          label: slice != null
+              ? 'IMPLIED DISTRIBUTION  (${slice.dte}d)'
+              : 'IMPLIED DISTRIBUTION',
+          child: slice == null
+              ? const Text(
+                  'No surface data.\nLoad the options chain to compute\nthe risk-neutral density.',
+                  style: TextStyle(
+                      color: Color(0xFF4b5563),
+                      fontSize: 9,
+                      height: 1.5,
+                      fontFamily: 'monospace'),
+                )
+              : _RndContent(slice: slice),
+        );
+      },
     );
   }
 }

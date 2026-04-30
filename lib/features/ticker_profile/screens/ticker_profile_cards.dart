@@ -20,31 +20,41 @@ class EarningsDateCard extends StatelessWidget {
   final EarningsDate earnings;
   const EarningsDateCard(this.earnings, {super.key});
 
+  static String _fmt(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
   @override
   Widget build(BuildContext context) {
-    final d = earnings.date;
-    final label =
-        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final nextDate   = earnings.date;
+    final dateTba    = nextDate.year == 9999;
+    final nextLabel  = dateTba ? 'Date not yet announced' : _fmt(nextDate);
+    final last       = earnings.lastEarningsDate;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            const Icon(Icons.event, color: AppTheme.profitColor),
+            Icon(Icons.event,
+                color: dateTba ? AppTheme.neutralColor : AppTheme.profitColor),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
+                  Text(nextLabel,
                       style: const TextStyle(fontWeight: FontWeight.w700)),
-                  if (earnings.timeLabel.isNotEmpty)
+                  if (!dateTba && earnings.timeLabel.isNotEmpty)
                     Text(earnings.timeLabel,
                         style: const TextStyle(
                             color: AppTheme.neutralColor, fontSize: 12)),
-                  if (earnings.epsEstimated != null)
+                  if (!dateTba && earnings.epsEstimated != null)
                     Text(
                         'EPS est. ${earnings.epsEstimated!.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            color: AppTheme.neutralColor, fontSize: 12)),
+                  if (last != null)
+                    Text('Last reported: ${_fmt(last)}',
                         style: const TextStyle(
                             color: AppTheme.neutralColor, fontSize: 12)),
                 ],
@@ -55,6 +65,139 @@ class EarningsDateCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Fundamentals card ───────────────────────────────────────────────────────
+
+class FundamentalsCard extends StatelessWidget {
+  final SchwabFundamentals f;
+  const FundamentalsCard(this.f, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _section('Valuation', [
+              _row('P/E',        f.peRatio,          fmt: _x),
+              _row('PEG',        f.pegRatio,          fmt: _x),
+              _row('P/B',        f.pbRatio,           fmt: _x),
+              _row('P/S',        f.prRatio,           fmt: _x),
+              _row('P/CF',       f.pcfRatio,          fmt: _x),
+              _row('EPS (TTM)',  f.epsTTM,            fmt: _dollar),
+            ]),
+            const SizedBox(height: 14),
+            _section('Profitability', [
+              _row('Net Margin',  f.netProfitMarginTTM, fmt: _pct),
+              _row('Op Margin',   f.operatingMarginTTM, fmt: _pct),
+              _row('Gross Margin',f.grossMarginTTM,     fmt: _pct),
+              _row('ROE',         f.returnOnEquity,     fmt: _pct),
+              _row('ROA',         f.returnOnAssets,     fmt: _pct),
+              _row('ROI',         f.returnOnInvestment, fmt: _pct),
+            ]),
+            const SizedBox(height: 14),
+            _section('Growth', [
+              _row('EPS Chg YoY',  f.epsChangeYear,      fmt: _pct),
+              _row('EPS Chg TTM',  f.epsChangePercentTTM,fmt: _pct),
+              _row('Rev Chg YoY',  f.revChangeYear,      fmt: _pct),
+              _row('Rev Chg TTM',  f.revChangeTTM,       fmt: _pct),
+            ]),
+            const SizedBox(height: 14),
+            _section('Leverage & Liquidity', [
+              _row('Current Ratio',   f.currentRatio,      fmt: _x),
+              _row('Quick Ratio',     f.quickRatio,        fmt: _x),
+              _row('Debt/Equity',     f.totalDebtToEquity, fmt: _x),
+              _row('LT Debt/Equity',  f.ltDebtToEquity,    fmt: _x),
+              _row('Debt/Capital',    f.totalDebtToCapital,fmt: _x),
+              _row('Int. Coverage',   f.interestCoverage,  fmt: _x),
+            ]),
+            const SizedBox(height: 14),
+            _section('Market & Short Interest', [
+              _row('Market Cap',    f.marketCap,          fmt: _cap),
+              _row('Float',         f.marketCapFloat,     fmt: _cap),
+              _row('Shares Out',    f.sharesOutstanding,  fmt: _shares),
+              _row('Book/Share',    f.bookValuePerShare,  fmt: _dollar),
+              _row('Short/Float',   f.shortIntToFloat,    fmt: _pct),
+              _row('Short Cover',   f.shortIntDayToCover, fmt: _days),
+              _row('Beta',          f.beta,               fmt: _x),
+            ]),
+            if (f.dividendYield > 0) ...[
+              const SizedBox(height: 14),
+              _section('Dividends', [
+                _row('Yield',         f.dividendYield,     fmt: _pct),
+                _row('Amount',        f.dividendAmount,    fmt: _dollar),
+                _row('Pay Amount',    f.dividendPayAmount, fmt: _dollar),
+                _row('3Y Growth',     f.divGrowthRate3Year,fmt: _pct),
+                _row('Frequency',     f.dividendFreq.toDouble(), fmt: (v) => _freqLabel(v.toInt())),
+                if (f.nextDividendDate != null)
+                  _row('Ex-Date', 0, label2: EarningsDateCard._fmt(f.nextDividendDate!)),
+                if (f.nextDividendPayDate != null)
+                  _row('Pay Date', 0, label2: EarningsDateCard._fmt(f.nextDividendPayDate!)),
+              ]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _section(String title, List<Widget> rows) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.neutralColor,
+                  letterSpacing: 0.8)),
+          const SizedBox(height: 6),
+          ...rows,
+        ],
+      );
+
+  Widget _row(String label, double value, {String Function(double)? fmt, String? label2}) {
+    if (value == 0 && label2 == null) return const SizedBox.shrink();
+    final display = label2 ?? fmt!(value);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label,
+                style: const TextStyle(color: AppTheme.neutralColor, fontSize: 12)),
+          ),
+          Text(display,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  static String _x(double v)      => '${v.toStringAsFixed(2)}x';
+  static String _pct(double v)    => '${v.toStringAsFixed(1)}%';
+  static String _dollar(double v) => '\$${v.toStringAsFixed(2)}';
+  static String _days(double v)   => '${v.toStringAsFixed(1)}d';
+  static String _cap(double v) {
+    if (v >= 1e12) return '\$${(v / 1e12).toStringAsFixed(2)}T';
+    if (v >= 1e9)  return '\$${(v / 1e9).toStringAsFixed(2)}B';
+    if (v >= 1e6)  return '\$${(v / 1e6).toStringAsFixed(2)}M';
+    return '\$${v.toStringAsFixed(0)}';
+  }
+  static String _shares(double v) {
+    if (v >= 1e9)  return '${(v / 1e9).toStringAsFixed(2)}B';
+    if (v >= 1e6)  return '${(v / 1e6).toStringAsFixed(2)}M';
+    return v.toStringAsFixed(0);
+  }
+  static String _freqLabel(int freq) => switch (freq) {
+        1 => 'Annual',
+        2 => 'Semi-annual',
+        4 => 'Quarterly',
+        12 => 'Monthly',
+        _ => '$freq/yr',
+      };
 }
 
 // ─── Insider buy card ─────────────────────────────────────────────────────────
