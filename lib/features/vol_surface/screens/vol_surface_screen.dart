@@ -1153,6 +1153,7 @@ class _DatasetSheetContentState extends State<_DatasetSheetContent> {
 
     return Column(children: [
       // Drag handle
+      
       Center(
         child: Container(
           margin: const EdgeInsets.only(top: 10, bottom: 12),
@@ -1235,10 +1236,11 @@ class _DatasetSheetContentState extends State<_DatasetSheetContent> {
                 ),
               )
             : _GroupedDatasetList(
-                snaps:        filtered,
-                activeSnap:   widget.activeSnap,
-                onSelectSnap: widget.onSelectSnap,
-                onDeleteSnap: widget.onDeleteSnap,
+                snaps:           filtered,
+                activeSnap:      widget.activeSnap,
+                onSelectSnap:    widget.onSelectSnap,
+                onDeleteSnap:    widget.onDeleteSnap,
+                scrollController: widget.scrollController,
               ),
       ),
     ]);
