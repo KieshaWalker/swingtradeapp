@@ -1039,6 +1039,10 @@ class _NarrowLayout extends StatefulWidget {
 }
 
 class _NarrowLayoutState extends State<_NarrowLayout> {
+  double _interpHeight = 220;
+  static const double _interpMin = 80;
+  static const double _interpMax = 440;
+
   void _showDatasetSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -1087,17 +1091,38 @@ class _NarrowLayoutState extends State<_NarrowLayout> {
             ivMode:     widget.ivMode,
             loading:    widget.loading,
           )),
-          if (widget.activeSnap != null)
+          if (widget.activeSnap != null) ...[
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragUpdate: (d) => setState(() {
+                _interpHeight = (_interpHeight - d.delta.dy)
+                    .clamp(_interpMin, _interpMax);
+              }),
+              child: Container(
+                height: 16,
+                color: const Color(0xFF111827),
+                child: Center(
+                  child: Container(
+                    width: 36, height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF374151),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             SizedBox(
-              height: 220,
+              height: _interpHeight,
               child: VolSurfaceInterpretation(
                 snap:   widget.activeSnap!,
                 ivMode: widget.ivMode,
               ),
             ),
+          ],
         ]),
         Positioned(
-          bottom: widget.activeSnap != null ? 236 : 16,
+          bottom: widget.activeSnap != null ? _interpHeight + 16 + 16 : 16,
           right:  16,
           child: FloatingActionButton.extended(
             onPressed: () => _showDatasetSheet(context),
