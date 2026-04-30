@@ -409,12 +409,14 @@ class _GroupedDatasetList extends ConsumerStatefulWidget {
   final VolSnapshot?               activeSnap;
   final ValueChanged<VolSnapshot>  onSelectSnap;
   final ValueChanged<VolSnapshot>  onDeleteSnap;
+  final ScrollController?          scrollController;
 
   const _GroupedDatasetList({
     required this.snaps,
     required this.activeSnap,
     required this.onSelectSnap,
     required this.onDeleteSnap,
+    this.scrollController,
   });
 
   @override
@@ -436,6 +438,7 @@ class _GroupedDatasetListState extends ConsumerState<_GroupedDatasetList> {
     }
 
     return ListView(
+      controller: widget.scrollController,
       padding: const EdgeInsets.only(bottom: 8),
       children: [
         for (final ticker in grouped.keys) ...[
