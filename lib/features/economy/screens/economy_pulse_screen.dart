@@ -198,6 +198,9 @@ class EconomyPulseScreen extends ConsumerWidget {
         (_, next) => next.whenData(saveFredTreasury20y));
     ref.listen<AsyncValue<FredSeries>>(fredTreasury30yProvider,
         (_, next) => next.whenData(saveFredTreasury30y));
+    ref.listen<TreasuryRates?>(fredTreasuryRatesProvider, (_, next) {
+      if (next != null) storage.saveTreasuryRates(next);
+    });
     ref.listen<AsyncValue<FredSeries>>(fredCrudeOilProvider,
         (_, next) => next.whenData(saveFredCrudeOil));
     ref.listen<AsyncValue<FredSeries>>(fredNatGasProvider,
@@ -281,6 +284,7 @@ class EconomyPulseScreen extends ConsumerWidget {
                 ref.invalidate(fredRecessionProbProvider);
                 ref.invalidate(fredHousingStartsProvider);
                 ref.invalidate(kalshiMacroEventsProvider);
+                ref.invalidate(moversProvider);
               },
             ),
             const AppMenuButton(),
@@ -540,6 +544,8 @@ class _PulseBody extends ConsumerWidget {
               point: _point(unrate, FredStorageIds.unemploymentRate),
               format: _fmtPct,
               warnHigh: true,
+              warnAt: 5.0,
+              dangerAt: 7.0,
             ),
             _EconTile(
               label: 'Non-Farm Payrolls',
@@ -554,6 +560,8 @@ class _PulseBody extends ConsumerWidget {
               point: _point(icsa, FredStorageIds.initialClaims),
               format: _fmtJobsK,
               warnHigh: true,
+              warnAt: 300000,
+              dangerAt: 400000,
             ),
             _EconTile(
               label: 'Consumer Sentiment',
@@ -575,6 +583,8 @@ class _PulseBody extends ConsumerWidget {
               point: _cpiYoY(cpi),
               format: _fmtPct,
               warnHigh: true,
+              warnAt: 3.0,
+              dangerAt: 5.0,
             ),
             _EconTile(
               label: 'Real GDP',
@@ -594,6 +604,8 @@ class _PulseBody extends ConsumerWidget {
               point: _point(recProb, FredStorageIds.recessionProb),
               format: _fmtPct,
               warnHigh: true,
+              warnAt: 20.0,
+              dangerAt: 50.0,
             ),
           ],
         ),
@@ -965,6 +977,8 @@ class _EconTile extends StatelessWidget {
   final String Function(double) format;
   final bool warnHigh; // high value = yellow/red warning (unemployment, CPI)
   final bool showSign;
+  final double? warnAt;   // value >= warnAt → amber
+  final double? dangerAt; // value >= dangerAt → red
 
   const _EconTile({
     required this.label,
@@ -973,6 +987,8 @@ class _EconTile extends StatelessWidget {
     required this.format,
     this.warnHigh = false,
     this.showSign = false,
+    this.warnAt,
+    this.dangerAt,
   });
 
   @override
@@ -982,9 +998,13 @@ class _EconTile extends StatelessWidget {
     }
 
     Color valueColor = Colors.white;
-    if (warnHigh) {
-      // No threshold — show neutral. Could add thresholds later.
-      valueColor = Colors.white;
+    if (warnHigh && point != null) {
+      final v = point!.value;
+      if (dangerAt != null && v >= dangerAt!) {
+        valueColor = AppTheme.lossColor;
+      } else if (warnAt != null && v >= warnAt!) {
+        valueColor = const Color(0xFFfbbf24); // amber
+      }
     }
 
     final raw = format(point!.value);

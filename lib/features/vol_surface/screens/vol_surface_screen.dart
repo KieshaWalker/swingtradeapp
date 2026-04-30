@@ -149,7 +149,7 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
       body: LayoutBuilder(
         builder: (context, constraints) {
           // When scoped to a ticker, always skip the multi-ticker sidebar.
-          final showSidebar = !isTicker && constraints.maxWidth < 400;
+        final showSidebar = !isTicker && constraints.maxWidth >= 700;
           if (showSidebar) {
             return Row(children: [
               _Sidebar(

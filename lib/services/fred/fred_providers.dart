@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'fred_models.dart';
 import 'fred_service.dart';
 import 'fred_storage_service.dart';
+import '../economy/economy_snapshot_models.dart';
 
 final _fredService = FredService();
 
@@ -162,3 +163,30 @@ Future<void> saveFredRecessionProb(FredSeries s) =>
     _storage.saveIndicatorSeries(s, FredStorageIds.recessionProb);
 Future<void> saveFredHousingStarts(FredSeries s) =>
     _storage.saveIndicatorSeries(s, FredStorageIds.housingStarts);
+
+// ── Combined treasury yield curve ─────────────────────────────────────────────
+// Builds a TreasuryRates from the 6 individual treasury series.
+// Returns null while any are still loading; uses the 10Y observation date as
+// the row anchor so the DB date matches when FRED last updated.
+
+final fredTreasuryRatesProvider = Provider<TreasuryRates?>((ref) {
+  FredObservation? first(FutureProvider<FredSeries> p) =>
+      ref.watch(p).whenOrNull(
+        data: (s) => s.observations.isEmpty ? null : s.observations.first,
+      );
+
+  final obs10y = first(fredTreasury10yProvider);
+  if (obs10y == null) return null;
+
+  double? val(FutureProvider<FredSeries> p) => first(p)?.value;
+
+  return TreasuryRates(
+    date:   obs10y.date,
+    year1:  val(fredTreasury1yProvider),
+    year2:  val(fredTreasury2yProvider),
+    year5:  val(fredTreasury5yProvider),
+    year10: obs10y.value,
+    year20: val(fredTreasury20yProvider),
+    year30: val(fredTreasury30yProvider),
+  );
+});

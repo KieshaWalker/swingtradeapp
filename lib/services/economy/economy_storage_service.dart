@@ -143,6 +143,8 @@ class EconomyStorageService {
     );
   }
 
+  Future<void> saveTreasuryRates(TreasuryRates treasury) => _saveTreasury(treasury);
+
   Future<void> _saveTreasury(TreasuryRates? treasury) async {
     if (treasury == null) return;
     await _db.from('economy_treasury_snapshots').upsert(

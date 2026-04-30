@@ -25,6 +25,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
 import '../../../services/schwab/schwab_models.dart';
@@ -73,6 +74,11 @@ class _FivePhaseBlotterScreenState
   PhaseResult _p4 = PhaseResult.none;
   PhaseResult _p5 = PhaseResult.none;
   PhaseResult _p6 = PhaseResult.none;
+
+  // ── Blotter Phase 3 pricing output (for commit) ──────────────────────────────
+  FairValueResult? _latestFairValue;
+  WhatIfResult?    _latestWhatIf;
+  bool             _committing = false;
 
   // ── ExpansionTile controllers ────────────────────────────────────────────────
   bool _exp1 = false;
@@ -191,21 +197,72 @@ class _FivePhaseBlotterScreenState
   }
 
   Future<void> _commitTrade() async {
-    // No-op for now; wire to blotter save in a future iteration
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppTheme.profitColor,
-        content: Text(
-          'Trade committed to blotter — ${_contractType.label} ${'$_ticker \$$_strike'} '
-          '${_expiryStr ?? ''} x$_qty',
-          style: const TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w600,
+    if (!mounted || _strike == null || _expiryStr == null) return;
+
+    setState(() => _committing = true);
+    try {
+      // Re-read the cached chain so we can persist greeks alongside the trade.
+      final chainAsync = ref.read(schwabOptionsChainProvider(OptionsChainParams(
+        symbol:         _ticker,
+        contractType:   _contractType == ContractType.call ? 'CALL' : 'PUT',
+        strikeCount:    60,
+        expirationDate: _expiryStr,
+      )));
+      final contract = _findContract(chainAsync.valueOrNull);
+
+      final trade = BlotterTrade(
+        symbol:          _ticker,
+        strike:          _strike!,
+        expiration:      _expiryStr!,
+        contractType:    _contractType,
+        quantity:        _qty,
+        strategyTag:     StrategyTag.netLongPremium,
+        status:          TradeStatus.committed,
+        createdAt:       DateTime.now(),
+        fairValueResult: _latestFairValue,
+        whatIfResult:    _latestWhatIf,
+        delta:           contract?.delta,
+        gamma:           contract?.gamma,
+        theta:           contract?.theta,
+        vega:            contract?.vega,
+        underlyingPrice: chainAsync.valueOrNull?.underlyingPrice,
+      );
+
+      await Supabase.instance.client
+          .from('blotter_trades')
+          .insert(trade.toJson());
+
+      // Invalidate portfolio provider so Phase 3 re-evaluates book impact.
+      ref.invalidate(portfolioStateProvider);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppTheme.profitColor,
+          content: Text(
+            'Trade committed — ${_contractType.label} $_ticker \$$_strike '
+            '${_expiryStr ?? ''} ×$_qty',
+            style: const TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppTheme.lossColor,
+          content: Text(
+            'Commit failed: $e',
+            style: const TextStyle(color: Colors.black),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _committing = false);
+    }
   }
 
   Future<void> _saveAsIdea() async {

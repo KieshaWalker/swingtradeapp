@@ -46,8 +46,9 @@ import '../../services/fair_value_engine.dart';
 
 // ── Portfolio state provider ──────────────────────────────────────────────────
 // autoDispose so it reloads fresh each time the panel is mounted.
+// Public so the screen can invalidate it after a commit.
 
-final _portfolioProvider = FutureProvider.autoDispose<PortfolioState>(
+final portfolioStateProvider = FutureProvider.autoDispose<PortfolioState>(
     (_) => FairValueEngine.loadPortfolioState());
 
 // ── Panel widget ──────────────────────────────────────────────────────────────
@@ -67,6 +68,7 @@ class BlotterPhasePanel extends ConsumerStatefulWidget {
   final double  vega;
   final int     quantity;
   final void Function(PhaseResult)? onResult;
+  final void Function(FairValueResult, WhatIfResult)? onPricingData;
 
   const BlotterPhasePanel({
     super.key,
@@ -82,6 +84,7 @@ class BlotterPhasePanel extends ConsumerStatefulWidget {
     required this.vega,
     required this.quantity,
     this.onResult,
+    this.onPricingData,
   });
 
   @override
@@ -92,6 +95,7 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
   PhaseResult?    _lastResult;
   FairValueResult? _fv;
   String?          _lastFvKey;
+  bool             _hasFiredPricingCallback = false;
 
   Future<void> _fetchFairValue({double? rho, double? nu}) async {
     try {
@@ -148,6 +152,7 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     if (fvKey != _lastFvKey) {
       _lastFvKey = fvKey;
       _fv = null;
+      _hasFiredPricingCallback = false;
       WidgetsBinding.instance.addPostFrameCallback(
           (_) => _fetchFairValue(rho: sabrSlice?.rho, nu: sabrSlice?.nu));
     }
@@ -172,7 +177,7 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     final tradeEs95 = (deltaEs + gammaEs).clamp(0.0, maxLoss);
 
     // ── Portfolio what-if (async portfolio state, fallback to empty) ───────
-    final portfolioAsync = ref.watch(_portfolioProvider);
+    final portfolioAsync = ref.watch(portfolioStateProvider);
     final portfolio = portfolioAsync.value ?? PortfolioState.empty;
 
     // ── IV analytics — GEX regime (non-blocking) ───────────────────────────
@@ -198,7 +203,16 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
       gammaEs:    gammaEs,
       ivAnalysis: ivAnalysis,
     );
-    _notifyIfChanged(result);
+
+    // Don't emit a phase status or pricing data while the portfolio is still
+    // loading — avoids flashing an incorrect PASS/FAIL to the stepper.
+    if (!portfolioAsync.isLoading) {
+      _notifyIfChanged(result);
+      if (!_hasFiredPricingCallback) {
+        _hasFiredPricingCallback = true;
+        widget.onPricingData?.call(fv, whatIf);
+      }
+    }
 
     return _PanelBody(
       fv:               fv,
