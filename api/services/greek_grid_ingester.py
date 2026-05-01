@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from statistics import median as py_median
 
@@ -233,7 +233,7 @@ def ingest(chain: dict, obs_date: datetime | None = None) -> list[GridCell]:
         try:
             expiry = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         except Exception:
-            expiry = obs_date + __import__("datetime").timedelta(days=dte)
+            expiry = obs_date + timedelta(days=dte)
 
         all_contracts = list(exp.get("calls", [])) + list(exp.get("puts", []))
         for c in all_contracts:

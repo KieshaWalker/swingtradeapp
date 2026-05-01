@@ -21,6 +21,7 @@ from __future__ import annotations
 #   7. Realized vol (from Schwab price history) → log result
 # =============================================================================
 
+import asyncio
 import logging
 from datetime import datetime, date, timezone
 
@@ -159,12 +160,18 @@ async def run_schwab_pull() -> dict:
             ticker  = row["ticker"]
             user_id = row["user_id"]
             try:
-                # ── Step 1: Fetch chain from Schwab via Edge Function ──────────
-                chain_resp = await client.post(
-                    f"{edge_base}/get-schwab-chains",
-                    json={"symbol": ticker, "contractType": "ALL", "strikeCount": 40}, 
-                    headers=headers,
+                # ── Step 1 & 7: Fetch chain + price history concurrently ───────
+                # Only these two HTTP calls run in parallel; all Supabase calls
+                # remain sequential to avoid blocking the event loop.
+                chain_resp, (closes, volumes) = await asyncio.gather(
+                    client.post(
+                        f"{edge_base}/get-schwab-chains",
+                        json={"symbol": ticker, "contractType": "ALL", "strikeCount": 40},
+                        headers=headers,
+                    ),
+                    _fetch_schwab_closes(client, edge_base, headers, ticker, days=65),
                 )
+
                 if chain_resp.status_code != 200:
                     log.error("chain_fetch_failed ticker=%s status=%s", ticker, chain_resp.status_code)
                     results[ticker] = f"chain_error_{chain_resp.status_code}"
@@ -177,66 +184,81 @@ async def run_schwab_pull() -> dict:
                     results[ticker] = "zero_spot"
                     continue
 
+                steps: dict[str, str] = {}
+
+                def _step(name: str, fn):
+                    """Run fn(), record ok/err in steps. Exceptions don't abort the ticker."""
+                    try:
+                        fn()
+                        steps[name] = "ok"
+                    except Exception as _e:
+                        steps[name] = f"err:{_e!r}"
+                        log.error("step_failed ticker=%s step=%s error=%r", ticker, name, _e, exc_info=True)
+
                 # ── Step 2: Vol surface snapshot ──────────────────────────────
                 points = _chain_to_vol_points(chain, spot)
-                if points:
-                    _upsert_vol_surface(db, ticker, today, spot, points, user_id)
+                _step("vol_surface", lambda: (
+                    _upsert_vol_surface(db, ticker, today, spot, points, user_id) if points else None
+                ))
 
                 # ── Step 3: SABR calibration ──────────────────────────────────
                 slices = calibrate_snapshot(spot=spot, points=points)
-                # Fetch ν history BEFORE upserting today's calibration so that
-                # nu_history contains only prior observations (today excluded).
                 nu_history = _fetch_nu_history(db, ticker, user_id) if slices else []
-                if slices:
-                    _upsert_sabr_calibrations(db, ticker, today, slices, user_id)
+                _step("sabr_calibrations", lambda: (
+                    _upsert_sabr_calibrations(db, ticker, today, slices, user_id) if slices else None
+                ))
 
-                # ── Step 3b: Heston calibration ──────────────────────────────────
+                # ── Step 3b: Heston calibration ───────────────────────────────
                 heston_result = None
-                if points:  # need a surface to calibrate against
+                if points:
                     try:
                         heston_result = calibrate_heston(surface_points=points, spot=spot)
                         if heston_result and heston_result.is_reliable:
-                            _upsert_heston_calibration(db, ticker, today, heston_result, user_id)
+                            _step("heston_calibrations", lambda: _upsert_heston_calibration(
+                                db, ticker, today, heston_result, user_id  # type: ignore[arg-type]
+                            ))
                             log.info(
                                 "heston_calibrated ticker=%s rmse_iv=%.4f n=%d converged=%s",
                                 ticker, heston_result.rmse_iv, heston_result.n_points, heston_result.converged,
                             )
                         elif heston_result:
+                            steps["heston_calibrations"] = "unreliable"
                             log.warning(
                                 "heston_calibration_unreliable ticker=%s rmse_iv=%.4f n=%d",
                                 ticker, heston_result.rmse_iv, heston_result.n_points,
                             )
+                        else:
+                            steps["heston_calibrations"] = "no_result"
                     except Exception as exc:
-                        log.warning("heston_calibration_failed ticker=%s error=%s", ticker, exc)
+                        steps["heston_calibrations"] = f"err:{exc!r}"
+                        log.warning("heston_calibration_failed ticker=%s error=%r", ticker, exc)
+                else:
+                    steps["heston_calibrations"] = "skip:no_points"
 
                 # ── Step 4: IV analytics + vvol rank ─────────────────────────
                 history = _fetch_iv_history(db, ticker)
                 iv_result = iv_analyse(chain, history)
-                vvol = None ## Compute vvol only when we have a SABR slice and history to compare against, otherwise the rank/percentile would be meaningless noise.
+                vvol = None
                 if slices and nu_history:
                     atm_slice = min(slices, key=lambda s: abs(s.dte - 30))
                     vvol      = vvol_compute(atm_slice.nu, nu_history)
-                _upsert_iv_snapshot(db, ticker, today, iv_result, spot, vvol)
+                _step("iv_snapshots", lambda: _upsert_iv_snapshot(db, ticker, today, iv_result, spot, vvol))
 
                 # ── Step 5: Greek grid ────────────────────────────────────────
                 obs_date = datetime.now(timezone.utc)
                 cells = grid_ingest(chain, obs_date)
-                if cells:
-                    _upsert_greek_grid(db, ticker, today, cells, spot, user_id)
+                _step("greek_grid_snapshots", lambda: (
+                    _upsert_greek_grid(db, ticker, today, cells, spot, user_id) if cells else None
+                ))
 
                 # ── Step 6: ATM greek snapshots (greek chart time-series) ─────
-                _upsert_greek_snapshots(db, ticker, today, spot, chain, user_id)
+                _step("greek_snapshots", lambda: _upsert_greek_snapshots(db, ticker, today, spot, chain, user_id))
 
-                # ── Step 7: Realized vol (Schwab price history) ───────────────
-                closes, volumes = await _fetch_schwab_closes(
-                    client, edge_base, headers, ticker, days=65
-                )
+                # ── Step 7 (cont): RV + SMA ───────────────────────────────────
                 if closes:
                     rv = rv_compute(closes)
                     log.info("rv_computed ticker=%s rv20d=%s rv60d=%s", ticker, rv.rv20d, rv.rv60d)
 
-                # ── Step 8: SMA + current regime classification ───────────────
-                # Filter out zero/None values to guard against bad entries.
                 clean_closes  = [c for c in closes  if c and c > 0]
                 clean_volumes = [v for v in volumes if v and v > 0]
 
@@ -260,6 +282,7 @@ async def run_schwab_pull() -> dict:
                 if len(clean_closes) >= 6 and clean_closes[-6] > 0:
                     price_roc5 = (clean_closes[-1] - clean_closes[-6]) / clean_closes[-6] * 100
 
+                # ── Step 8: SMA + current regime classification ───────────────
                 regime = classify_regime(
                     ticker=ticker,
                     gamma_regime=iv_result.gamma_regime.value,
@@ -283,20 +306,21 @@ async def run_schwab_pull() -> dict:
                     breadth_proxy=breadth_proxy,
                     price_roc5=price_roc5,
                     total_gex=iv_result.total_gex,
+                    gex_0dte=iv_result.gex_0dte,
                     gex_0dte_pct=iv_result.gex_0dte_pct,
                 )
-                _upsert_regime_snapshot(db, today, regime)
-                log.info(
-                    "regime_classified ticker=%s bias=%s hmm=%s sma_cross=%s",
-                    ticker, regime.strategy_bias.value,
-                    regime.hmm_state, sma_crossed,
-                )
+                _step("regime_snapshots", lambda: _upsert_regime_snapshot(db, today, regime))
 
-                results[ticker] = "ok"
-                log.info("ticker_pulled ticker=%s", ticker)
+                any_err = [k for k, v in steps.items() if v.startswith("err:")]
+                log.info(
+                    "ticker_complete ticker=%s steps=%s%s",
+                    ticker, steps,
+                    f" ERRORS={any_err}" if any_err else "",
+                )
+                results[ticker] = steps
 
             except Exception as exc:
-                log.error("ticker_pull_failed ticker=%s error=%s", ticker, exc)
+                log.error("ticker_pull_failed ticker=%s error=%r", ticker, exc, exc_info=True)
                 results[ticker] = f"error: {exc}"
 
     return {"status": "complete", "tickers": results, "date": today}
@@ -327,6 +351,10 @@ def _upsert_greek_snapshots(
 
             atm_call = _atm_contract(calls)
             atm_put  = _atm_contract(puts)
+
+            if not atm_call and not atm_put:
+                log.warning("greek_snapshot_no_atm ticker=%s dte_bucket=%s", ticker, target_dte)
+                continue
 
             row: dict = {
                 "user_id":          user_id,
@@ -364,7 +392,7 @@ def _upsert_greek_snapshots(
 
             db.table("greek_snapshots").upsert(
                 row,
-                on_conflict="user_id,ticker,obs_date,dte_bucket", 
+                on_conflict="user_id,ticker,obs_date,dte_bucket",
             ).execute()
 
         except Exception as exc:
@@ -373,13 +401,13 @@ def _upsert_greek_snapshots(
 
 
 def _atm_contract(contracts: list[dict]) -> dict | None:
-    """Return the contract with |delta| closest to 0.50.  Falls back to
-    the first contract when none have a non-zero delta."""
+    """Return the contract with |delta| closest to 0.50, or None if no
+    contract carries a valid delta (pre-market, 0DTE, illiquid chain)."""
     if not contracts:
         return None
     with_delta = [c for c in contracts if c.get("delta") and c["delta"] != 0]
     if not with_delta:
-        return contracts[0]
+        return None
     return min(with_delta, key=lambda c: abs(abs(c["delta"]) - 0.50))
 
 

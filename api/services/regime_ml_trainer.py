@@ -591,6 +591,8 @@ def build_feature_vector(history: list[dict]) -> list[float] | None:
 # Persistence
 # ---------------------------------------------------------------------------
 
+_KEEP_MODELS = 5  # how many historical model rows to retain per model_type
+
 def _persist(supabase_client, result: TrainingResult) -> None:
     try:
         supabase_client.table("regime_ml_models").insert({
@@ -605,6 +607,25 @@ def _persist(supabase_client, result: TrainingResult) -> None:
             "model_json":    result.model_json,
         }).execute()
         log.info("regime_ml_persisted model_type=%s auc=%.3f", result.model_type, result.auc_roc)
+
+        # Prune old rows — keep only the most recent _KEEP_MODELS per model_type
+        try:
+            keep_resp = (
+                supabase_client.table("regime_ml_models")
+                .select("id")
+                .eq("model_type", result.model_type)
+                .order("trained_at", desc=True)
+                .limit(_KEEP_MODELS)
+                .execute()
+            )
+            keep_ids = [r["id"] for r in (keep_resp.data or [])]
+            if keep_ids:
+                supabase_client.table("regime_ml_models").delete().eq(
+                    "model_type", result.model_type
+                ).not_.in_("id", keep_ids).execute()
+        except Exception as prune_exc:
+            log.warning("regime_ml_prune_failed error=%s", prune_exc)
+
     except Exception as exc:
         log.warning("regime_ml_persist_failed error=%s — model kept in memory only", exc)
 

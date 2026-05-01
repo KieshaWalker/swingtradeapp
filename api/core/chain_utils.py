@@ -33,6 +33,7 @@ def parse_expirations(chain: dict) -> list[dict]:
     """
     call_map: dict[int, list[dict]] = {}
     put_map: dict[int, list[dict]] = {}
+    date_map: dict[int, str] = {}   # dte → "YYYY-MM-DD" from the Schwab key
 
     for key, strikes in chain.get("callExpDateMap", {}).items():
         dte = _dte_from_key(key)
@@ -42,6 +43,7 @@ def parse_expirations(chain: dict) -> list[dict]:
         for contracts_at_strike in strikes.values():
             contracts.extend(contracts_at_strike)
         call_map[dte] = contracts
+        date_map.setdefault(dte, key.split(":")[0])
 
     for key, strikes in chain.get("putExpDateMap", {}).items():
         dte = _dte_from_key(key)
@@ -51,13 +53,15 @@ def parse_expirations(chain: dict) -> list[dict]:
         for contracts_at_strike in strikes.values():
             contracts.extend(contracts_at_strike)
         put_map[dte] = contracts
+        date_map.setdefault(dte, key.split(":")[0])
 
     all_dtes = sorted(set(call_map) | set(put_map))
     return [
         {
-            "dte":   dte,
-            "calls": call_map.get(dte, []),
-            "puts":  put_map.get(dte, []),
+            "dte":            dte,
+            "expirationDate": date_map.get(dte, ""),
+            "calls":          call_map.get(dte, []),
+            "puts":           put_map.get(dte, []),
         }
         for dte in all_dtes
         if dte > 0

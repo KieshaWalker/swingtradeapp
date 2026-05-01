@@ -8,7 +8,7 @@
 import asyncio
 import logging
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Request, HTTPException
 
 from core.config import settings
 
@@ -29,14 +29,23 @@ def _verify_scheduler(request: Request) -> None:
 
 
 @router.post("/schwab-pull")
-async def schwab_pull_trigger(request: Request):
+async def schwab_pull_trigger(request: Request, background_tasks: BackgroundTasks):
     """Triggered by Cloud Scheduler every 8 hours.
-    Pulls Schwab data for all watched tickers and runs the full pipeline.
+    Returns 200 immediately so Cloud Scheduler doesn't timeout; the pipeline
+    runs in a background task that Cloud Run keeps alive until completion.
     """
     _verify_scheduler(request)
-    from jobs.schwab_pull import run_schwab_pull
-    result = await run_schwab_pull()
-    return result
+
+    async def _run() -> None:
+        from jobs.schwab_pull import run_schwab_pull
+        try:
+            result = await run_schwab_pull()
+            log.info("schwab_pull_complete result=%s", result)
+        except Exception as exc:
+            log.error("schwab_pull_error error=%s", exc)
+
+    background_tasks.add_task(_run)
+    return {"status": "accepted"}
 
 
 @router.post("/regime-train")

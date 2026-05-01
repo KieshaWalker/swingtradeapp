@@ -27,9 +27,10 @@ Deno.serve(async (req) => {
     const startDate    = new Date()
     startDate.setDate(startDate.getDate() - calendarDays)
 
+    // When startDate is provided Schwab ignores periodType/period, but some
+    // symbols return 400 if periodType is present alongside startDate.
     const params = new URLSearchParams({
       symbol,
-      periodType:    'month',
       frequencyType: 'daily',
       frequency:     '1',
       startDate:     String(startDate.getTime()),
