@@ -36,13 +36,17 @@ import '../widgets/fred_tab.dart';
 import '../widgets/kalshi_tab.dart';
 import '../../../services/kalshi/kalshi_providers.dart';
 
-class EconomyPulseScreen extends ConsumerWidget {
+class EconomyPulseScreen extends ConsumerStatefulWidget {
   const EconomyPulseScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pulseAsync = ref.watch(economyPulseProvider);
+  ConsumerState<EconomyPulseScreen> createState() => _EconomyPulseScreenState();
+}
 
+class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     final storage = ref.read(economyStorageServiceProvider);
 
     // ── Snapshot (Schwab quotes + gov indicators) — persist on each fetch
@@ -223,6 +227,11 @@ class EconomyPulseScreen extends ConsumerWidget {
         (_, next) => next.whenData(saveFredRecessionProb));
     ref.listen<AsyncValue<FredSeries>>(fredHousingStartsProvider,
         (_, next) => next.whenData(saveFredHousingStarts));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pulseAsync = ref.watch(economyPulseProvider);
 
     return DefaultTabController(
       length: 8,

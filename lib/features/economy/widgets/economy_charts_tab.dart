@@ -23,6 +23,7 @@ import '../../../core/theme.dart';
 import '../../../services/economy/economy_snapshot_models.dart';
 import '../../../services/economy/economy_storage_providers.dart';
 import '../../../services/economy/economy_storage_service.dart';
+import '../../../services/fred/fred_models.dart';
 import '../providers/api_data_providers.dart';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -37,21 +38,21 @@ const _orange = Color(0xFFF78166);
 
 // ─── Root tab widget ──────────────────────────────────────────────────────────
 
-class EconomyChartsTab extends ConsumerWidget {
+class EconomyChartsTab extends ConsumerStatefulWidget {
   const EconomyChartsTab({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Fetch latest economy data from APIs and save to database
-    // This ensures charts have fresh data even if economy pulse screen hasn't been visited
-    ref.watch(economyPulseProvider);
+  ConsumerState<EconomyChartsTab> createState() => _EconomyChartsTabState();
+}
 
-    // Save economy pulse data to database when fetched
+class _EconomyChartsTabState extends ConsumerState<EconomyChartsTab> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     final storage = ref.read(economyStorageServiceProvider);
     ref.listen<AsyncValue<EconomyPulseData>>(economyPulseProvider, (_, next) {
       next.whenData((data) {
         storage.saveEconomyPulse(data);
-        // Invalidate quote history providers to refresh charts with new data
         ref.invalidate(economyQuoteHistoryProvider(r'$DXY'));
         ref.invalidate(economyQuoteHistoryProvider('/GC'));
         ref.invalidate(economyQuoteHistoryProvider('/SI'));
@@ -60,11 +61,15 @@ class EconomyChartsTab extends ConsumerWidget {
         ref.invalidate(economyQuoteHistoryProvider('SPY'));
         ref.invalidate(economyQuoteHistoryProvider('QQQ'));
         ref.invalidate(economyQuoteHistoryProvider('VIXY'));
-        // Invalidate all indicator and treasury history so charts reflect new data
         ref.invalidate(economyIndicatorHistoryProvider);
         ref.invalidate(economyTreasuryHistoryProvider);
       });
     });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.watch(economyPulseProvider);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
@@ -91,7 +96,7 @@ class EconomyChartsTab extends ConsumerWidget {
         SizedBox(height: 8),
         // Economic indicators (stored in economy_indicator_snapshots)
         _IndicatorChart(
-          identifier: 'federalFunds',
+          identifier: FredStorageIds.fedFunds,
           title: 'Fed Funds Rate',
           sublabel: 'Target Rate',
           color: _teal,
@@ -99,7 +104,7 @@ class EconomyChartsTab extends ConsumerWidget {
         ),
         SizedBox(height: 8),
         _IndicatorChart(
-          identifier: '30YearFixedRateMortgageAverage',
+          identifier: FredStorageIds.mortgageRate30y,
           title: 'Mortgage 30Y',
           sublabel: 'Fixed Rate Avg',
           color: _blue,
@@ -123,7 +128,7 @@ class EconomyChartsTab extends ConsumerWidget {
         _SectionHeader('Labor Market'),
         SizedBox(height: 8),
         _IndicatorChart(
-          identifier: 'unemploymentRate',
+          identifier: FredStorageIds.unemploymentRate,
           title: 'Unemployment Rate',
           sublabel: 'Monthly',
           color: _red,
@@ -131,7 +136,7 @@ class EconomyChartsTab extends ConsumerWidget {
         ),
         SizedBox(height: 8),
         _IndicatorChart(
-          identifier: 'totalNonfarmPayrolls',
+          identifier: FredStorageIds.nonfarmPayrolls,
           title: 'Non-Farm Payrolls',
           sublabel: 'Jobs Added',
           color: _green,
@@ -139,7 +144,7 @@ class EconomyChartsTab extends ConsumerWidget {
         ),
         SizedBox(height: 8),
         _IndicatorChart(
-          identifier: 'initialJoblessClaims',
+          identifier: FredStorageIds.initialClaims,
           title: 'Initial Claims',
           sublabel: 'Weekly Jobless',
           color: _orange,
@@ -147,7 +152,7 @@ class EconomyChartsTab extends ConsumerWidget {
         ),
         SizedBox(height: 8),
         _IndicatorChart(
-          identifier: 'consumerSentiment',
+          identifier: FredStorageIds.consumerSentiment,
           title: 'Consumer Sentiment',
           sublabel: 'Univ. of Michigan',
           color: _blue,
@@ -159,7 +164,7 @@ class EconomyChartsTab extends ConsumerWidget {
         _SectionHeader('Economy'),
         SizedBox(height: 8),
         _IndicatorChart(
-          identifier: 'CPI',
+          identifier: FredStorageIds.cpiAllItems,
           title: 'CPI',
           sublabel: 'Inflation Rate',
           color: _red,
@@ -167,7 +172,7 @@ class EconomyChartsTab extends ConsumerWidget {
         ),
         SizedBox(height: 8),
         _IndicatorChart(
-          identifier: 'realGDP',
+          identifier: FredStorageIds.realGdp,
           title: 'Real GDP',
           sublabel: 'Billions USD',
           color: _teal,
@@ -175,7 +180,7 @@ class EconomyChartsTab extends ConsumerWidget {
         ),
         SizedBox(height: 8),
         _IndicatorChart(
-          identifier: 'retailSales',
+          identifier: FredStorageIds.retailSales,
           title: 'Retail Sales',
           sublabel: 'Monthly',
           color: _purple,
@@ -183,7 +188,7 @@ class EconomyChartsTab extends ConsumerWidget {
         ),
         SizedBox(height: 8),
         _IndicatorChart(
-          identifier: 'smoothedUSRecessionProbabilities',
+          identifier: FredStorageIds.recessionProb,
           title: 'Recession Probability',
           sublabel: 'Smoothed Model',
           color: _orange,
@@ -195,7 +200,7 @@ class EconomyChartsTab extends ConsumerWidget {
         _SectionHeader('Housing'),
         SizedBox(height: 8),
         _IndicatorChart(
-          identifier: 'newPrivatelyOwnedHousingUnitsStartedTotalUnits',
+          identifier: FredStorageIds.housingStarts,
           title: 'Housing Starts',
           sublabel: 'New Units (K)',
           color: _yellow,

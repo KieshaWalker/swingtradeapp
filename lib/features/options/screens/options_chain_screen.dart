@@ -27,6 +27,11 @@ class OptionsChainScreen extends ConsumerStatefulWidget {
 
 class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
     with SingleTickerProviderStateMixin {
+  // Per-ticker last ingest time — static so it survives navigation within a
+  // session. Prevents hammering vol surface / IV / greeks on every visit.
+  static final Map<String, DateTime> _lastIngestAt = {};
+  static const _ingestCooldown = Duration(hours: 8);
+
   late TabController _tabs;
   int _strikeCount = 10;
   int _selectedExp = 0;
@@ -154,11 +159,16 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
           // screen refreshes automatically if it is already open.
           if (!_hasIngested) {
             _hasIngested = true;
-            autoIngestIv(chain);
-            autoIngestGreeks(chain);
-            autoIngestVolSurface(widget.symbol, chain: chain).then((_) {
-              if (mounted) ref.invalidate(volSurfaceProvider);
-            });
+            final now  = DateTime.now();
+            final last = _lastIngestAt[widget.symbol];
+            if (last == null || now.difference(last) >= _ingestCooldown) {
+              _lastIngestAt[widget.symbol] = now;
+              autoIngestIv(chain);
+              autoIngestGreeks(chain);
+              autoIngestVolSurface(widget.symbol, chain: chain, ref: ref).then((_) {
+                if (mounted) ref.invalidate(volSurfaceProvider);
+              });
+            }
             _fetchScores(chain);
           }
 
@@ -194,6 +204,7 @@ class _OptionsChainScreenState extends ConsumerState<OptionsChainScreen>
                 onCountChanged: (v) => setState(() => _strikeCount = v),
                 onRefresh:      () {
                   _hasIngested = false;
+                  _lastIngestAt.remove(widget.symbol); // force re-ingest on manual refresh
                   ref.invalidate(schwabOptionsChainProvider(_params));
                 },
               ),

@@ -21,14 +21,19 @@ import '../providers/api_data_providers.dart';
 
 const _lineColor = Color(0xFFF78166);
 
-class GasolinePriceHistoryChart extends ConsumerWidget {
+class GasolinePriceHistoryChart extends ConsumerStatefulWidget {
   const GasolinePriceHistoryChart({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final storageAsync = ref.watch(gasolinePriceHistoryStorageProvider);
+  ConsumerState<GasolinePriceHistoryChart> createState() =>
+      _GasolinePriceHistoryChartState();
+}
 
-    // When EIA data arrives: save to Supabase, then refresh the storage provider.
+class _GasolinePriceHistoryChartState
+    extends ConsumerState<GasolinePriceHistoryChart> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     ref.listen<AsyncValue>(eiaGasolinePriceHistoryProvider, (_, next) {
       next.whenData((resp) async {
         await ref
@@ -37,6 +42,11 @@ class GasolinePriceHistoryChart extends ConsumerWidget {
         ref.invalidate(gasolinePriceHistoryStorageProvider);
       });
     });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final storageAsync = ref.watch(gasolinePriceHistoryStorageProvider);
 
     return storageAsync.when(
       loading: () => _ChartFrame(

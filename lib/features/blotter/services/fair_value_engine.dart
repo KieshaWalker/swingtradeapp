@@ -69,7 +69,7 @@ class FairValueEngine {
         totalDelta += (r['delta'] as num? ?? 0).toDouble() * qty * 100;
         totalVega  += (r['vega']  as num? ?? 0).toDouble() * qty * 100;
         final es = (r['es95_after'] as num? ?? 0).toDouble();
-        if (es > latestEs) latestEs = es;
+        latestEs += es;
       }
 
       return PortfolioState(

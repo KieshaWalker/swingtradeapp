@@ -366,6 +366,7 @@ class _FivePhaseBlotterScreenState
           ? _ActionBar(
               results:    [_p1, _p2, _p3, _p4, _p5, _p6],
               canCommit:  _canCommit,
+              committing: _committing,
               onCommit:   _commitTrade,
               onSaveIdea: _saveAsIdea,
             )
@@ -470,6 +471,10 @@ class _FivePhaseBlotterScreenState
                           quantity:     _qty,
                           onResult:     (r) =>
                               _notifyResult(3, r, autoExpand: true),
+                          onPricingData: (fv, wi) => setState(() {
+                            _latestFairValue = fv;
+                            _latestWhatIf    = wi;
+                          }),
                         ),
                 ),
 
@@ -1027,12 +1032,14 @@ class _LoadingPlaceholder extends StatelessWidget {
 class _ActionBar extends StatelessWidget {
   final List<PhaseResult> results;
   final bool              canCommit;
+  final bool              committing;
   final VoidCallback      onCommit;
   final VoidCallback      onSaveIdea;
 
   const _ActionBar({
     required this.results,
     required this.canCommit,
+    required this.committing,
     required this.onCommit,
     required this.onSaveIdea,
   });
@@ -1125,14 +1132,22 @@ class _ActionBar extends StatelessWidget {
           const SizedBox(width: 8),
           // Commit button
           ElevatedButton.icon(
-            onPressed: canCommit ? onCommit : null,
-            icon:  const Icon(Icons.check_circle_outline_rounded, size: 18),
-            label: const Text('Commit Trade'),
+            onPressed: (canCommit && !committing) ? onCommit : null,
+            icon: committing
+                ? const SizedBox(
+                    width: 16, height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.black,
+                    ),
+                  )
+                : const Icon(Icons.check_circle_outline_rounded, size: 18),
+            label: Text(committing ? 'Committing…' : 'Commit Trade'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: canCommit
+              backgroundColor: (canCommit && !committing)
                   ? AppTheme.profitColor
                   : AppTheme.borderColor,
-              foregroundColor: canCommit
+              foregroundColor: (canCommit && !committing)
                   ? Colors.black
                   : AppTheme.neutralColor,
               padding: const EdgeInsets.symmetric(

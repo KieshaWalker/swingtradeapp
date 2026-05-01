@@ -4,7 +4,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/schwab/schwab_models.dart';
-import '../../../services/schwab/schwab_service.dart';
+import '../../../services/schwab/schwab_providers.dart';
 import '../models/vol_surface_models.dart';
 import '../services/vol_surface_parser.dart';
 import '../services/vol_surface_repository.dart';
@@ -40,23 +40,27 @@ final volSurfaceProvider =
 );
 
 /// Called from OptionsChainScreen once per chain load to silently persist a
-/// vol surface snapshot from the already-fetched chain. Pass the live chain
-/// so the heatmap always reflects exactly what the options chain screen shows.
-/// If the chain has too few strikes (user narrowed the view), a fresh wide
-/// fetch is done at strikeCount: 40 to ensure surface coverage.
+/// vol surface snapshot. If the chain has fewer than 15 strikes per expiry
+/// (user narrowed the view), a fresh wide fetch (strikeCount: 40) is done
+/// via the Riverpod provider so the vol surface has full coverage.
 /// Errors are swallowed to never disrupt the UI.
 Future<void> autoIngestVolSurface(
   String symbol, {
   SchwabOptionsChain? chain,
+  WidgetRef? ref,
 }) async {
   try {
     SchwabOptionsChain? source = chain;
-    if (source == null || source.expirations.length < 2) {
-      source = await SchwabService().getOptionsChain(
-        symbol,
+    final hasEnoughStrikes = source != null &&
+        source.expirations.isNotEmpty &&
+        source.expirations.first.calls.length >= 15;
+
+    if (!hasEnoughStrikes) {
+      source = await ref?.read(schwabOptionsChainProvider(OptionsChainParams(
+        symbol:       symbol,
         contractType: 'ALL',
-        strikeCount: 40,
-      );
+        strikeCount:  40,
+      )).future);
     }
     if (source == null || source.expirations.isEmpty) return;
     final snap = VolSurfaceParser.fromChain(source);

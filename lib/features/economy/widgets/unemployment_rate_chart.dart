@@ -16,14 +16,18 @@ import '../providers/api_data_providers.dart';
 
 const _lineColor = Color(0xFFFF7B72); // red
 
-class UnemploymentRateChart extends ConsumerWidget {
+class UnemploymentRateChart extends ConsumerStatefulWidget {
   const UnemploymentRateChart({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final storageAsync = ref.watch(unemploymentRateHistoryProvider);
+  ConsumerState<UnemploymentRateChart> createState() =>
+      _UnemploymentRateChartState();
+}
 
-    // When fresh BLS data arrives, persist and refresh storage.
+class _UnemploymentRateChartState extends ConsumerState<UnemploymentRateChart> {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     ref.listen<AsyncValue>(blsEmploymentProvider, (_, next) {
       next.whenData((resp) async {
         await ref
@@ -32,6 +36,11 @@ class UnemploymentRateChart extends ConsumerWidget {
         ref.invalidate(unemploymentRateHistoryProvider);
       });
     });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final storageAsync = ref.watch(unemploymentRateHistoryProvider);
 
     return storageAsync.when(
       loading: () => const _ChartFrame(
