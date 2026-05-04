@@ -84,9 +84,13 @@ class ArbCheckResult:
         return max((abs(v.convexity_value) for v in self.butterfly_violations), default=0.0)
 
 
-def _otm_iv(point: dict) -> float | None:
-    """Use callIv if available, then putIv. Matches ArbChecker._otmIv()."""
-    v = point.get("callIv") or point.get("call_iv") or point.get("putIv") or point.get("put_iv")
+def _otm_iv(point: dict, spot: float) -> float | None:
+    """OTM convention: call IV for K≥spot, put IV for K<spot."""
+    strike = float(point.get("strike") or 0)
+    if strike >= spot:
+        v = point.get("callIv") or point.get("call_iv") or point.get("putIv") or point.get("put_iv")
+    else:
+        v = point.get("putIv") or point.get("put_iv") or point.get("callIv") or point.get("call_iv")
     return float(v) if v is not None else None
 
 
@@ -121,16 +125,16 @@ def check(
         return ArbCheckResult(calendar_violations=[], butterfly_violations=[])
 
     return ArbCheckResult(
-        calendar_violations=_check_calendar(points),
+        calendar_violations=_check_calendar(points, spot),
         butterfly_violations=_check_butterfly(points, spot, r),
     )
 
 
-def _check_calendar(points: list[dict]) -> list[CalendarViolation]:
+def _check_calendar(points: list[dict], spot: float) -> list[CalendarViolation]:
     """Calendar arb: w²(T) = σ²·T must be non-decreasing in T for each strike."""
     by_strike: dict[float, list[tuple[int, float]]] = {}
     for p in points:
-        iv = _otm_iv(p)
+        iv = _otm_iv(p, spot)
         if iv is None or iv <= 0:
             continue
         strike = float(p.get("strike", 0))
@@ -169,7 +173,7 @@ def _check_butterfly(points: list[dict], spot: float, r: float = DEFAULT_R) -> l
     """Butterfly arb: call prices C(K) must be convex in K at each fixed DTE."""
     by_dte: dict[int, list[tuple[float, float]]] = {}
     for p in points:
-        iv = _otm_iv(p)
+        iv = _otm_iv(p, spot)
         if iv is None or iv <= 0:
             continue
         strike = float(p.get("strike", 0))

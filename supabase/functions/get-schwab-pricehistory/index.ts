@@ -39,7 +39,10 @@ Deno.serve(async (req) => {
 
     const resp = await fetch(
       `https://api.schwabapi.com/marketdata/v1/pricehistory?${params}`,
-      { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } },
+      {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(20_000),
+      },
     )
 
     const text = await resp.text()

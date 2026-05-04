@@ -65,7 +65,11 @@ Future<void> autoIngestVolSurface(
     if (source == null || source.expirations.isEmpty) return;
     final snap = VolSurfaceParser.fromChain(source);
     if (snap.points.isEmpty) return;
-    await VolSurfaceRepository(Supabase.instance.client).save(snap);
+    if (ref != null) {
+      await ref.read(volSurfaceProvider.notifier).save(snap);
+    } else {
+      await VolSurfaceRepository(Supabase.instance.client).save(snap);
+    }
   } catch (_) {
     // Never disrupt the options chain UI on ingestion failure.
   }

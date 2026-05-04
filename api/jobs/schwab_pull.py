@@ -525,6 +525,7 @@ def _upsert_vol_surface(
             "obs_date":   today,
             "spot_price": spot,
             "points":     points,
+            "parsed_at": datetime.now(timezone.utc).isoformat(),
         },
         on_conflict="user_id,ticker,obs_date",
     ).execute()
@@ -693,7 +694,10 @@ async def _fetch_schwab_closes(
             timeout=30.0,
         )
         if resp.status_code != 200:
-            log.warning("pricehistory_failed ticker=%s status=%s", ticker, resp.status_code)
+            log.warning(
+                "pricehistory_failed ticker=%s status=%s body=%s",
+                ticker, resp.status_code, resp.text[:400],
+            )
             return [], []
         data = resp.json()
         return data.get("closes", []), data.get("volumes", [])
