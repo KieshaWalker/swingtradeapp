@@ -69,7 +69,16 @@ app.add_middleware(
 async def unhandled_exception_handler(request: Request, exc: Exception):
     # Without this, Starlette's ServerErrorMiddleware returns the 500 response
     # before CORSMiddleware can inject Access-Control-Allow-Origin headers.
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    import traceback
+    import logging
+    _log = logging.getLogger(__name__)
+    _log.error(f"Unhandled exception: {exc}", exc_info=True)
+    _log.error(traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+        headers={"Access-Control-Allow-Origin": "*"}
+    )
 
 app.include_router(black_scholes.router, prefix="/bs", tags=["Black-Scholes"])
 app.include_router(sabr.router, prefix="/sabr", tags=["SABR"])

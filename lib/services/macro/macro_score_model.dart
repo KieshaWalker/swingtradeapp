@@ -1,23 +1,23 @@
 // =============================================================================
 // services/macro/macro_score_model.dart
 // =============================================================================
-// Macro market regime scoring model.
+// Macro market regime scoring model — deserializes the Python backend response.
 //
-// Score components (total 100 pts):
-//   VIX Level          — 20 pts  (VIXY quote history, Z-score normalized)
-//   Yield Curve 2s10s  — 15 pts  (10Y - 2Y treasury spread, Z-score)
-//   Fed Trajectory     — 15 pts  (fed funds 6-month delta, Z-score)
-//   SPY Trend          — 15 pts  (price vs 30-day MA, Z-score)
-//   Dollar (UUP)       — 10 pts  (UUP 30-day trend, Z-score)
-//   Credit (HYG)       — 15 pts  (HYG 30-day trend, Z-score)
-//   Gold/Copper        — 10 pts  (COPX vs GC=F ratio trend, Z-score)
+// Score components (total 100 pts, 8 signals):
+//   VIX Level, Yield Curve 2s10s, Fed Trajectory, SPY Trend,
+//   Dollar (DXY), HY Credit OAS, IG Credit OAS, Gold/Copper
+//
+// Component weights are IC-calibrated by the Python backend (Spearman IC vs
+// SPY 21d forward returns). Falls back to equal weights (12.5 each) when
+// history is insufficient. Weights arrive per-component via max_score in the
+// API response — do not hardcode them here.
 //
 // Regimes (5 tiers):
-//   86–100  Risk-On        — momentum, long calls, debit spreads
+//   86–100  Risk-On         — momentum, long calls, debit spreads
 //   71–85   Neutral-Bullish — mild tailwinds, favor bulls but be selective
-//   45–70   Neutral        — iron condors, defined-risk, wait for setups
-//   30–44   Caution        — reduce size, hedge, favor bears
-//   0–29    Crisis         — sell premium (high IV), protect open trades
+//   45–70   Neutral         — iron condors, defined-risk, wait for setups
+//   30–44   Caution         — reduce size, hedge, favor bears
+//   0–29    Crisis          — sell premium (high IV), protect open trades
 // =============================================================================
 
 enum MacroRegime { riskOn, neutralBullish, neutral, caution, crisis }
@@ -130,6 +130,7 @@ class MacroScore {
   final DateTime computedAt;
   final bool hasEnoughData;        // false if Supabase tables are empty
   final bool usedZScores;          // true if most components used Z-score normalization
+  final String weightsSource;      // "ic_calibrated" | "equal"
 
   const MacroScore({
     required this.total,
@@ -138,6 +139,7 @@ class MacroScore {
     required this.computedAt,
     this.hasEnoughData = true,
     this.usedZScores = false,
+    this.weightsSource = 'equal',
   });
 
   static MacroScore empty() => MacroScore(
@@ -157,13 +159,14 @@ class MacroScore {
   }
 
   factory MacroScore.fromJson(Map<String, dynamic> j) => MacroScore(
-    total:         (j['total']          as num?  ?? 50).toDouble(),
-    regime:        regimeFor((j['total'] as num? ?? 50).toDouble()),
-    components:    (j['components']     as List? ?? [])
+    total:         (j['total']          as num?    ?? 50).toDouble(),
+    regime:        regimeFor((j['total'] as num?   ?? 50).toDouble()),
+    components:    (j['components']     as List?   ?? [])
         .map((c) => MacroSubScore.fromJson(c as Map<String, dynamic>))
         .toList(),
     computedAt:    DateTime.now(),
-    hasEnoughData: j['has_enough_data'] as bool? ?? false,
-    usedZScores:   j['used_z_scores']   as bool? ?? false,
+    hasEnoughData: j['has_enough_data'] as bool?   ?? false,
+    usedZScores:   j['used_z_scores']   as bool?   ?? false,
+    weightsSource: j['weights_source']  as String? ?? 'equal',
   );
 }

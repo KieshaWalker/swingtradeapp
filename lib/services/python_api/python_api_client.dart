@@ -366,7 +366,7 @@ class PythonApiClient {
 
   // ── Macro Score ────────────────────────────────────────────────────────────
 
-  /// Returns {total, regime, has_enough_data, used_z_scores, components: [...]}
+  /// Returns {total, regime, has_enough_data, used_z_scores, weights_source, components: [...]}
   static Future<Map<String, dynamic>> macroScore() =>
       _post('/macro/score', {});
 

@@ -21,29 +21,30 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const token          = await getValidToken(supabaseUrl, serviceRoleKey)
 
-    // Convert calendar days needed → a start date far enough back.
-    // trading days ≈ 70% of calendar days; add 50% buffer to be safe.
-    const calendarDays = Math.ceil(days * 1.5) + 10
-    const startDate    = new Date()
-    startDate.setDate(startDate.getDate() - calendarDays)
-
-    // When startDate is provided Schwab ignores periodType/period, but some
-    // symbols return 400 if periodType is present alongside startDate.
+    // Request 1 year of daily candles. Schwab requires periodType=year (or month)
+    // for frequencyType=daily — using startDate without periodType causes Schwab
+    // to default to periodType=DAY (intraday) which rejects frequencyType=daily.
+    // We trim to the last `days` candles below.
     const params = new URLSearchParams({
       symbol,
+      periodType:    'year',
+      period:        '1',
       frequencyType: 'daily',
       frequency:     '1',
-      startDate:     String(startDate.getTime()),
       needExtendedHoursData: 'false',
     })
 
-    const resp = await fetch(
-      `https://api.schwabapi.com/marketdata/v1/pricehistory?${params}`,
-      {
-        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(20_000),
-      },
-    )
+    const ac  = new AbortController()
+    const tid = setTimeout(() => ac.abort(), 15_000)
+    let resp: Response
+    try {
+      resp = await fetch(
+        `https://api.schwabapi.com/marketdata/v1/pricehistory?${params}`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }, signal: ac.signal },
+      )
+    } finally {
+      clearTimeout(tid)
+    }
 
     const text = await resp.text()
     if (!resp.ok) return _error(`Schwab API error ${resp.status}: ${text}`, resp.status)
