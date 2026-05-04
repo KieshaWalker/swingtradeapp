@@ -1,5 +1,22 @@
 from __future__ import annotations
 
+# =============================================================================
+# routers/fair_value.py
+# =============================================================================
+# Backend route for fair value computations.
+# If the API request/response schema changes here, update:
+#   lib/services/python_api/python_api_client.dart -> fairValueCompute()
+#   lib/services/python_api/python_api_client.dart -> sabrCalibrate()
+#
+# If ticker is provided, this module reads from Supabase table:
+#   heston_calibrations
+#
+# Referenced by:
+#   api/services/fair_value_engine.py
+#   api/routers/fair_value.py
+#   lib/services/python_api/python_api_client.dart
+# =============================================================================
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 

@@ -110,10 +110,3 @@ SABR_RECAL_INTERVAL_MINUTES: int = 30
 # are calibrated for index and large-cap equity underlyings (SPY, QQQ, large-caps
 # with GEX > $100M). Do not apply to small/mid-cap without recalibrating.
 MIN_MEANINGFUL_TOTAL_GEX_USD: float = 100_000_000  # $100M minimum absolute GEX
-
-
-
-# ── Risk-Neutral Density (Breeden-Litzenberger) ────────────────────────────
-RND_STRIKE_HALF_WIDTH_PCT: float = 0.30  # ±30% of spot — SABR extrapolates stably here
-RND_NUM_GRID_POINTS: int = 200           # 200-pt grid → ~0.3% spacing
-RND_FD_STEP_PCT: float = 0.005          # Central-diff h = 0.5% of spot

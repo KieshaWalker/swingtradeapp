@@ -1,10 +1,30 @@
 from __future__ import annotations
 
+# =============================================================================
+# routers/iv_analytics.py
+# =============================================================================
+# POST /iv/analytics -> iv_analytics_endpoint
+# POST /iv/snapshot  -> iv_snapshot_endpoint
+#
+# Schema and persistence notes:
+#   IvAnalyticsRequest and IvSnapshotRequest define the request payloads used
+#   by lib/services/python_api/python_api_client.dart through ivAnalytics()
+#   and ivSnapshot(). If any request field changes, update the Dart client.
+#
+#   /iv/snapshot writes to Supabase table iv_snapshots. If the table schema or
+#   persisted field set changes, update this endpoint and any Supabase helpers.
+#
+# Related files:
+#   api/services/iv_analytics.py   -> analyse() implementation
+#   api/core/supabase_client.py    -> Supabase connection
+#   lib/services/python_api/python_api_client.dart -> Dart request/response mappings
+#   lib/services/macro/macro_score_provider.dart  -> consumes IV analytics output indirectly
+# =============================================================================
+
 from datetime import date
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from core.constants import DEFAULT_R
 from services.iv_analytics import analyse
 from core.supabase_client import get_supabase
 
@@ -21,33 +41,6 @@ class IvSnapshotRequest(IvAnalyticsRequest):
     ticker: str
     obs_date: str | None = None
 
-
-def _rnd_slice_to_dict(s) -> dict:
-    return {
-        "dte": s.dte,
-        "expiry": s.expiry,
-        "sabr_alpha": s.sabr_alpha,
-        "sabr_rho": s.sabr_rho,
-        "sabr_nu": s.sabr_nu,
-        "sabr_rmse": s.sabr_rmse,
-        "reliable": s.reliable,
-        "moments": {
-            "mean": s.moments.mean,
-            "variance": s.moments.variance,
-            "implied_vol": s.moments.implied_vol,
-            "skewness": s.moments.skewness,
-            "kurtosis": s.moments.kurtosis,
-        },
-        "strikes": [
-            {
-                "strike": p.strike,
-                "density": p.density,
-                "prob_above": p.prob_above,
-                "prob_below": p.prob_below,
-            }
-            for p in s.strikes
-        ],
-    }
 
 
 def _result_to_dict(result, spot: float = 0.0) -> dict:
@@ -77,7 +70,12 @@ def _result_to_dict(result, spot: float = 0.0) -> dict:
         "delta_gex": result.delta_gex,
         "gamma_slope": result.gamma_slope.value,
         "iv_gex_signal": result.iv_gex_signal.value,
-        "put_wall_density": result.put_wall_density,
+        "put_wall_density":   result.put_wall_density,
+        "underlying_price":   spot,
+        "gex_0dte":           result.gex_0dte,
+        "gex_0dte_pct":       result.gex_0dte_pct,
+        "volatility_trigger": result.volatility_trigger,
+        "spot_to_vt_pct":     result.spot_to_vt_pct,
         "gex_strikes": [
             {
                 "strike": g.strike,
@@ -89,7 +87,36 @@ def _result_to_dict(result, spot: float = 0.0) -> dict:
             }
             for g in result.gex_strikes
         ],
-        "rnd": [_rnd_slice_to_dict(s) for s in result.rnd],
+        "second_order": [
+            {
+                "strike":     s.strike,
+                "call_oi":    s.call_oi,
+                "put_oi":     s.put_oi,
+                "call_vanna": s.call_vanna,
+                "put_vanna":  s.put_vanna,
+                "call_charm": s.call_charm,
+                "put_charm":  s.put_charm,
+                "call_volga": s.call_volga,
+                "put_volga":  s.put_volga,
+            }
+            for s in result.second_order
+        ],
+        "skew_curve": [
+            {
+                "strike":    p.strike,
+                "moneyness": p.moneyness,
+                "call_iv":   p.call_iv,
+                "put_iv":    p.put_iv,
+            }
+            for p in result.skew_curve
+        ],
+        # Vol-of-vol
+        "vvol_nu":         result.vvol_nu,
+        "vvol_rank":       result.vvol_rank,
+        "vvol_percentile": result.vvol_percentile,
+        "vvol_rating":     result.vvol_rating,
+        "vvol_trend":      result.vvol_trend,
+        "rnd": [s.to_dict() for s in result.rnd],
     }
 
 
@@ -123,21 +150,32 @@ def iv_snapshot_endpoint(req: IvSnapshotRequest):
         # Extended fields (migration 027)
         "iv_rank": result.iv_rank,
         "iv_percentile": result.iv_percentile,
-        "iv_rating": result.rating.value if result.rating else None,
-        "gamma_regime": result.gamma_regime.value if result.gamma_regime else None,
-        "gamma_slope": result.gamma_slope.value if result.gamma_slope else None,
-        "iv_gex_signal": result.iv_gex_signal.value if result.iv_gex_signal else None,
-        "zero_gamma_level": result.zero_gamma_level,
+        "iv_rating":             result.rating.value,
+        "gamma_regime":          result.gamma_regime.value,
+        "gamma_slope":           result.gamma_slope.value,
+        "iv_gex_signal":         result.iv_gex_signal.value,
+        "zero_gamma_level":      result.zero_gamma_level,
         "spot_to_zero_gamma_pct": result.spot_to_zero_gamma_pct,
-        "delta_gex": result.delta_gex,
-        "put_wall_density": result.put_wall_density,
-        "vanna_regime": result.vanna_regime.value if result.vanna_regime else None,
+        "delta_gex":             result.delta_gex,
+        "put_wall_density":      result.put_wall_density,
+        "vanna_regime":          result.vanna_regime.value,
         "total_vex": result.total_vex,
         "total_cex": result.total_cex,
         "total_volga": result.total_volga,
         "max_vex_strike": result.max_vex_strike,
         "skew_avg_52w": result.skew_avg_52w,
         "skew_z_score": result.skew_z_score,
-        "rnd": [_rnd_slice_to_dict(s) for s in result.rnd] or None,
+        "rnd": [s.to_dict() for s in result.rnd] or None,
+        # Institutional GEX fields (migration 029)
+        "gex_0dte":           result.gex_0dte,
+        "gex_0dte_pct":       result.gex_0dte_pct,
+        "volatility_trigger": result.volatility_trigger,
+        "spot_to_vt_pct":     result.spot_to_vt_pct,
+        # Vol-of-vol (migration 028)
+        "vvol_nu":         result.vvol_nu,
+        "vvol_rank":       result.vvol_rank,
+        "vvol_percentile": result.vvol_percentile,
+        "vvol_rating":     result.vvol_rating,
+        "vvol_trend":      result.vvol_trend,
     }, on_conflict="ticker,date").execute()
     return {**_result_to_dict(result, spot), "persisted": True, "date": today}

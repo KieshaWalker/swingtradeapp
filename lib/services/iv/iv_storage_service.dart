@@ -3,8 +3,9 @@
 // =============================================================================
 // Supabase I/O for iv_snapshots table.
 //
-//  saveSnapshot()   — upsert today's snapshot (called on every chain load)
-//  getHistory()     — last 252 trading days for a ticker (for IVR/IVP)
+//  getHistory()      — last 252 trading days for a ticker (for IVR/IVP)
+//  getLatest()       — single most-recent snapshot for a ticker
+//  getLatestBatch()  — latest snapshot per ticker for watchlist view
 // =============================================================================
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -16,15 +17,6 @@ class IvStorageService {
   factory IvStorageService() => _i;
 
   SupabaseClient get _db => Supabase.instance.client;
-
-  // ── Write ──────────────────────────────────────────────────────────────────
-
-  /// Upsert today's snapshot. Safe to call multiple times — keyed on (ticker, date).
-  Future<void> saveSnapshot(IvSnapshot snap) async {
-    await _db
-        .from('iv_snapshots')
-        .upsert(snap.toJson(), onConflict: 'ticker,date');
-  }
 
   // ── Read ───────────────────────────────────────────────────────────────────
 
@@ -60,18 +52,10 @@ class IvStorageService {
   Future<Map<String, IvSnapshot>> getLatestBatch(List<String> tickers) async {
     if (tickers.isEmpty) return {};
 
-    // Fetch all and keep only the newest per ticker
-    final rows = await _db
-        .from('iv_snapshots')
-        .select()
-        .inFilter('ticker', tickers)
-        .order('date', ascending: false);
-
-    final result = <String, IvSnapshot>{};
-    for (final r in (rows as List)) {
-      final snap = IvSnapshot.fromJson(r as Map<String, dynamic>);
-      result.putIfAbsent(snap.ticker, () => snap);
-    }
-    return result;
+    final snapshots = await Future.wait(tickers.map(getLatest));
+    return {
+      for (var i = 0; i < tickers.length; i++)
+        if (snapshots[i] != null) tickers[i]: snapshots[i]!,
+    };
   }
 }

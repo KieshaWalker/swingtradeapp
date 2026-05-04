@@ -3,6 +3,33 @@
 // =============================================================================
 // HTTP client for the Python math backend (FastAPI on Cloud Run).
 //
+// This file maps Dart feature calls to backend route names and payload shapes.
+// When a backend schema changes, update the matching method here and any
+// callers that build request bodies or consume response objects.
+//
+// Backend route mappings:
+//   /bs/price                -> api/routers/black_scholes.py
+//   /bs/greeks               -> api/routers/black_scholes.py
+//   /sabr/iv                 -> api/routers/sabr.py
+//   /sabr/calibrate          -> api/routers/sabr.py
+//   /fair-value/compute      -> api/routers/fair_value.py
+//   /iv/analytics            -> api/routers/iv_analytics.py
+//   /iv/snapshot             -> api/routers/iv_analytics.py
+//   /realized-vol/compute    -> api/routers/realized_vol.py
+//   /arb/check               -> api/routers/arb.py
+//   /scoring/score           -> api/routers/scoring.py
+//   /scoring/rank            -> api/routers/scoring.py
+//   /decision/analyze        -> api/routers/decision.py
+//   /decision/rank-all       -> api/routers/decision.py
+//   /regime/ml-analyze       -> api/routers/regime.py
+//   /regime/train            -> api/routers/regime.py
+//   /macro/score             -> api/routers/macro.py
+//   /greek-grid/interpret-grid  -> api/routers/greek_grid.py
+//   /greek-grid/interpret-chart -> api/routers/greek_grid.py
+//
+// If a new Python backend feature is added, expose a Dart method here and
+// update the calling widget/provider to use the new response shape.
+// =============================================================================
 // Configure the base URL at build time:
 //   flutter run --dart-define=PYTHON_API_URL=https://swing-options-api-xxx.run.app
 //
@@ -11,6 +38,7 @@
 // to local Dart math during the transition period.
 // =============================================================================
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -42,7 +70,10 @@ class PythonApiClient {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(body),
         )
-        .timeout(const Duration(seconds: 30));
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw PythonApiException('Request timed out', statusCode: 408),
+        );
 
     if (response.statusCode != 200) {
       throw PythonApiException(
@@ -64,7 +95,10 @@ class PythonApiClient {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(body),
         )
-        .timeout(const Duration(seconds: 30));
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw PythonApiException('Request timed out', statusCode: 408),
+        );
 
     if (response.statusCode != 200) {
       throw PythonApiException(

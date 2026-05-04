@@ -117,6 +117,7 @@ def classify_regime(
     breadth_proxy:               float | None = None,
     price_roc5:                  float | None = None,
     total_gex:                   float | None = None,
+    gex_0dte:                    float | None = None,
     gex_0dte_pct:                float | None = None,
 ) -> CurrentRegime:
     """Classify the current market regime and return a StrategyBias."""
@@ -130,6 +131,7 @@ def classify_regime(
         breadth_proxy=breadth_proxy,
         price_roc5=price_roc5,
         total_gex=total_gex,
+        gex_0dte=gex_0dte,
         gex_0dte_pct=gex_0dte_pct,
     )
 

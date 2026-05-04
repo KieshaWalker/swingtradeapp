@@ -22,6 +22,7 @@ import '../widgets/iv_history_chart.dart';
 import '../widgets/iv_rank_gauge.dart';
 import '../widgets/skew_chart.dart';
 import '../widgets/vanna_charm_chart.dart';
+import '../widgets/vvol_card.dart';
 
 class IvScreen extends ConsumerWidget {
   final String symbol;
@@ -61,6 +62,10 @@ class IvScreen extends ConsumerWidget {
             children: [
               // ── IV Rank gauge ────────────────────────────────────────────
               IvRankGauge(analysis: analysis),
+              const SizedBox(height: 16),
+
+              // ── Vol-of-vol rank ──────────────────────────────────────────
+              VvolCard(analysis: analysis),
               const SizedBox(height: 16),
 
               // ── IV History (snapshots over time) ─────────────────────────

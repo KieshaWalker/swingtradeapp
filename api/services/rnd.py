@@ -73,6 +73,33 @@ class RndSlice:
     sabr_rmse: float
     reliable: bool
 
+    def to_dict(self) -> dict:
+        return {
+            "dte": self.dte,
+            "expiry": self.expiry,
+            "sabr_alpha": self.sabr_alpha,
+            "sabr_rho": self.sabr_rho,
+            "sabr_nu": self.sabr_nu,
+            "sabr_rmse": self.sabr_rmse,
+            "reliable": self.reliable,
+            "moments": {
+                "mean": self.moments.mean,
+                "variance": self.moments.variance,
+                "implied_vol": self.moments.implied_vol,
+                "skewness": self.moments.skewness,
+                "kurtosis": self.moments.kurtosis,
+            },
+            "strikes": [
+                {
+                    "strike": p.strike,
+                    "density": p.density,
+                    "prob_above": p.prob_above,
+                    "prob_below": p.prob_below,
+                }
+                for p in self.strikes
+            ],
+        }
+
 
 def compute_rnd_slice(
     sabr_slice: SabrSlice,

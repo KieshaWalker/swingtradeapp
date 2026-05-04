@@ -8,12 +8,16 @@
 // Response shape: { observations: [ { date: "YYYY-MM-DD", value: "14.5" } ] }
 //   Missing values come as "." and are skipped in FredService._parse().
 //
-// FredSeries / FredObservation
-//   → FredService.getSeries(seriesId)
-//   → fredVixProvider, fredGoldProvider, fredSilverProvider,
-//     fredHyOasProvider, fredIgOasProvider, fredSpreadProvider, fredFedFundsProvider
-//   → FredTab (economy/widgets/fred_tab.dart) — historical line charts
-//   → macroScoreProvider (services/macro/macro_score_provider.dart) → POST /macro/score
+// This module defines FRED series constants and value models for all FRED data
+// used by the app. If a new series is introduced, update:
+//   lib/services/fred/fred_providers.dart -> provider for the series
+//   lib/services/fred/fred_service.dart   -> getSeries() parsing behavior
+//   lib/services/fred/fred_storage_service.dart -> saved storage contract
+//   lib/services/fred/fred_models.dart        -> FredSeriesIds and FredStorageIds
+//   lib/services/macro/macro_score_provider.dart -> macro score consumers
+//
+// The FRED IDs here are also referenced by Supabase storage and UI chart logic.
+// =============================================================================
 
 class FredObservation {
   final DateTime date;

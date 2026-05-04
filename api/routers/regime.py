@@ -4,6 +4,18 @@
 # POST /regime/classify    — on-demand single-ticker classification.
 # POST /regime/ml-analyze  — ML-enhanced multi-ticker analysis; 4-bucket.
 # POST /regime/train       — trigger supervised training from Supabase history.
+#
+# Related modules:
+#   api/services/regime_service.py      -> core classification logic and feature computation
+#   api/services/regime_ml_service.py   -> loads the latest trained model and analyzes tickers
+#   api/services/regime_ml_trainer.py   -> trains models from Supabase history and persists them
+#   api/core/supabase_client.py         -> Supabase access for regime features
+#
+# Schema notes:
+#   RegimeRequest defines the incoming payload expected by Flutter and Cloud Scheduler.
+#   RegimeResponse defines the return shape used by the app and persisted outputs.
+#   If any field is added or renamed here, update lib/services/python_api/python_api_client.dart
+#   and any code that constructs /regime/classify or reads /regime/ml-analyze outputs.
 # =============================================================================
 
 from fastapi import APIRouter, HTTPException
@@ -239,26 +251,20 @@ def train_model(req: TrainRequest) -> TrainResponse:
 
 @router.post("/classify", response_model=RegimeResponse)
 async def classify(body: RegimeRequest) -> RegimeResponse:
-    # If caller provides raw VIX closes, compute HMM + derived metrics here.
-    ### we are posting this exactly 
-    ## response_model=RegimeResponse is the output of this function, so we need to fill in the vix fields in the response model.
-    ## the output is to be used in the schwab pull, so we want to compute the vix fields if the closes are provided, otherwise we will just pass through whatever is in the request (which may be None)
-    ## the matching swab pull code is in the regime snapshot section, where it calls classify_regime and passes in the vix fields from the request body. If the closes are provided, we will compute the vix fields here and pass them to classify_regime, which will then include them 
-    # in the regime_snapshots that gets stored in supabase. If the closes are not provided, 
-    # we will just pass through whatever is in the request 
-    # (which may be None) and classify_regime will handle that accordingly.
+    # If caller provides raw VIX closes, compute derived metrics before classification.
+    # This ensures the output RegimeResponse includes the same HMM/R SI fields that
+    # are stored to Supabase regime_snapshots and used by downstream analysis.
+    #
+    # For feature or schema changes, update these locations together:
+    #   api/routers/regime.py
+    #   api/services/regime_service.py
+    #   api/services/regime_ml_service.py
+    #   api/services/regime_ml_trainer.py
     vix_rsi = body.vix_rsi
     vix_10ma = body.vix_10ma
     vix_dev_pct = body.vix_dev_pct
     vix_current = body.vix_current
     hmm_result = None
-    
-## is this section missing hmm_state and hmm_probability? 
-# we need to compute those from the closes if they are provided, 
-# and then pass them to classify_regime so they get stored in the regime_snapshot. 
-# if the closes are not provided, then hmm_result will be None and
-#  classify_regime should handle that case (probably by setting hmm_state 
-# and hmm_probability to None in the snapshot)  
     if body.vix_closes:
         from services.regime_service import compute_wilder_rsi
         closes = [c for c in body.vix_closes if c and c > 0]

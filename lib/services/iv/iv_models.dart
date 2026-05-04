@@ -69,11 +69,11 @@ class GexStrike {
   };
 
   factory GexStrike.fromJson(Map<String, dynamic> j) => GexStrike(
-    strike:    (j['strike']  as num).toDouble(),
-    callOi:    (j['call_oi'] as num? ?? 0).toDouble(),
-    putOi:     (j['put_oi']  as num? ?? 0).toDouble(),
-    callGamma: 0,   // not persisted — reconstructed from GEX + OI
-    putGamma:  0,
+    strike:    (j['strike']     as num).toDouble(),
+    callOi:    (j['call_oi']    as num? ?? 0).toDouble(),
+    putOi:     (j['put_oi']     as num? ?? 0).toDouble(),
+    callGamma: (j['call_gamma'] as num? ?? 0).toDouble(),
+    putGamma:  (j['put_gamma']  as num? ?? 0).toDouble(),
   );
 
   // Convenience getter for reading persisted GEX value directly
@@ -161,6 +161,18 @@ class SecondOrderStrike {
     final putVolgaEx  = putOi  * putVolga  * 100;
     return callVolgaEx - putVolgaEx;
   }
+
+  factory SecondOrderStrike.fromJson(Map<String, dynamic> j) => SecondOrderStrike(
+    strike:    (j['strike']     as num).toDouble(),
+    callOi:    (j['call_oi']    as num? ?? 0).toDouble(),
+    putOi:     (j['put_oi']     as num? ?? 0).toDouble(),
+    callVanna: (j['call_vanna'] as num? ?? 0).toDouble(),
+    putVanna:  (j['put_vanna']  as num? ?? 0).toDouble(),
+    callCharm: (j['call_charm'] as num? ?? 0).toDouble(),
+    putCharm:  (j['put_charm']  as num? ?? 0).toDouble(),
+    callVolga: (j['call_volga'] as num? ?? 0).toDouble(),
+    putVolga:  (j['put_volga']  as num? ?? 0).toDouble(),
+  );
 }
 
 // =============================================================================
@@ -277,6 +289,13 @@ class SkewPoint {
   double? get skewDelta => (putIv != null && callIv != null)
       ? putIv! - callIv!
       : null;
+
+  factory SkewPoint.fromJson(Map<String, dynamic> j) => SkewPoint(
+    strike:    (j['strike']    as num).toDouble(),
+    moneyness: (j['moneyness'] as num).toDouble(),
+    putIv:     (j['put_iv']    as num?)?.toDouble(),
+    callIv:    (j['call_iv']   as num?)?.toDouble(),
+  );
 }
 
 /// Persisted snapshot stored in Supabase iv_snapshots.
@@ -311,6 +330,9 @@ class IvSnapshot {
   final double? skewAvg52w;
   final double? skewZScore;
 
+  // Vol-of-vol (migration 028)
+  final double? vvolNu;
+
   const IvSnapshot({
     required this.ticker,
     required this.date,
@@ -338,6 +360,7 @@ class IvSnapshot {
     this.maxVexStrike,
     this.skewAvg52w,
     this.skewZScore,
+    this.vvolNu,
   });
 
   factory IvSnapshot.fromJson(Map<String, dynamic> j) {
@@ -402,6 +425,7 @@ class IvSnapshot {
       maxVexStrike:       (j['max_vex_strike'] as num?)?.toDouble(),
       skewAvg52w:         (j['skew_avg_52w'] as num?)?.toDouble(),
       skewZScore:         (j['skew_z_score'] as num?)?.toDouble(),
+      vvolNu:             (j['vvol_nu']       as num?)?.toDouble(),
     );
   }
 
@@ -415,6 +439,7 @@ class IvSnapshot {
     'max_gex_strike':   maxGexStrike,
     'put_call_ratio':   putCallRatio,
     'underlying_price': underlyingPrice,
+    'vvol_nu':          vvolNu,
   };
 }
 
@@ -658,6 +683,16 @@ class IvAnalysis {
   // Empty if SABR calibration fails for all expirations.
   final List<RndSlice> rnd;
 
+  // ── Vol-of-vol (SABR ν rank) ─────────────────────────────────────────────
+  // Tracks how volatile the IV surface itself is via the SABR ν parameter.
+  // High vvolRank = the IV surface is wildly moving → widen strikes, size down vega.
+  // Low vvolRank  = IV surface is stable → vol selling conditions are safer.
+  final double? vvolNu;           // SABR ν for ~30 DTE slice (raw value)
+  final double? vvolRank;         // 0–100, mirrors IVR formula on ν history
+  final double? vvolPercentile;   // % of prior days with ν below today
+  final String? vvolRating;       // cheap / fair / elevated / extreme
+  final String? vvolTrend;        // rising / falling / flat
+
   const IvAnalysis({
     required this.ticker,
     required this.currentIv,
@@ -694,6 +729,11 @@ class IvAnalysis {
     this.volatilityTrigger,
     this.spotToVtPct,
     this.rnd = const [],
+    this.vvolNu,
+    this.vvolRank,
+    this.vvolPercentile,
+    this.vvolRating,
+    this.vvolTrend,
   });
 
   factory IvAnalysis.fromJson(Map<String, dynamic> j) {
@@ -769,9 +809,20 @@ class IvAnalysis {
       gex0dtePct:         (j['gex_0dte_pct']        as num?)?.toDouble(),
       volatilityTrigger:  (j['volatility_trigger']  as num?)?.toDouble(),
       spotToVtPct:        (j['spot_to_vt_pct']      as num?)?.toDouble(),
+      secondOrder:        (j['second_order'] as List? ?? [])
+                              .map((e) => SecondOrderStrike.fromJson(e as Map<String, dynamic>))
+                              .toList(),
+      skewCurve:          (j['skew_curve'] as List? ?? [])
+                              .map((e) => SkewPoint.fromJson(e as Map<String, dynamic>))
+                              .toList(),
       rnd:                (j['rnd'] as List? ?? [])
                               .map((e) => RndSlice.fromJson(e as Map<String, dynamic>))
                               .toList(),
+      vvolNu:          (j['vvol_nu']          as num?)?.toDouble(),
+      vvolRank:        (j['vvol_rank']        as num?)?.toDouble(),
+      vvolPercentile:  (j['vvol_percentile']  as num?)?.toDouble(),
+      vvolRating:       j['vvol_rating']       as String?,
+      vvolTrend:        j['vvol_trend']        as String?,
     );
   }
 

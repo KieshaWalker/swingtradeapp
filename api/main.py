@@ -1,6 +1,25 @@
 # =============================================================================
 # main.py — FastAPI application (deployed as Cloud Run)
 # =============================================================================
+# Route registration summary:
+#   /bs        -> api/routers/black_scholes.py
+#   /sabr      -> api/routers/sabr.py
+#   /fair-value-> api/routers/fair_value.py
+#   /iv        -> api/routers/iv_analytics.py
+#   /realized-vol -> api/routers/realized_vol.py
+#   /arb       -> api/routers/arb.py
+#   /scoring   -> api/routers/scoring.py
+#   /decision  -> api/routers/decision.py
+#   /greek-grid-> api/routers/greek_grid.py
+#   /jobs      -> api/routers/scheduler_trigger.py
+#   /regime    -> api/routers/regime.py
+#   /macro     -> api/routers/macro.py
+#
+# Note: add a new router here when introducing a new backend feature.
+#       The router file should define request/response Pydantic models,
+#       and the Flutter client should be updated in lib/services/python_api/
+#       to reflect any request or response schema changes.
+# =============================================================================
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -17,6 +36,11 @@ async def lifespan(app: FastAPI):
     # Attempt to load the latest trained regime ML model into the in-memory
     # inference cache.  Non-fatal: falls back to heuristic scoring if no model
     # is stored or Supabase is unreachable at startup.
+    #
+    # Related files:
+    #   api/services/regime_ml_service.py  - load_trained_model implementation
+    #   api/core/supabase_client.py      - Supabase client singleton used by loaders
+    #   api/routers/regime.py           - regime endpoints that rely on the loaded model
     try:
         from core.supabase_client import get_supabase
         from services.regime_ml_service import load_trained_model

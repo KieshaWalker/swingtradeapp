@@ -77,7 +77,7 @@ async def run_schwab_pull() -> dict:
         log.warning("No watched tickers found — nothing to pull")
         return {"status": "no_tickers"}
 
-    results: dict[str, str] = {}
+    results: dict[str, str | dict[str, str]] = {}
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         # ── Fetch VIX + supplementary vol indexes once per pipeline run ─────────
@@ -255,21 +255,18 @@ async def run_schwab_pull() -> dict:
                 _step("greek_snapshots", lambda: _upsert_greek_snapshots(db, ticker, today, spot, chain, user_id))
 
                 # ── Step 7 (cont): RV + SMA ───────────────────────────────────
-                if closes:
-                    rv = rv_compute(closes)
-                    log.info("rv_computed ticker=%s rv20d=%s rv60d=%s", ticker, rv.rv20d, rv.rv60d)
-
                 clean_closes  = [c for c in closes  if c and c > 0]
                 clean_volumes = [v for v in volumes if v and v > 0]
+
+                if clean_closes:
+                    rv = rv_compute(clean_closes)
+                    log.info("rv_computed ticker=%s rv20d=%s rv60d=%s", ticker, rv.rv20d, rv.rv60d)
 
                 sma10: float | None = (
                     sum(clean_closes[-10:]) / 10 if len(clean_closes) >= 10 else None
                 )
                 sma50: float | None = (
                     sum(clean_closes[-50:]) / 50 if len(clean_closes) >= 50 else None
-                )
-                sma_crossed: bool | None = (
-                    sma10 > sma50 if (sma10 is not None and sma50 is not None) else None
                 )
                 vol_sma3: float | None = (
                     sum(clean_volumes[-3:]) / 3 if len(clean_volumes) >= 3 else None
@@ -588,13 +585,14 @@ def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvo
         "spot_to_zero_gamma_pct": iv_result.spot_to_zero_gamma_pct,
         "delta_gex":             iv_result.delta_gex,
         "put_wall_density":      iv_result.put_wall_density,
-        "vanna_regime":          iv_result.vanna_regime.value if iv_result.vanna_regime else None,
+        "vanna_regime":          iv_result.vanna_regime.value,
         "total_vex":             iv_result.total_vex,
         "total_cex":             iv_result.total_cex,
         "total_volga":           iv_result.total_volga,
         "max_vex_strike":        iv_result.max_vex_strike,
         "skew_avg_52w":          iv_result.skew_avg_52w,
         "skew_z_score":          iv_result.skew_z_score,
+        "rnd":                   [s.to_dict() for s in iv_result.rnd] or None,
     }
     if vvol is not None:
         row.update({

@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timezone
 from services.rnd import RndSlice, compute_rnd_surface
+from services.vvol_analytics import compute as vvol_compute
 from core.chain_utils import normalize_chain
 
 _log = logging.getLogger(__name__)
@@ -60,6 +61,8 @@ class GammaRegime(str, Enum):
 class VannaRegime(str, Enum):
     bullish_on_vol_crush = "bullishOnVolCrush"
     bearish_on_vol_crush = "bearishOnVolCrush"
+    bullish_on_vol_spike = "bullishOnVolSpike"
+    bearish_on_vol_spike = "bearishOnVolSpike"
     unknown = "unknown"
 
 
@@ -195,6 +198,12 @@ class IvAnalysisResult:
     volatility_trigger: float | None  # lowest significant positive-GEX support above ZGL
     spot_to_vt_pct: float | None    # (spot − VT) / spot × 100; <0 = in transition corridor
     rnd: list[RndSlice]             # Breeden-Litzenberger density per DTE; empty if SABR fails
+    # ── Vol-of-vol (SABR ν rank) ────────────────────────────────────────────────
+    vvol_nu: float | None           # current SABR ν for ~30 DTE slice
+    vvol_rank: float | None         # 0–100, mirrors IVR formula on ν series
+    vvol_percentile: float | None   # % of prior days with ν below today
+    vvol_rating: str | None         # cheap / fair / elevated / extreme
+    vvol_trend: str | None          # rising / falling / flat
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -311,8 +320,15 @@ def analyse(
     if total_gex is not None:
         gamma_regime = GammaRegime.positive if total_gex >= 0 else GammaRegime.negative
     if total_vex is not None:
-        vanna_regime = (VannaRegime.bullish_on_vol_crush if total_vex >= 0
-                        else VannaRegime.bearish_on_vol_crush)
+        vol_spike_env = iv_rank is not None and iv_rank <= 50
+        if vol_spike_env:
+            # Low IV: dealers are short vanna; a vol spike forces delta adjustments
+            # in the opposite direction — negative VEX becomes bullish
+            vanna_regime = (VannaRegime.bullish_on_vol_spike if total_vex < 0
+                            else VannaRegime.bearish_on_vol_spike)
+        else:
+            vanna_regime = (VannaRegime.bullish_on_vol_crush if total_vex >= 0
+                            else VannaRegime.bearish_on_vol_crush)
 
     # ── Advanced GEX metrics ───────────────────────────────────────────────────
     # Use longer-dated strikes for ZGL: 0DTE gamma is intraday noise for multi-day
@@ -343,6 +359,27 @@ def analyse(
     iv_gex_signal = _compute_iv_gex_signal(gamma_regime, iv_percentile)
     put_wall_density = _compute_put_wall_density(gex_strikes, spot)
     rnd_slices = compute_rnd_surface(expirations=expirations, spot=spot, r=r)
+
+    # ── Vol-of-vol rank ────────────────────────────────────────────────────────
+    # Pick the ~30 DTE RND slice's SABR ν as today's vol-of-vol reading.
+    # Use vvol_nu from prior iv_snapshots rows as the historical ν series.
+    vvol_nu: float | None = None
+    vvol_rank_val: float | None = None
+    vvol_percentile_val: float | None = None
+    vvol_rating_val: str | None = None
+    vvol_trend_val: str | None = None
+    if rnd_slices:
+        atm_slice = min(rnd_slices, key=lambda s: abs(s.dte - 30))
+        nu_current = atm_slice.sabr_nu
+        nu_history = [float(h["vvol_nu"]) for h in history if h.get("vvol_nu") is not None]
+        if nu_current > 0:
+            vvol_result = vvol_compute(nu_current, nu_history)
+            if vvol_result is not None:
+                vvol_nu = vvol_result.nu_current
+                vvol_rank_val = vvol_result.vvol_rank
+                vvol_percentile_val = vvol_result.vvol_percentile
+                vvol_rating_val = vvol_result.vvol_rating
+                vvol_trend_val = vvol_result.nu_trend
 
     return IvAnalysisResult(
         ticker=ticker,
@@ -379,6 +416,11 @@ def analyse(
         volatility_trigger=volatility_trigger,
         spot_to_vt_pct=spot_to_vt_pct,
         rnd=rnd_slices,
+        vvol_nu=vvol_nu,
+        vvol_rank=vvol_rank_val,
+        vvol_percentile=vvol_percentile_val,
+        vvol_rating=vvol_rating_val,
+        vvol_trend=vvol_trend_val,
     )
 
 
@@ -505,17 +547,10 @@ def _compute_gex(expirations: list[dict], spot: float) -> list[GexStrike]:
 
         put_gamma = 0.0
         if put_oi > 0:
-            for p in puts[:3]:  # DEBUG: sample raw Schwab put gamma
-                _log.warning("DEBUG put gamma raw: strike=%s exp=%s gamma=%s oi=%s",
-                             p.get("strikePrice"), p.get("expirationDate"),
-                             p.get("gamma"), p.get("openInterest"))
             put_gamma = sum(float(p.get("gamma", 0)) * float(p.get("openInterest", 0)) for p in puts) / put_oi
-
 
         gex_strike = GexStrike(strike=strike, call_oi=call_oi, put_oi=put_oi,
                                call_gamma=call_gamma, put_gamma=put_gamma)
-        _log.warning("DEBUG GEX strike=%.1f callOI=%.0f callGamma=%.6f putOI=%.0f putGamma=%.6f gex=%.4f",
-                     strike, call_oi, call_gamma, put_oi, put_gamma, gex_strike.dealer_gex(spot))
         results.append(gex_strike)
     return results
 

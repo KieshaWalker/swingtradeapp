@@ -74,9 +74,12 @@ final ivWatchlistProvider =
 /// Called once per chain load to silently persist an IV snapshot via Python.
 Future<void> autoIngestIv(SchwabOptionsChain chain) async {
   try {
+    final history = await IvStorageService().getHistory(chain.symbol);
+    final historyMaps = history.map((s) => s.toJson()).toList();
     await PythonApiClient.ivSnapshot(
-      chain:  chain.rawJson,
-      ticker: chain.symbol,
+      chain:   chain.rawJson,
+      ticker:  chain.symbol,
+      history: historyMaps,
     );
   } catch (_) {
     // Silent — IV ingestion should never crash the chain screen

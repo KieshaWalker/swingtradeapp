@@ -1,6 +1,19 @@
 // =============================================================================
 // services/fred/fred_providers.dart
 // =============================================================================
+// This file exposes Riverpod providers for fetching FRED series data.
+// When FRED series IDs or storage requirements change, update the following:
+//   lib/services/fred/fred_models.dart    -> series ID constants and storage IDs
+//   lib/services/fred/fred_service.dart   -> HTTP fetch and parsing logic
+//   lib/services/fred/fred_storage_service.dart -> how series are saved to Supabase
+//   economy/widgets/fred_tab.dart         -> chart consumers
+//   lib/services/macro/macro_score_provider.dart -> macro score consumers
+//
+// The providers are grouped by usage:
+//   • charts + macro score
+//   • snapshot history storage
+//   • economic indicator snapshots
+// =============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'fred_models.dart';
