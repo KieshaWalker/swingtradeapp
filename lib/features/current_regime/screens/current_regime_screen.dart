@@ -883,9 +883,7 @@ class _TickerDetailSheet extends StatelessWidget {
             'SMA Aligned',
             f.smaAligned == null
                 ? '—'
-                : f.smaAligned
-                ? 'Yes (bullish)'
-                : 'No (bearish)',
+                : (f.smaAligned! ? 'Yes (bullish)' : 'No (bearish)'),
           ),
           _DetailRow('VIX Dev', _pct(f.vixDevPct)),
           const Divider(color: Colors.white12, height: 20),
