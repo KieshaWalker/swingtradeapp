@@ -38,6 +38,7 @@ class _OptionDecisionWizardState extends ConsumerState<OptionDecisionWizard> {
   bool _analyzed  = false;
   bool _analyzing = false;
   List<OptionDecisionResult> _results = [];
+  int  _droppedCount = 0;
 
   @override
   void dispose() {
@@ -72,17 +73,21 @@ class _OptionDecisionWizardState extends ConsumerState<OptionDecisionWizard> {
         }
       }
 
-      final results = <OptionDecisionResult>[];
+      final results  = <OptionDecisionResult>[];
+      int   dropped  = 0;
       for (final raw in rawList) {
         final m        = raw as Map<String, dynamic>;
         final sym      = m['symbol'] as String? ?? '';
         final contract = contractMap[sym];
         if (contract != null) {
           results.add(OptionDecisionResult.fromJson(m, contract: contract));
+        } else {
+          dropped++;
+          debugPrint('[Wizard] symbol not found in chain, dropped: "$sym"');
         }
       }
 
-      if (mounted) setState(() { _results = results; _analyzed = true; });
+      if (mounted) setState(() { _results = results; _droppedCount = dropped; _analyzed = true; });
     } catch (_) {
       if (mounted) setState(() => _analyzed = false);
     } finally {
@@ -141,9 +146,10 @@ class _OptionDecisionWizardState extends ConsumerState<OptionDecisionWizard> {
             return const Center(child: CircularProgressIndicator());
           }
           return _analyzed ? _ResultsView(
-            results:    _results,
-            chain:      chain,
-            onReset:    () => setState(() => _analyzed = false),
+            results:      _results,
+            droppedCount: _droppedCount,
+            chain:        chain,
+            onReset:      () => setState(() => _analyzed = false),
           ) : _InputForm(
             formKey:       _formKey,
             direction:     _direction,
@@ -498,11 +504,13 @@ class _HowItWorksCard extends StatelessWidget {
 
 class _ResultsView extends StatelessWidget {
   final List<OptionDecisionResult> results;
+  final int                        droppedCount;
   final SchwabOptionsChain         chain;
   final VoidCallback               onReset;
 
   const _ResultsView({
     required this.results,
+    required this.droppedCount,
     required this.chain,
     required this.onReset,
   });
@@ -525,15 +533,41 @@ class _ResultsView extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: results.length,
-      itemBuilder: (ctx, i) => _DecisionCard(
-        result: results[i],
-        rank:   i + 1,
-        underlyingPrice: chain.underlyingPrice,
-        symbol: chain.symbol,
-      ),
+    return Column(
+      children: [
+        if (droppedCount > 0)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            color: const Color(0xFFFBBF24).withValues(alpha: 0.15),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded,
+                    color: Color(0xFFFBBF24), size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  '$droppedCount result${droppedCount == 1 ? '' : 's'} from the '
+                  'backend could not be matched to a contract and '
+                  '${droppedCount == 1 ? 'was' : 'were'} omitted.',
+                  style: const TextStyle(
+                      color: Color(0xFFFBBF24), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: results.length,
+            itemBuilder: (ctx, i) => _DecisionCard(
+              result: results[i],
+              rank:   i + 1,
+              underlyingPrice: chain.underlyingPrice,
+              symbol: chain.symbol,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

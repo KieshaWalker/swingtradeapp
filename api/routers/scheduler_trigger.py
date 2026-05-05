@@ -125,6 +125,45 @@ async def regime_pull_trigger(request: Request):
     return result
 
 
+@router.post("/expected-move-pull")
+async def expected_move_pull_trigger(request: Request):
+    """Job 9 — EOD chain → expected_move_snapshots (daily/weekly/monthly bands).
+    Cron: 0 21 * * 1-5   (weekdays 9 PM UTC, after US market close)
+
+    Runs ONCE per day at close — not part of the intraday hourly pipeline.
+    Captures closing IV for all three period bands in a single chain fetch.
+    """
+    _verify_scheduler(request)
+    from jobs.expected_move_pull import run_expected_move_pull
+    result = await run_expected_move_pull()
+    log.info("expected_move_pull_complete result=%s", result)
+    return result
+
+
+@router.post("/vol-period-weekly")
+async def vol_period_weekly_trigger(request: Request):
+    """Job 8a — EOD IV + price history → vol_period_snapshots (weekly).
+    Cron: 0 22 * * 5   (Friday 10 PM UTC — 1 hour after expected_move_pull)
+    """
+    _verify_scheduler(request)
+    from jobs.vol_period_pull import run_weekly_vol_period_pull
+    result = await run_weekly_vol_period_pull()
+    log.info("vol_period_weekly_complete result=%s", result)
+    return result
+
+
+@router.post("/vol-period-monthly")
+async def vol_period_monthly_trigger(request: Request):
+    """Job 8b — EOD IV + price history → vol_period_snapshots (monthly).
+    Cron: 0 22 1 * *   (1st of each month 10 PM UTC — 1 hour after expected_move_pull)
+    """
+    _verify_scheduler(request)
+    from jobs.vol_period_pull import run_monthly_vol_period_pull
+    result = await run_monthly_vol_period_pull()
+    log.info("vol_period_monthly_complete result=%s", result)
+    return result
+
+
 @router.post("/regime-train")
 def regime_train_trigger(request: Request):
     """Triggered by Cloud Scheduler weekly (recommended: Sunday 00:00 UTC).

@@ -115,9 +115,15 @@ class OptionDecisionResult {
     );
   }
 
-  static Recommendation _parseRec(String s) => switch (s) {
-    'buy'   => Recommendation.buy,
-    'avoid' => Recommendation.avoid,
-    _       => Recommendation.watch,
-  };
+  static Recommendation _parseRec(String s) {
+    switch (s) {
+      case 'buy':   return Recommendation.buy;
+      case 'avoid': return Recommendation.avoid;
+      case 'watch': return Recommendation.watch;
+      default:
+        // ignore: avoid_print
+        print('[OptionDecisionEngine] unknown recommendation "$s" — defaulting to watch');
+        return Recommendation.watch;
+    }
+  }
 }

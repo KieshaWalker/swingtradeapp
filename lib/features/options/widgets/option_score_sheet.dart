@@ -954,7 +954,7 @@ class _FormulaCheckState extends State<_FormulaCheck> {
     final tailHigh        = tailStress > 0.05;
 
     // Overall score: how many green lights?
-    final greenCount = [baseGood, gravityOk, iceOk, isCoiled && !tailHigh]
+    final greenCount = [baseGood, gravityOk, iceOk, isCoiled, !tailHigh]
         .where((b) => b).length;
     final overallColor = greenCount >= 3
         ? AppTheme.profitColor
@@ -1151,7 +1151,7 @@ class _FormulaCheckState extends State<_FormulaCheck> {
                 borderRadius: BorderRadius.circular(6),
                 border:       Border.all(color: color.withValues(alpha: 0.5)),
               ),
-              child: Text('$greenCount / 4 GREEN',
+              child: Text('$greenCount / 5 GREEN',
                   style: TextStyle(color: color, fontSize: 11,
                       fontWeight: FontWeight.w900, letterSpacing: 0.5)),
             ),

@@ -58,6 +58,7 @@ import '../widgets/add_sr_level_sheet.dart';
 import '../widgets/add_ticker_note_sheet.dart';
 import 'ticker_profile_cards.dart';
 import 'ticker_profile_shared_widgets.dart';
+import '../../iv/widgets/expected_move_chart.dart';
 
 final _tickerIvSnapshotProvider =
     FutureProvider.family<IvSnapshot?, String>((ref, symbol) async {
@@ -409,6 +410,10 @@ class _OverviewTab extends ConsumerWidget {
       children: [
         // IV / Regime / Greek insights
         _TickerInsightsOverview(symbol: symbol),
+        const SizedBox(height: 20),
+
+        // Expected move bands (daily / monthly)
+        ExpectedMoveChart(ticker: symbol),
         const SizedBox(height: 20),
 
         // Next earnings card

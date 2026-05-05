@@ -19,9 +19,9 @@ from dataclasses import dataclass
 
 import numpy as np
 from scipy.optimize import differential_evolution, minimize
+from scipy.special import ndtr as _ndtr
 
 from core.constants import DEFAULT_R
-from services.black_scholes import bs_price
 from services.heston import HestonParams, heston_price_batch
 
 
@@ -39,25 +39,46 @@ class HestonCalibResult:
 
 # ── IV inversion ──────────────────────────────────────────────────────────────
 
-def _bs_iv_bisection(
-    price: float, F: float, K: float, T: float, r: float, is_call: bool
-) -> float | None:
-    """Black-Scholes implied vol via bisection (50 iters, ~1e-7 precision)."""
-    df = math.exp(-r * T)
-    intrinsic = max(df * (F - K), 0.0) if is_call else max(df * (K - F), 0.0)
-    if price <= intrinsic + 1e-10:
-        return None
+def _bs_iv_batch(
+    prices: np.ndarray,
+    F: float,
+    K_arr: np.ndarray,
+    T: float,
+    r: float,
+    is_call_arr: np.ndarray,
+) -> np.ndarray:
+    """Vectorized Black-Scholes IV via bisection — returns NaN for invalid inputs.
 
-    lo, hi = 1e-4, 10.0
+    Replaces per-strike scalar bisection loops; ~50x faster in the calibration
+    objective because all strikes at a given T are solved in 50 numpy array ops.
+    """
+    df = math.exp(-r * T)
+    sqrt_T = math.sqrt(T)
+    log_fk = np.log(F / K_arr)
+
+    intrinsic = np.where(
+        is_call_arr,
+        np.maximum(df * (F - K_arr), 0.0),
+        np.maximum(df * (K_arr - F), 0.0),
+    )
+    valid = prices > intrinsic + 1e-10
+
+    lo = np.full(len(prices), 1e-4)
+    hi = np.full(len(prices), 10.0)
+
     for _ in range(50):
         mid = 0.5 * (lo + hi)
-        p = bs_price(F, K, T, r, mid, is_call)
-        if p < price:
-            lo = mid
-        else:
-            hi = mid
+        sig_sqt = mid * sqrt_T
+        d1 = (log_fk + 0.5 * mid * mid * T) / sig_sqt
+        d2 = d1 - sig_sqt
+        p_call = df * (F * _ndtr(d1) - K_arr * _ndtr(d2))
+        p_put  = df * (K_arr * _ndtr(-d2) - F * _ndtr(-d1))
+        p_mid  = np.where(is_call_arr, p_call, p_put)
+        lo = np.where(p_mid < prices, mid, lo)
+        hi = np.where(p_mid >= prices, mid, hi)
+
     result = 0.5 * (lo + hi)
-    return result if result < 9.99 else None
+    return np.where(valid & (result < 9.99), result, np.nan)
 
 
 # ── Surface parsing (same format as SABR calibrator) ─────────────────────────
@@ -153,14 +174,10 @@ def calibrate_heston(
                 sse += float(len(K_arr))
                 continue
 
-            for i, (price, iv_m, is_c, K) in enumerate(
-                zip(prices, iv_mkt, is_call_arr, K_arr)
-            ):
-                iv_h = _bs_iv_bisection(float(price), F, float(K), T, r, bool(is_c))
-                if iv_h is None:
-                    sse += 1.0
-                else:
-                    sse += (iv_h - iv_m) ** 2
+            iv_h = _bs_iv_batch(prices, F, K_arr, T, r, is_call_arr)
+            nan_mask = np.isnan(iv_h)
+            sse += float(np.sum(nan_mask))
+            sse += float(np.sum((iv_h[~nan_mask] - iv_mkt[~nan_mask]) ** 2))
 
         return sse
 
@@ -178,11 +195,11 @@ def calibrate_heston(
     de_result = differential_evolution(
         _objective,
         bounds,
-        maxiter=300,
+        maxiter=150,
         tol=1e-5,
         seed=42,
         init="sobol",
-        popsize=10,
+        popsize=8,
         workers=1,
         polish=False,
     )
@@ -192,7 +209,7 @@ def calibrate_heston(
         _objective,
         de_result.x,
         method="Nelder-Mead",
-        options={"maxiter": 3000, "fatol": 1e-9, "xatol": 1e-8},
+        options={"maxiter": 1000, "fatol": 1e-9, "xatol": 1e-8},
     )
 
     kappa, theta, xi, rho, V0 = nm_result.x
@@ -206,19 +223,18 @@ def calibrate_heston(
     params = HestonParams(kappa=kappa, theta=theta, xi=xi, rho=rho, V0=V0)
 
     # Final RMSE
-    errors: list[float] = []
+    sq_errors: list[float] = []
     for dte, (F, K_arr, iv_mkt, is_call_arr) in by_dte.items():
         T = dte / 365.0
         try:
             prices = heston_price_batch(F, K_arr, T, r, params, is_call_arr)
         except Exception:
             continue
-        for price, iv_m, is_c, K in zip(prices, iv_mkt, is_call_arr, K_arr):
-            iv_h = _bs_iv_bisection(float(price), F, float(K), T, r, bool(is_c))
-            if iv_h is not None:
-                errors.append(iv_h - iv_m)
+        iv_h = _bs_iv_batch(prices, F, K_arr, T, r, is_call_arr)
+        valid = ~np.isnan(iv_h)
+        sq_errors.extend((iv_h[valid] - iv_mkt[valid]) ** 2)
 
-    rmse = math.sqrt(sum(e ** 2 for e in errors) / len(errors)) if errors else 1.0
+    rmse = math.sqrt(sum(sq_errors) / len(sq_errors)) if sq_errors else 1.0
 
     return HestonCalibResult(
         params=params,

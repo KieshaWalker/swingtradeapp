@@ -591,8 +591,8 @@ class _ContractRow extends StatelessWidget {
   }
 
   Color _deltaColor(double abs) {
-    if (abs >= 0.30 && abs <= 0.50) return AppTheme.profitColor;
-    if (abs >= 0.20 && abs <= 0.60) return const Color(0xFFFBBF24);
+    if (abs >= 0.30 && abs <= 0.60) return AppTheme.profitColor;
+    if (abs >= 0.20 && abs <  0.30) return const Color(0xFFFBBF24);
     return AppTheme.neutralColor;
   }
 
