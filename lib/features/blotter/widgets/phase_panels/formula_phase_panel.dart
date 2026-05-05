@@ -107,9 +107,10 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
 
     final isCall = widget.contractType == ContractType.call;
     final params = OptionsChainParams(
-      symbol:       widget.ticker,
-      contractType: isCall ? 'CALL' : 'PUT',
-      strikeCount:  20,
+      symbol:         widget.ticker,
+      contractType:   isCall ? 'CALL' : 'PUT',
+      strikeCount:    60,
+      expirationDate: widget.expiry,
     );
     final chainAsync = ref.watch(schwabOptionsChainProvider(params));
 
@@ -191,9 +192,9 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
     final contracts = contractType == ContractType.call ? exp.calls : exp.puts;
     if (contracts.isEmpty) return null;
 
-    // Return exact strike or closest
-    return contracts.reduce((a, b) =>
+    final best = contracts.reduce((a, b) =>
         (a.strikePrice - strike).abs() < (b.strikePrice - strike).abs() ? a : b);
+    return (best.strikePrice - strike).abs() <= 1.0 ? best : null;
   }
 
   // ── Phase result computation ─────────────────────────────────────────────────

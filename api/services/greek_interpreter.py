@@ -22,6 +22,7 @@ CAUTION  = "caution"
 
 # strike_band db values
 ATM  = "atm"
+ITM  = "itm"
 OTM  = "otm"
 
 # expiry_bucket db values
@@ -48,6 +49,21 @@ def _greek_fmt(v: float) -> str:
     if abs(v) < 0.001:
         return f"{v:.2e}"
     return f"{v:.3f}"
+
+
+_MIN_PCTILE_N = 5
+
+
+def _pctile_rank(sorted_vals: list[float], value: float) -> int:
+    """Return 0–100 percentile rank of value in sorted_vals, or -1 if too few observations."""
+    if len(sorted_vals) < _MIN_PCTILE_N:
+        return -1
+    rank = sum(1 for v in sorted_vals if v <= value)
+    return round(rank / len(sorted_vals) * 100)
+
+
+def _ctx(pctile: int, n: int) -> str:
+    return f"{pctile}th percentile of {n}-session history"
 
 
 def _build_result(
@@ -122,6 +138,48 @@ def interpret_greek_grid(
     def cell(band: str, bucket: str) -> dict | None:
         return cell_map.get((band, bucket))
 
+    # ── Build per-metric historical series for percentile ranking ─────────────
+    # Each list covers one observation per date so the rank reflects what is
+    # normal for *this ticker*, not an absolute number.
+    iv_spread_hist: list[float] = []   # short − long IV spread (pp)
+    vanna_hist:     list[float] = []   # ATM vanna
+    abs_charm_hist: list[float] = []   # |ATM weekly charm|
+    skew_hist:      list[float] = []   # OTM put IV − OTM call IV (pp)
+
+    for _d, _cells in cells_by_date.items():
+        _cm: dict[tuple[str, str], dict] = {
+            (c["strike_band"], c["expiry_bucket"]): c for c in _cells
+        }
+        _short = _cm.get((ATM, WEEKLY)) or _cm.get((ATM, NEAR_MONTHLY))
+        _long  = (_cm.get((ATM, QUARTERLY)) or _cm.get((ATM, FAR_MONTHLY))
+                  or _cm.get((ATM, MONTHLY)))
+        if _short and _long:
+            _si, _li = _short.get("iv"), _long.get("iv")
+            if _si and _li and _si > 0 and _li > 0:
+                iv_spread_hist.append((_si - _li) * 100)
+
+        _atm = _cm.get((ATM, NEAR_MONTHLY)) or _cm.get((ATM, MONTHLY))
+        if _atm and _atm.get("vanna") is not None:
+            vanna_hist.append(float(_atm["vanna"]))
+
+        _wkly = _cm.get((ATM, WEEKLY))
+        if _wkly and _wkly.get("charm") is not None:
+            abs_charm_hist.append(abs(float(_wkly["charm"])))
+
+        for _bkt in (NEAR_MONTHLY, MONTHLY, FAR_MONTHLY):
+            _oc = _cm.get((OTM, _bkt))
+            _ic = _cm.get((ITM, _bkt))
+            if _oc and _ic:
+                _oi, _ii = _oc.get("iv"), _ic.get("iv")
+                if _oi and _ii and _oi > 0 and _ii > 0:
+                    skew_hist.append((_ii - _oi) * 100)
+                    break
+
+    iv_spread_sorted = sorted(iv_spread_hist)
+    vanna_sorted     = sorted(vanna_hist)
+    abs_charm_sorted = sorted(abs_charm_hist)
+    skew_sorted      = sorted(skew_hist)
+
     # ── TODAY ──────────────────────────────────────────────────────────────────
 
     # 1. IV Term Structure
@@ -132,27 +190,53 @@ def interpret_greek_grid(
 
     if short_iv and long_iv and short_iv > 0 and long_iv > 0:
         spread = (short_iv - long_iv) * 100
-        if spread > 3:
-            today.append(_line(
-                "IV Term Structure",
-                f"Inverted — short-term IV ({_pct(short_iv)}) exceeds long-term "
-                f"({_pct(long_iv)}) by {spread:.1f}pp. Near-term event premium is priced in.",
-                CAUTION,
-            ))
-        elif spread < -3:
-            today.append(_line(
-                "IV Term Structure",
-                f"Normal — long-term IV ({_pct(long_iv)}) > short-term "
-                f"({_pct(short_iv)}). Market pricing stability near-term.",
-                NEUTRAL,
-            ))
+        pctile = _pctile_rank(iv_spread_sorted, spread)
+        n_sp   = len(iv_spread_sorted)
+        if pctile >= 0:
+            ctx = _ctx(pctile, n_sp)
+            if pctile >= 80:
+                today.append(_line(
+                    "IV Term Structure",
+                    f"Inverted — short-term IV ({_pct(short_iv)}) > long-term "
+                    f"({_pct(long_iv)}) by {spread:.1f}pp; {ctx}. Near-term event premium elevated.",
+                    CAUTION,
+                ))
+            elif pctile <= 20:
+                today.append(_line(
+                    "IV Term Structure",
+                    f"Steep contango — long-term IV ({_pct(long_iv)}) well above short "
+                    f"({_pct(short_iv)}); {ctx}. Market pricing near-term stability.",
+                    NEUTRAL,
+                ))
+            else:
+                today.append(_line(
+                    "IV Term Structure",
+                    f"Normal — spread {spread:+.1f}pp; {ctx}. "
+                    "Term structure within typical range for this ticker.",
+                    NEUTRAL,
+                ))
         else:
-            today.append(_line(
-                "IV Term Structure",
-                f"Flat — short ({_pct(short_iv)}) ≈ long ({_pct(long_iv)}). "
-                "Uncertainty distributed evenly across expirations.",
-                NEUTRAL,
-            ))
+            if spread > 3:
+                today.append(_line(
+                    "IV Term Structure",
+                    f"Inverted — short-term IV ({_pct(short_iv)}) exceeds long-term "
+                    f"({_pct(long_iv)}) by {spread:.1f}pp. Near-term event premium is priced in.",
+                    CAUTION,
+                ))
+            elif spread < -3:
+                today.append(_line(
+                    "IV Term Structure",
+                    f"Normal — long-term IV ({_pct(long_iv)}) > short-term "
+                    f"({_pct(short_iv)}). Market pricing stability near-term.",
+                    NEUTRAL,
+                ))
+            else:
+                today.append(_line(
+                    "IV Term Structure",
+                    f"Flat — short ({_pct(short_iv)}) ≈ long ({_pct(long_iv)}). "
+                    "Uncertainty distributed evenly across expirations.",
+                    NEUTRAL,
+                ))
 
     # 2. Gamma Peak
     peak_cell: dict | None = None
@@ -184,72 +268,193 @@ def interpret_greek_grid(
             CAUTION if is_atm and is_short else NEUTRAL,
         ))
 
-    # 3. Skew Bias
-    ref_bucket = NEAR_MONTHLY if cell(OTM, NEAR_MONTHLY) else MONTHLY
-    otm_c = cell(OTM, ref_bucket)
-    otm_delta = otm_c.get("delta") if otm_c else None
-    if otm_delta is not None:
-        if otm_delta > 0.05:
-            today.append(_line(
-                "Skew Bias",
-                f"Call-side demand dominant — net OTM delta +{otm_delta:.2f}. "
-                "Bullish positioning in out-of-the-money strikes.",
-                BULLISH,
-            ))
-        elif otm_delta < -0.05:
-            today.append(_line(
-                "Skew Bias",
-                f"Put-side hedging elevated — net OTM delta {otm_delta:.2f}. "
-                "Bearish protection being built in OTM options.",
-                BEARISH,
-            ))
+    # 3. Skew Bias: compare OTM call IV (strikes above spot → OTM band) vs
+    # OTM put IV (strikes below spot → ITM band). Both cells store the median
+    # IV across contracts at those strikes; by put-call parity, call_iv ≈ put_iv
+    # at the same strike, so band IV ≈ strike IV regardless of contract type.
+    ref_bucket = None
+    for bkt in (NEAR_MONTHLY, MONTHLY, FAR_MONTHLY):
+        if cell(OTM, bkt) and cell(ITM, bkt):
+            ref_bucket = bkt
+            break
+
+    if ref_bucket:
+        otm_c = cell(OTM, ref_bucket)   # strikes 5-15% above spot → OTM calls
+        itm_c = cell(ITM, ref_bucket)   # strikes 5-15% below spot → OTM puts
+        otm_call_iv = otm_c.get("iv") if otm_c else None
+        otm_put_iv  = itm_c.get("iv") if itm_c else None
+
+        if otm_call_iv and otm_put_iv and otm_call_iv > 0 and otm_put_iv > 0:
+            skew_pp = (otm_put_iv - otm_call_iv) * 100
+            pctile  = _pctile_rank(skew_sorted, skew_pp)
+            n_sk    = len(skew_sorted)
+            if pctile >= 0:
+                ctx = _ctx(pctile, n_sk)
+                if pctile >= 80:
+                    today.append(_line(
+                        "Skew Bias",
+                        f"Put demand elevated — OTM put IV {_pct(otm_put_iv)} vs "
+                        f"call IV {_pct(otm_call_iv)} ({skew_pp:+.1f}pp; {ctx}). "
+                        "Market paying an unusually high premium for downside protection.",
+                        BEARISH,
+                    ))
+                elif pctile <= 20:
+                    if skew_pp < 0:
+                        today.append(_line(
+                            "Skew Bias",
+                            f"Call skew — OTM call IV {_pct(otm_call_iv)} above put IV "
+                            f"{_pct(otm_put_iv)} ({skew_pp:+.1f}pp; {ctx}). "
+                            "Unusual call premium; may reflect squeeze or takeover positioning.",
+                            CAUTION,
+                        ))
+                    else:
+                        today.append(_line(
+                            "Skew Bias",
+                            f"Put skew compressing — OTM put IV {_pct(otm_put_iv)} vs call IV "
+                            f"{_pct(otm_call_iv)} ({skew_pp:+.1f}pp; {ctx}). "
+                            "Put premium lower than usual for this ticker; downside hedging demand declining.",
+                            BULLISH,
+                        ))
+                else:
+                    today.append(_line(
+                        "Skew Bias",
+                        f"Normal — OTM put IV {_pct(otm_put_iv)} vs call IV "
+                        f"{_pct(otm_call_iv)} ({skew_pp:+.1f}pp; {ctx}).",
+                        NEUTRAL,
+                    ))
+            else:
+                if skew_pp > 5:
+                    today.append(_line(
+                        "Skew Bias",
+                        f"Downside skew elevated — OTM put IV {_pct(otm_put_iv)} vs "
+                        f"OTM call IV {_pct(otm_call_iv)} ({skew_pp:+.1f}pp). "
+                        "Market paying a meaningful premium for downside protection.",
+                        BEARISH,
+                    ))
+                elif skew_pp > 2:
+                    today.append(_line(
+                        "Skew Bias",
+                        f"Mild put premium — OTM put IV {_pct(otm_put_iv)} vs "
+                        f"OTM call IV {_pct(otm_call_iv)} ({skew_pp:+.1f}pp). "
+                        "Normal negative skew; slight hedging demand present.",
+                        NEUTRAL,
+                    ))
+                elif skew_pp < -1:
+                    today.append(_line(
+                        "Skew Bias",
+                        f"Call skew — OTM call IV {_pct(otm_call_iv)} exceeds "
+                        f"OTM put IV {_pct(otm_put_iv)} ({skew_pp:+.1f}pp). "
+                        "Unusual call premium; may reflect squeeze or takeover speculation.",
+                        CAUTION,
+                    ))
+                else:
+                    today.append(_line(
+                        "Skew Bias",
+                        f"Balanced — OTM put IV {_pct(otm_put_iv)} ≈ "
+                        f"OTM call IV {_pct(otm_call_iv)} ({skew_pp:+.1f}pp).",
+                        NEUTRAL,
+                    ))
 
     # 4. Vanna
     atm_c = cell(ATM, NEAR_MONTHLY) or cell(ATM, MONTHLY)
     vanna = atm_c.get("vanna") if atm_c else None
-    if vanna is not None and abs(vanna) > 0.002:
-        if vanna < -0.005:
-            today.append(_line(
-                "Vanna",
-                f"Negative ATM vanna ({vanna:.3f}) — rising IV will erode call delta. "
-                "Vol expansion is a headwind for long calls.",
-                CAUTION,
-            ))
-        elif vanna > 0.005:
-            today.append(_line(
-                "Vanna",
-                f"Positive ATM vanna (+{vanna:.3f}) — rising IV lifts call delta. "
-                "Vol expansion supports long call positions.",
-                BULLISH,
-            ))
-        elif vanna < 0:
-            today.append(_line(
-                "Vanna",
-                f"Mild negative vanna ({vanna:.3f}) — modest IV sensitivity; "
-                "slight headwind for calls if vol expands.",
-                NEUTRAL,
-            ))
+    if vanna is not None:
+        pctile = _pctile_rank(vanna_sorted, vanna)
+        n_vn   = len(vanna_sorted)
+        if pctile >= 0:
+            ctx = _ctx(pctile, n_vn)
+            if pctile >= 80:
+                today.append(_line(
+                    "Vanna",
+                    f"High positive vanna (+{vanna:.3f}; {ctx}) — rising IV lifts call delta. "
+                    "Vol expansion is an unusually strong tailwind for long calls.",
+                    BULLISH,
+                ))
+            elif pctile <= 20:
+                today.append(_line(
+                    "Vanna",
+                    f"High negative vanna ({vanna:.3f}; {ctx}) — rising IV erodes call delta. "
+                    "Vol expansion is a stronger headwind than usual for long calls.",
+                    CAUTION,
+                ))
+            elif pctile >= 65:
+                today.append(_line(
+                    "Vanna",
+                    f"Mildly positive vanna (+{vanna:.3f}; {ctx}) — slight tailwind for calls if vol expands.",
+                    NEUTRAL,
+                ))
+            elif pctile <= 35:
+                today.append(_line(
+                    "Vanna",
+                    f"Mildly negative vanna ({vanna:.3f}; {ctx}) — slight headwind for calls if vol expands.",
+                    NEUTRAL,
+                ))
+            # 35–65 percentile → no signal; vanna is unremarkable for this ticker
         else:
-            today.append(_line(
-                "Vanna",
-                f"Mild positive vanna (+{vanna:.3f}) — modest IV sensitivity; "
-                "slight tailwind for calls if vol expands.",
-                NEUTRAL,
-            ))
-            
+            if abs(vanna) > 0.002:
+                if vanna < -0.005:
+                    today.append(_line(
+                        "Vanna",
+                        f"Negative ATM vanna ({vanna:.3f}) — rising IV will erode call delta. "
+                        "Vol expansion is a headwind for long calls.",
+                        CAUTION,
+                    ))
+                elif vanna > 0.005:
+                    today.append(_line(
+                        "Vanna",
+                        f"Positive ATM vanna (+{vanna:.3f}) — rising IV lifts call delta. "
+                        "Vol expansion supports long call positions.",
+                        BULLISH,
+                    ))
+                elif vanna < 0:
+                    today.append(_line(
+                        "Vanna",
+                        f"Mild negative vanna ({vanna:.3f}) — modest IV sensitivity; "
+                        "slight headwind for calls if vol expands.",
+                        NEUTRAL,
+                    ))
+                else:
+                    today.append(_line(
+                        "Vanna",
+                        f"Mild positive vanna (+{vanna:.3f}) — modest IV sensitivity; "
+                        "slight tailwind for calls if vol expands.",
+                        NEUTRAL,
+                    ))
+
 
     # 5. Charm (Weekly)
     weekly_c = cell(ATM, WEEKLY)
     charm = weekly_c.get("charm") if weekly_c else None
-    if charm is not None and abs(charm) > 0.01:
-        direction = "delta is declining toward OTM" if charm < 0 else "delta is rising toward ITM"
-        accel     = "Expiry dynamics accelerating." if abs(charm) > 0.05 else "Normal near-expiry erosion."
-        today.append(_line(
-            "Charm (Weekly)",
-            f"ATM weekly charm {charm:.3f} — {direction}  at "
-            f"{abs(charm):.3f}/day. {accel}",
-            CAUTION if abs(charm) > 0.05 else NEUTRAL,
-        ))
+    if charm is not None:
+        abs_charm = abs(charm)
+        direction = "delta eroding toward OTM" if charm < 0 else "delta building toward ITM"
+        pctile    = _pctile_rank(abs_charm_sorted, abs_charm)
+        n_ch      = len(abs_charm_sorted)
+        if pctile >= 0:
+            ctx = _ctx(pctile, n_ch)
+            if pctile >= 80:
+                today.append(_line(
+                    "Charm (Weekly)",
+                    f"Extreme charm ({charm:.3f}; {ctx}) — {direction} at {abs_charm:.3f}/day. "
+                    "Near-expiry delta decay unusually fast for this ticker.",
+                    CAUTION,
+                ))
+            elif pctile >= 65:
+                today.append(_line(
+                    "Charm (Weekly)",
+                    f"Elevated charm ({charm:.3f}; {ctx}) — {direction} at {abs_charm:.3f}/day.",
+                    NEUTRAL,
+                ))
+            # Below 65th percentile → charm is unremarkable; suppress signal
+        else:
+            if abs_charm > 0.01:
+                accel = "Expiry dynamics accelerating." if abs_charm > 0.05 else "Normal near-expiry erosion."
+                today.append(_line(
+                    "Charm (Weekly)",
+                    f"ATM weekly charm {charm:.3f} — {direction} at "
+                    f"{abs_charm:.3f}/day. {accel}",
+                    CAUTION if abs_charm > 0.05 else NEUTRAL,
+                ))
 
     # ── PERIOD ─────────────────────────────────────────────────────────────────
 

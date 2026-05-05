@@ -94,8 +94,22 @@ async def run_schwab_pull() -> dict:
         vvix_10ma: float | None = None
         breadth_proxy: float | None = None              # RSP/SPY 5d return ratio z-score
 
+        # Fetch all supplementary index histories in parallel
+        (
+            (vix_closes, _),
+            (vix3m_closes, _),
+            (vvix_closes, _),
+            (spy_closes, _),
+            (rsp_closes, _),
+        ) = await asyncio.gather(
+            _fetch_schwab_closes(client, edge_base, headers, "$VIX.X",   days=65),
+            _fetch_schwab_closes(client, edge_base, headers, "$VIX3M.X", days=5),
+            _fetch_schwab_closes(client, edge_base, headers, "$VVIX.X",  days=15),
+            _fetch_schwab_closes(client, edge_base, headers, "SPY",      days=25),
+            _fetch_schwab_closes(client, edge_base, headers, "RSP",      days=25),
+        )
+
         # VIX
-        vix_closes, _ = await _fetch_schwab_closes(client, edge_base, headers, "$VIX.X", days=65)
         if vix_closes:
             vix_current = vix_closes[-1]
             ma10_data = vix_closes[-10:] if len(vix_closes) >= 10 else []
@@ -106,22 +120,16 @@ async def run_schwab_pull() -> dict:
             hmm_result = classify_vix_regime(vix_closes)
 
         # VIX3M term structure — ratio <1 = contango (tailwind for premium selling)
-        vix3m_closes, _ = await _fetch_schwab_closes(client, edge_base, headers, "$VIX3M.X", days=5)
         if vix3m_closes and vix_current is not None and vix3m_closes[-1] > 0:
             vix_term_structure_ratio = vix_current / vix3m_closes[-1]
 
         # VVIX — rising above 120 while VIX < 20 is an early regime-transition warning
-        vvix_closes, _ = await _fetch_schwab_closes(client, edge_base, headers, "$VVIX.X", days=15)
         if vvix_closes:
             vvix_current = vvix_closes[-1]
             vvix_ma10 = vvix_closes[-10:] if len(vvix_closes) >= 10 else vvix_closes
             vvix_10ma = sum(vvix_ma10) / len(vvix_ma10)
 
         # Breadth proxy: RSP (equal-weight) vs SPY (cap-weight) 5d return ratio.
-        # When RSP underperforms SPY the market is narrow (few mega-caps driving index).
-        # z-score < -1.5 signals breadth divergence; signals are context-only (no bias override).
-        spy_closes, _ = await _fetch_schwab_closes(client, edge_base, headers, "SPY", days=25)
-        rsp_closes, _ = await _fetch_schwab_closes(client, edge_base, headers, "RSP", days=25)
         if len(spy_closes) >= 10 and len(rsp_closes) >= 10:
             spy_rets = [
                 (spy_closes[i] - spy_closes[i - 5]) / spy_closes[i - 5]
@@ -156,13 +164,10 @@ async def run_schwab_pull() -> dict:
             f"{breadth_proxy:.2f}" if breadth_proxy else "—",
         )
 
-        for row in rows:
+        async def _process_ticker(row: dict) -> tuple[str, str | dict]:
             ticker  = row["ticker"]
             user_id = row["user_id"]
             try:
-                # ── Step 1 & 7: Fetch chain + price history concurrently ───────
-                # Only these two HTTP calls run in parallel; all Supabase calls
-                # remain sequential to avoid blocking the event loop.
                 chain_resp, (closes, volumes) = await asyncio.gather(
                     client.post(
                         f"{edge_base}/get-schwab-chains",
@@ -174,20 +179,17 @@ async def run_schwab_pull() -> dict:
 
                 if chain_resp.status_code != 200:
                     log.error("chain_fetch_failed ticker=%s status=%s", ticker, chain_resp.status_code)
-                    results[ticker] = f"chain_error_{chain_resp.status_code}"
-                    continue
+                    return ticker, f"chain_error_{chain_resp.status_code}"
 
                 chain = chain_resp.json()
                 spot = float(chain.get("underlyingPrice", 0))
                 if spot <= 0:
                     log.warning("zero_spot ticker=%s", ticker)
-                    results[ticker] = "zero_spot"
-                    continue
+                    return ticker, "zero_spot"
 
                 steps: dict[str, str] = {}
 
                 def _step(name: str, fn):
-                    """Run fn(), record ok/err in steps. Exceptions don't abort the ticker."""
                     try:
                         fn()
                         steps[name] = "ok"
@@ -195,24 +197,24 @@ async def run_schwab_pull() -> dict:
                         steps[name] = f"err:{_e!r}"
                         log.error("step_failed ticker=%s step=%s error=%r", ticker, name, _e, exc_info=True)
 
-                # ── Step 2: Vol surface snapshot ──────────────────────────────
+                # ── Step 2: Vol surface ───────────────────────────────────────
                 points = _chain_to_vol_points(chain, spot)
                 _step("vol_surface", lambda: (
                     _upsert_vol_surface(db, ticker, today, spot, points, user_id) if points else None
                 ))
 
-                # ── Step 3: SABR calibration ──────────────────────────────────
-                slices = calibrate_snapshot(spot=spot, points=points)
+                # ── Step 3: SABR (offloaded to thread — CPU-bound) ────────────
+                slices = await asyncio.to_thread(calibrate_snapshot, spot=spot, points=points) if points else []
                 nu_history = _fetch_nu_history(db, ticker, user_id) if slices else []
                 _step("sabr_calibrations", lambda: (
                     _upsert_sabr_calibrations(db, ticker, today, slices, user_id) if slices else None
                 ))
 
-                # ── Step 3b: Heston calibration ───────────────────────────────
+                # ── Step 3b: Heston (offloaded to thread — CPU-bound) ─────────
                 heston_result = None
                 if points:
                     try:
-                        heston_result = calibrate_heston(surface_points=points, spot=spot)
+                        heston_result = await asyncio.to_thread(calibrate_heston, surface_points=points, spot=spot)
                         if heston_result and heston_result.is_reliable:
                             _step("heston_calibrations", lambda: _upsert_heston_calibration(
                                 db, ticker, today, heston_result, user_id  # type: ignore[arg-type]
@@ -245,16 +247,15 @@ async def run_schwab_pull() -> dict:
                 _step("iv_snapshots", lambda: _upsert_iv_snapshot(db, ticker, today, iv_result, spot, vvol))
 
                 # ── Step 5: Greek grid ────────────────────────────────────────
-                obs_date = datetime.now(timezone.utc)
-                cells = grid_ingest(chain, obs_date)
+                cells = grid_ingest(chain, datetime.now(timezone.utc))
                 _step("greek_grid_snapshots", lambda: (
                     _upsert_greek_grid(db, ticker, today, cells, spot, user_id) if cells else None
                 ))
 
-                # ── Step 6: ATM greek snapshots (greek chart time-series) ─────
+                # ── Step 6: ATM greek snapshots ───────────────────────────────
                 _step("greek_snapshots", lambda: _upsert_greek_snapshots(db, ticker, today, spot, chain, user_id))
 
-                # ── Step 7 (cont): RV + SMA ───────────────────────────────────
+                # ── Step 7: RV + SMA ──────────────────────────────────────────
                 clean_closes  = [c for c in closes  if c and c > 0]
                 clean_volumes = [v for v in volumes if v and v > 0]
 
@@ -262,24 +263,15 @@ async def run_schwab_pull() -> dict:
                     rv = rv_compute(clean_closes)
                     log.info("rv_computed ticker=%s rv20d=%s rv60d=%s", ticker, rv.rv20d, rv.rv60d)
 
-                sma10: float | None = (
-                    sum(clean_closes[-10:]) / 10 if len(clean_closes) >= 10 else None
-                )
-                sma50: float | None = (
-                    sum(clean_closes[-50:]) / 50 if len(clean_closes) >= 50 else None
-                )
-                vol_sma3: float | None = (
-                    sum(clean_volumes[-3:]) / 3 if len(clean_volumes) >= 3 else None
-                )
-                vol_sma20: float | None = (
-                    sum(clean_volumes[-20:]) / 20 if len(clean_volumes) >= 20 else None
-                )
-                # 5-day rate of change — leading momentum indicator ahead of SMA cross
+                sma10: float | None = sum(clean_closes[-10:]) / 10 if len(clean_closes) >= 10 else None
+                sma50: float | None = sum(clean_closes[-50:]) / 50 if len(clean_closes) >= 50 else None
+                vol_sma3: float | None  = sum(clean_volumes[-3:])  / 3  if len(clean_volumes) >= 3  else None
+                vol_sma20: float | None = sum(clean_volumes[-20:]) / 20 if len(clean_volumes) >= 20 else None
                 price_roc5: float | None = None
                 if len(clean_closes) >= 6 and clean_closes[-6] > 0:
                     price_roc5 = (clean_closes[-1] - clean_closes[-6]) / clean_closes[-6] * 100
 
-                # ── Step 8: SMA + current regime classification ───────────────
+                # ── Step 8: Regime classification ─────────────────────────────
                 regime = classify_regime(
                     ticker=ticker,
                     gamma_regime=iv_result.gamma_regime.value,
@@ -314,11 +306,14 @@ async def run_schwab_pull() -> dict:
                     ticker, steps,
                     f" ERRORS={any_err}" if any_err else "",
                 )
-                results[ticker] = steps
+                return ticker, steps
 
             except Exception as exc:
                 log.error("ticker_pull_failed ticker=%s error=%r", ticker, exc, exc_info=True)
-                results[ticker] = f"error: {exc}"
+                return ticker, f"error: {exc}"
+
+        ticker_results = await asyncio.gather(*[_process_ticker(row) for row in rows])
+        results = dict(ticker_results)
 
     return {"status": "complete", "tickers": results, "date": today}
 
@@ -420,47 +415,141 @@ def _pct_to_dec(value) -> float | None:
 
 # ── Vol surface helpers ───────────────────────────────────────────────────────
 
+def _fgt0(contract: dict | None, key: str) -> float | None:
+    """Return float field if > 0, else None."""
+    if contract is None:
+        return None
+    v = contract.get(key)
+    try:
+        f = float(v)
+        return f if f > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _fne0(contract: dict | None, key: str) -> float | None:
+    """Return float field if != 0, else None."""
+    if contract is None:
+        return None
+    v = contract.get(key)
+    try:
+        f = float(v)
+        return f if f != 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _fany(contract: dict | None, key: str) -> float | None:
+    """Return float field regardless of sign, None if missing."""
+    if contract is None:
+        return None
+    v = contract.get(key)
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _igt0(contract: dict | None, key: str) -> int | None:
+    """Return int field if > 0, else None."""
+    if contract is None:
+        return None
+    v = contract.get(key)
+    try:
+        i = int(v)
+        return i if i > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _chain_to_vol_points(chain: dict, spot: float) -> list[dict]:
-    """Convert Schwab callExpDateMap/putExpDateMap to vol surface points."""
+    """Convert Schwab callExpDateMap/putExpDateMap to vol surface points.
+    Matches VolSurfaceParser.fromChain() field set exactly.
+    """
     expirations = parse_expirations(chain)
     points = []
     for exp in expirations:
         dte = exp["dte"]
-        call_map: dict[float, float] = {}
-        put_map:  dict[float, float] = {}
-
-        call_oi_map:  dict[float, int] = {}
-        call_vol_map: dict[float, int] = {}
-        put_oi_map:   dict[float, int] = {}
-        put_vol_map:  dict[float, int] = {}
+        call_by_strike: dict[float, dict] = {}
+        put_by_strike:  dict[float, dict] = {}
 
         for c in exp["calls"]:
-            iv = c.get("volatility") or c.get("impliedVolatility") or 0
+            iv = float(c.get("volatility") or c.get("impliedVolatility") or 0)
             if iv > 0:
-                s = float(c["strikePrice"])
-                call_map[s]     = float(iv) / 100
-                call_oi_map[s]  = c.get("openInterest") or 0
-                call_vol_map[s] = c.get("totalVolume") or 0
+                call_by_strike[float(c["strikePrice"])] = c
 
         for p in exp["puts"]:
-            iv = p.get("volatility") or p.get("impliedVolatility") or 0
+            iv = float(p.get("volatility") or p.get("impliedVolatility") or 0)
             if iv > 0:
-                s = float(p["strikePrice"])
-                put_map[s]     = float(iv) / 100
-                put_oi_map[s]  = p.get("openInterest") or 0
-                put_vol_map[s] = p.get("totalVolume") or 0
+                put_by_strike[float(p["strikePrice"])] = p
 
-        for strike in sorted(set(call_map) | set(put_map)):
-            points.append({
-                "strike":   strike,
-                "dte":      dte,
-                "call_iv":  call_map.get(strike),
-                "call_oi":  call_oi_map.get(strike),
-                "call_vol": call_vol_map.get(strike),
-                "put_iv":   put_map.get(strike),
-                "put_oi":   put_oi_map.get(strike),
-                "put_vol":  put_vol_map.get(strike),
-            })
+        for strike in sorted(set(call_by_strike) | set(put_by_strike)):
+            c = call_by_strike.get(strike)
+            p = put_by_strike.get(strike)
+
+            call_iv_pct = float(c.get("volatility") or c.get("impliedVolatility") or 0) if c else 0.0
+            put_iv_pct  = float(p.get("volatility") or p.get("impliedVolatility") or 0) if p else 0.0
+
+            call_delta = _fany(c, "delta")
+            put_delta  = _fany(p, "delta")
+
+            call_prob_itm = max(0.0, min(1.0, call_delta)) if call_delta is not None and call_delta > 0 else None
+            put_prob_itm  = max(0.0, min(1.0, abs(put_delta))) if put_delta is not None and put_delta < 0 else None
+
+            row: dict = {
+                "strike": strike,
+                "dte":    dte,
+                # IV
+                "call_iv": call_iv_pct / 100 if call_iv_pct > 0 else None,
+                "put_iv":  put_iv_pct  / 100 if put_iv_pct  > 0 else None,
+                # Volume / OI
+                "call_vol": _igt0(c, "totalVolume"),
+                "put_vol":  _igt0(p, "totalVolume"),
+                "call_oi":  _igt0(c, "openInterest"),
+                "put_oi":   _igt0(p, "openInterest"),
+                # Greeks
+                "call_delta": call_delta,
+                "put_delta":  put_delta,
+                "call_gamma": _fne0(c, "gamma"),
+                "put_gamma":  _fne0(p, "gamma"),
+                "call_theta": _fne0(c, "theta"),
+                "put_theta":  _fne0(p, "theta"),
+                "call_vega":  _fne0(c, "vega"),
+                "put_vega":   _fne0(p, "vega"),
+                "call_rho":   _fne0(c, "rho"),
+                "put_rho":    _fne0(p, "rho"),
+                # Pricing
+                "call_bid":       _fgt0(c, "bid"),
+                "call_ask":       _fgt0(c, "ask"),
+                "call_mark":      _fgt0(c, "mark"),
+                "call_last":      _fgt0(c, "last"),
+                "call_theo":      _fgt0(c, "theoreticalOptionValue"),
+                "call_intrinsic": _fgt0(c, "intrinsicValue"),
+                "call_extrinsic": _fgt0(c, "timeValue"),
+                "call_high":      _fgt0(c, "highPrice"),
+                "call_low":       _fgt0(c, "lowPrice"),
+                "put_bid":        _fgt0(p, "bid"),
+                "put_ask":        _fgt0(p, "ask"),
+                "put_mark":       _fgt0(p, "mark"),
+                "put_last":       _fgt0(p, "last"),
+                "put_theo":       _fgt0(p, "theoreticalOptionValue"),
+                "put_intrinsic":  _fgt0(p, "intrinsicValue"),
+                "put_extrinsic":  _fgt0(p, "timeValue"),
+                "put_high":       _fgt0(p, "highPrice"),
+                "put_low":        _fgt0(p, "lowPrice"),
+                # Size
+                "call_bid_size": _igt0(c, "bidSize"),
+                "call_ask_size": _igt0(c, "askSize"),
+                "put_bid_size":  _igt0(p, "bidSize"),
+                "put_ask_size":  _igt0(p, "askSize"),
+                # Probabilities
+                "call_prob_itm": call_prob_itm,
+                "call_prob_otm": 1.0 - call_prob_itm if call_prob_itm is not None else None,
+                "put_prob_itm":  put_prob_itm,
+                "put_prob_otm":  1.0 - put_prob_itm  if put_prob_itm  is not None else None,
+            }
+            # Strip None values to match VolPoint.toJson()'s if-not-null pattern
+            points.append({k: v for k, v in row.items() if v is not None})
 
     return points
 

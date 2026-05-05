@@ -144,7 +144,7 @@ class _CellAccumulator:
         self.vols: list[int] = []
         self.nearest_expiry: datetime | None = None
 
-    def add(self, contract: dict, expiry: datetime, spot: float) -> None:
+    def add(self, contract: dict, expiry: datetime, spot: float, include_delta: bool = True) -> None:
         delta = float(contract.get("delta", 0))
         gamma = float(contract.get("gamma", 0))
         vega = float(contract.get("vega", 0))
@@ -155,7 +155,7 @@ class _CellAccumulator:
         vol = int(contract.get("totalVolume", 0))
         dte = int(contract.get("daysToExpiration", 0))
 
-        if abs(delta) > 0:
+        if include_delta and abs(delta) > 0:
             self.deltas.append(delta)
         if abs(gamma) > 0:
             self.gammas.append(gamma)
@@ -235,14 +235,25 @@ def ingest(chain: dict, obs_date: datetime | None = None) -> list[GridCell]:
         except Exception:
             expiry = obs_date + timedelta(days=dte)
 
-        all_contracts = list(exp.get("calls", [])) + list(exp.get("puts", []))
-        for c in all_contracts:
+        # Calls and puts are aggregated together per band/bucket for all greeks
+        # except delta: put delta is negative and would cancel call delta, producing
+        # a meaningless median. Only call deltas (0–1 range) are collected.
+        for c in exp.get("calls", []):
             strike = float(c.get("strikePrice", 0))
             moneyness_pct = (strike - spot) / spot * 100
             band = classify_strike_band(moneyness_pct)
             key = (band, bucket)
             if key not in accumulators:
                 accumulators[key] = _CellAccumulator()
-            accumulators[key].add(c, expiry, spot)
+            accumulators[key].add(c, expiry, spot, include_delta=True)
+
+        for c in exp.get("puts", []):
+            strike = float(c.get("strikePrice", 0))
+            moneyness_pct = (strike - spot) / spot * 100
+            band = classify_strike_band(moneyness_pct)
+            key = (band, bucket)
+            if key not in accumulators:
+                accumulators[key] = _CellAccumulator()
+            accumulators[key].add(c, expiry, spot, include_delta=False)
 
     return [acc.to_cell(band, bucket) for (band, bucket), acc in accumulators.items()]

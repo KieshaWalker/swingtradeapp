@@ -95,6 +95,16 @@ class _GreekGridScreenState extends ConsumerState<GreekGridScreen> {
                 onChanged: (g) => setState(() => _selected = g),
               ),
               const SizedBox(height: 4),
+              Text(
+                _selected.label,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 4),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: _interpretation != null
