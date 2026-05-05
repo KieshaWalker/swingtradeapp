@@ -24,23 +24,24 @@ import '../providers/regime_ml_provider.dart';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 Color _bucketColor(RegimeBucket b) => switch (b) {
-  RegimeBucket.stablePositive   => const Color(0xFF4ADE80),
+  RegimeBucket.stablePositive => const Color(0xFF4ADE80),
   RegimeBucket.trendingPositive => const Color(0xFF86EFAC),
   RegimeBucket.trendingNegative => const Color(0xFFFCA5A5),
-  RegimeBucket.stableNegative   => const Color(0xFFFF6B8A),
-  RegimeBucket.unknown          => Colors.white38,
+  RegimeBucket.stableNegative => const Color(0xFFFF6B8A),
+  RegimeBucket.unknown => Colors.white38,
 };
 
 Color _regimeColor(String regime) => switch (regime) {
   'positive' => AppTheme.profitColor,
   'negative' => AppTheme.lossColor,
-  _          => AppTheme.neutralColor,
+  _ => AppTheme.neutralColor,
 };
 
 String _pct(double? v, {int decimals = 1}) =>
     v == null ? '—' : '${v.toStringAsFixed(decimals)}%';
 
-String _score(double v) => v >= 0 ? '+${v.toStringAsFixed(2)}' : v.toStringAsFixed(2);
+String _score(double v) =>
+    v >= 0 ? '+${v.toStringAsFixed(2)}' : v.toStringAsFixed(2);
 
 // ── Root screen ───────────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ class CurrentRegimeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final mlAsync    = ref.watch(regimeMlProvider);
+    final mlAsync = ref.watch(regimeMlProvider);
     final macroAsync = ref.watch(macroScoreProvider);
 
     return Scaffold(
@@ -71,10 +72,7 @@ class CurrentRegimeScreen extends ConsumerWidget {
       body: mlAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => _ErrorBody(error: e.toString()),
-        data: (analysis) => _Body(
-          analysis: analysis,
-          macroAsync: macroAsync,
-        ),
+        data: (analysis) => _Body(analysis: analysis, macroAsync: macroAsync),
       ),
     );
   }
@@ -83,7 +81,7 @@ class CurrentRegimeScreen extends ConsumerWidget {
 // ── Body ──────────────────────────────────────────────────────────────────────
 
 class _Body extends StatelessWidget {
-  final RegimeMlAnalysis  analysis;
+  final RegimeMlAnalysis analysis;
   final AsyncValue<MacroScore> macroAsync;
 
   const _Body({required this.analysis, required this.macroAsync});
@@ -91,7 +89,7 @@ class _Body extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spyRegime = analysis.marketContext.spyRegime;
-    final spyGamma  = spyRegime?['gamma_regime'] as String? ?? 'unknown';
+    final spyGamma = spyRegime?['gamma_regime'] as String? ?? 'unknown';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -100,9 +98,9 @@ class _Body extends StatelessWidget {
         _SectionHeader('Market Context'),
         const SizedBox(height: 8),
         _MarketContextStrip(
-          analysis:   analysis,
+          analysis: analysis,
           macroAsync: macroAsync,
-          spyGamma:   spyGamma,
+          spyGamma: spyGamma,
         ),
 
         const SizedBox(height: 20),
@@ -165,9 +163,9 @@ class _SectionHeader extends StatelessWidget {
 // ── Market Context Strip ──────────────────────────────────────────────────────
 
 class _MarketContextStrip extends StatelessWidget {
-  final RegimeMlAnalysis       analysis;
+  final RegimeMlAnalysis analysis;
   final AsyncValue<MacroScore> macroAsync;
-  final String                 spyGamma;
+  final String spyGamma;
 
   const _MarketContextStrip({
     required this.analysis,
@@ -194,15 +192,17 @@ class _MarketContextStrip extends StatelessWidget {
             label: 'Macro',
             value: 'Error',
             color: AppTheme.lossColor,
+            subtitle: e.toString().length > 50
+                ? e.toString().substring(0, 50)
+                : e.toString(),
           ),
           data: (macro) => _ContextChip(
             label: 'Macro',
             value: '${macro.total.toStringAsFixed(0)} ${macro.regime.label}',
             color: _macroColor(macro.regime),
-            subtitle: macro.regime.description.substring(
-              0,
-              macro.regime.description.length.clamp(0, 40),
-            ),
+            subtitle: macro.regime.description.length > 40
+                ? macro.regime.description.substring(0, 40)
+                : macro.regime.description,
           ),
         ),
 
@@ -212,14 +212,16 @@ class _MarketContextStrip extends StatelessWidget {
           value: ctx.vixState == 'high_vol'
               ? 'High Vol'
               : ctx.vixState == 'low_vol'
-                  ? 'Low Vol'
-                  : '—',
-          color: ctx.vixState == 'high_vol' ? AppTheme.lossColor : AppTheme.profitColor,
+              ? 'Low Vol'
+              : '—',
+          color: ctx.vixState == 'high_vol'
+              ? AppTheme.lossColor
+              : AppTheme.profitColor,
           subtitle: ctx.vixCurrent != null
               ? 'VIX ${ctx.vixCurrent!.toStringAsFixed(1)}'
-                '  Dev ${_pct(ctx.vixDevPct, decimals: 1)}'
-                '  RSI ${ctx.vixRsi?.toStringAsFixed(0) ?? '—'}'
-                '  Conf ${ctx.vixHmmProb != null ? '${(ctx.vixHmmProb! * 100).toStringAsFixed(0)}%' : '—'}'
+                    '  Dev ${_pct(ctx.vixDevPct, decimals: 1)}'
+                    '  RSI ${ctx.vixRsi?.toStringAsFixed(0) ?? '—'}'
+                    '  Conf ${ctx.vixHmmProb != null ? '${(ctx.vixHmmProb! * 100).toStringAsFixed(0)}%' : '—'}'
               : null,
         ),
 
@@ -229,8 +231,8 @@ class _MarketContextStrip extends StatelessWidget {
           value: spyGamma == 'positive'
               ? 'Positive'
               : spyGamma == 'negative'
-                  ? 'Negative'
-                  : 'Unknown',
+              ? 'Negative'
+              : 'Unknown',
           color: _regimeColor(spyGamma),
           subtitle: analysis.marketContext.spyRegime != null
               ? 'ZGL: ${_pct((analysis.marketContext.spyRegime!['spot_to_zgl_pct'] as num?)?.toDouble())}'
@@ -243,28 +245,28 @@ class _MarketContextStrip extends StatelessWidget {
           value: '${analysis.tickers.length} tickers',
           color: AppTheme.neutralColor,
           subtitle:
-            '${analysis.stablePositive.length}+GEX  '
-            '${analysis.trendingPositive.length}↑  '
-            '${analysis.trendingNegative.length}↓  '
-            '${analysis.stableNegative.length}−GEX',
+              '${analysis.stablePositive.length}+GEX  '
+              '${analysis.trendingPositive.length}↑  '
+              '${analysis.trendingNegative.length}↓  '
+              '${analysis.stableNegative.length}−GEX',
         ),
       ],
     );
   }
 
   Color _macroColor(MacroRegime r) => switch (r) {
-    MacroRegime.riskOn         => AppTheme.profitColor,
+    MacroRegime.riskOn => AppTheme.profitColor,
     MacroRegime.neutralBullish => const Color(0xFF86EFAC),
-    MacroRegime.neutral        => const Color(0xFFFBBF24),
-    MacroRegime.caution        => const Color(0xFFFCA5A5),
-    MacroRegime.crisis         => AppTheme.lossColor,
+    MacroRegime.neutral => const Color(0xFFFBBF24),
+    MacroRegime.caution => const Color(0xFFFCA5A5),
+    MacroRegime.crisis => AppTheme.lossColor,
   };
 }
 
 class _ContextChip extends StatelessWidget {
-  final String  label;
-  final String  value;
-  final Color   color;
+  final String label;
+  final String value;
+  final Color color;
   final String? subtitle;
 
   const _ContextChip({
@@ -287,16 +289,25 @@ class _ContextChip extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label,
-          style: TextStyle(color: AppTheme.neutralColor, fontSize: 11)),
+        Text(
+          label,
+          style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+        ),
         const SizedBox(height: 3),
-        Text(value,
+        Text(
+          value,
           style: TextStyle(
-            color: color, fontSize: 14, fontWeight: FontWeight.w700)),
+            color: color,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         if (subtitle != null) ...[
           const SizedBox(height: 2),
-          Text(subtitle!,
-            style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          Text(
+            subtitle!,
+            style: const TextStyle(color: Colors.white54, fontSize: 11),
+          ),
         ],
       ],
     ),
@@ -319,17 +330,23 @@ class _ModelInfoCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: Colors.white12),
         ),
-        child: Row(children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.white38, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'No trained model — using heuristic scoring. '
-              'Call POST /regime/train to fit a supervised model.',
-              style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.info_outline_rounded,
+              color: Colors.white38,
+              size: 16,
             ),
-          ),
-        ]),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'No trained model — using heuristic scoring. '
+                'Call POST /regime/train to fit a supervised model.',
+                style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
       );
     }
 
@@ -337,9 +354,9 @@ class _ModelInfoCard extends StatelessWidget {
         ? DateTime.tryParse(meta.trainedAt!)
         : null;
     final typeLabel = switch (meta.modelType) {
-      'xgboost'  => 'XGBoost',
+      'xgboost' => 'XGBoost',
       'logistic' => 'Logistic Regression',
-      _          => meta.modelType ?? 'Unknown',
+      _ => meta.modelType ?? 'Unknown',
     };
 
     return Container(
@@ -352,35 +369,52 @@ class _ModelInfoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppTheme.profitColor.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(6),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.profitColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  typeLabel,
+                  style: TextStyle(
+                    color: AppTheme.profitColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-              child: Text(typeLabel,
-                style: TextStyle(
-                  color: AppTheme.profitColor, fontSize: 11,
-                  fontWeight: FontWeight.w700)),
-            ),
-            const SizedBox(width: 8),
-            if (trainedAt != null)
-              Text(
-                'Trained ${DateFormat('MMM d, HH:mm').format(trainedAt.toLocal())}',
-                style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
-              ),
-          ]),
+              const SizedBox(width: 8),
+              if (trainedAt != null)
+                Text(
+                  'Trained ${DateFormat('MMM d, HH:mm').format(trainedAt.toLocal())}',
+                  style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+                ),
+            ],
+          ),
           const SizedBox(height: 10),
-          Row(children: [
-            _MetricBadge('AUC-ROC', meta.aucRoc.toStringAsFixed(3)),
-            const SizedBox(width: 12),
-            _MetricBadge('Accuracy', '${(meta.accuracy * 100).toStringAsFixed(1)}%'),
-            const SizedBox(width: 12),
-            _MetricBadge('Precision', '${(meta.precision * 100).toStringAsFixed(1)}%'),
-            const SizedBox(width: 12),
-            _MetricBadge('Recall', '${(meta.recall * 100).toStringAsFixed(1)}%'),
-          ]),
+          Row(
+            children: [
+              _MetricBadge('AUC-ROC', meta.aucRoc.toStringAsFixed(3)),
+              const SizedBox(width: 12),
+              _MetricBadge(
+                'Accuracy',
+                '${(meta.accuracy * 100).toStringAsFixed(1)}%',
+              ),
+              const SizedBox(width: 12),
+              _MetricBadge(
+                'Precision',
+                '${(meta.precision * 100).toStringAsFixed(1)}%',
+              ),
+              const SizedBox(width: 12),
+              _MetricBadge(
+                'Recall',
+                '${(meta.recall * 100).toStringAsFixed(1)}%',
+              ),
+            ],
+          ),
           const SizedBox(height: 6),
           Text(
             '${meta.nSamples} samples · ${meta.nPositive} flip events '
@@ -403,8 +437,14 @@ class _MetricBadge extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(label, style: TextStyle(color: AppTheme.neutralColor, fontSize: 10)),
-      Text(value,  style: const TextStyle(
-        color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+      Text(
+        value,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     ],
   );
 }
@@ -414,12 +454,12 @@ class _MetricBadge extends StatelessWidget {
 class _FeatureWeightLegend extends StatelessWidget {
   final MlModelMetadata meta;
   static const _features = [
-    ('ZGL Level',   0.25, 'Distance above/below zero-gamma level'),
-    ('ZGL Trend',   0.20, 'Momentum of ZGL distance over 5 obs'),
-    ('SMA Cross',   0.20, 'SMA10 vs SMA50 alignment'),
-    ('HMM State',   0.15, 'Hidden Markov vol regime + probability'),
-    ('IVP Trend',   0.10, 'IV percentile direction (rising = bearish)'),
-    ('VIX Stress',  0.10, 'VIX deviation from 10-day MA'),
+    ('ZGL Level', 0.25, 'Distance above/below zero-gamma level'),
+    ('ZGL Trend', 0.20, 'Momentum of ZGL distance over 5 obs'),
+    ('SMA Cross', 0.20, 'SMA10 vs SMA50 alignment'),
+    ('HMM State', 0.15, 'Hidden Markov vol regime + probability'),
+    ('IVP Trend', 0.10, 'IV percentile direction (rising = bearish)'),
+    ('VIX Stress', 0.10, 'VIX deviation from 10-day MA'),
   ];
 
   const _FeatureWeightLegend({required this.meta});
@@ -434,49 +474,73 @@ class _FeatureWeightLegend extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [
-          Text(
-            meta.available ? 'Model Features (9)' : 'Heuristic Features (6)',
-            style: const TextStyle(color: Colors.white70, fontSize: 12,
-              fontWeight: FontWeight.w600)),
-          const SizedBox(width: 6),
-          Text(
-            meta.available ? '— weights learned from data' : '— hand-tuned weights',
-            style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
-          ),
-        ]),
-        const SizedBox(height: 10),
-        ..._features.map((f) => Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(children: [
-            SizedBox(
-              width: 90,
-              child: Text(f.$1,
-                style: const TextStyle(color: Colors.white, fontSize: 12))),
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
-                  value: f.$2,
-                  backgroundColor: AppTheme.elevatedColor,
-                  color: AppTheme.profitColor.withValues(alpha: 0.7),
-                  minHeight: 6,
-                ),
+        Row(
+          children: [
+            Text(
+              'Feature Importance',
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 36,
-              child: Text('${(f.$2 * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(color: Colors.white54, fontSize: 11),
-                textAlign: TextAlign.right)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(f.$3,
-                style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
-                overflow: TextOverflow.ellipsis)),
-          ]),
-        )),
+            const SizedBox(width: 6),
+            Text(
+              meta.available
+                  ? '(6 heuristic features shown)'
+                  : '(hand-tuned weights)',
+              style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ..._features.map(
+          (f) => Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 90,
+                  child: Text(
+                    f.$1,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: f.$2,
+                      backgroundColor: AppTheme.elevatedColor,
+                      color: AppTheme.profitColor.withValues(alpha: 0.7),
+                      minHeight: 6,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 36,
+                  child: Text(
+                    '${(f.$2 * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    f.$3,
+                    style: TextStyle(
+                      color: AppTheme.neutralColor,
+                      fontSize: 11,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     ),
   );
@@ -492,15 +556,15 @@ class _TickerMatrix extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final columns = [
-      (RegimeBucket.stablePositive,   analysis.stablePositive),
+      (RegimeBucket.stablePositive, analysis.stablePositive),
       (RegimeBucket.trendingPositive, analysis.trendingPositive),
       (RegimeBucket.trendingNegative, analysis.trendingNegative),
-      (RegimeBucket.stableNegative,   analysis.stableNegative),
+      (RegimeBucket.stableNegative, analysis.stableNegative),
     ];
 
     return Column(
       children: columns.map((col) {
-        final bucket  = col.$1;
+        final bucket = col.$1;
         final tickers = col.$2;
         if (tickers.isEmpty) return const SizedBox.shrink();
         return _BucketSection(bucket: bucket, tickers: tickers);
@@ -510,8 +574,8 @@ class _TickerMatrix extends StatelessWidget {
 }
 
 class _BucketSection extends StatelessWidget {
-  final RegimeBucket              bucket;
-  final List<TickerRegimeResult>  tickers;
+  final RegimeBucket bucket;
+  final List<TickerRegimeResult> tickers;
 
   const _BucketSection({required this.bucket, required this.tickers});
 
@@ -534,29 +598,50 @@ class _BucketSection extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(11),
+              ),
             ),
-            child: Row(children: [
-              Container(
-                width: 10, height: 10,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
-              Text(bucket.label,
-                style: TextStyle(
-                  color: color, fontSize: 14, fontWeight: FontWeight.w700)),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
+            child: Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
                 ),
-                child: Text('${tickers.length}',
-                  style: TextStyle(color: color, fontSize: 12,
-                    fontWeight: FontWeight.w600)),
-              ),
-            ]),
+                const SizedBox(width: 8),
+                Text(
+                  bucket.label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${tickers.length}',
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           // Ticker chips
           Padding(
@@ -596,21 +681,33 @@ class _TickerChip extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Ticker + score
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(result.ticker,
-                style: const TextStyle(
-                  color: Colors.white, fontSize: 13,
-                  fontWeight: FontWeight.w700)),
-              const SizedBox(width: 6),
-              Text(_score(result.mlScore),
-                style: TextStyle(
-                  color: result.mlScore >= 0 ? AppTheme.profitColor : AppTheme.lossColor,
-                  fontSize: 11, fontWeight: FontWeight.w600)),
-            ]),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  result.ticker,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _score(result.mlScore),
+                  style: TextStyle(
+                    color: result.mlScore >= 0
+                        ? AppTheme.profitColor
+                        : AppTheme.lossColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 3),
             // Confidence bar
-            SizedBox(
-              width: 80,
+            Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(2),
                 child: LinearProgressIndicator(
@@ -623,14 +720,17 @@ class _TickerChip extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             // Transition prob + scoring method
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(
-                'flip ${(result.transitionProb * 100).toStringAsFixed(0)}%',
-                style: TextStyle(color: AppTheme.neutralColor, fontSize: 10),
-              ),
-              const SizedBox(width: 5),
-              _ScoringBadge(result.scoringMethod),
-            ]),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'flip ${(result.transitionProb * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(color: AppTheme.neutralColor, fontSize: 10),
+                ),
+                const SizedBox(width: 5),
+                _ScoringBadge(result.scoringMethod),
+              ],
+            ),
           ],
         ),
       ),
@@ -647,9 +747,15 @@ class _ScoringBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color) = switch (method) {
-      String s when s.startsWith('supervised_xgb') => ('XGB', const Color(0xFF60A5FA)),
-      String s when s.startsWith('supervised_lr')  => ('LR',  const Color(0xFF818CF8)),
-      _                                             => ('H',   Colors.white24),
+      String s when s.startsWith('supervised_xgb') => (
+        'XGB',
+        const Color(0xFF60A5FA),
+      ),
+      String s when s.startsWith('supervised_lr') => (
+        'LR',
+        const Color(0xFF818CF8),
+      ),
+      _ => ('H', Colors.white24),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
@@ -657,8 +763,14 @@ class _ScoringBadge extends StatelessWidget {
         color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(3),
       ),
-      child: Text(label,
-        style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w700)),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }
@@ -684,7 +796,7 @@ class _TickerDetailSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final f     = result.features;
+    final f = result.features;
     final color = _bucketColor(result.bucket);
 
     return Padding(
@@ -696,65 +808,116 @@ class _TickerDetailSheet extends StatelessWidget {
           // Handle
           Center(
             child: Container(
-              width: 36, height: 4,
+              width: 36,
+              height: 4,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
                 color: Colors.white24,
-                borderRadius: BorderRadius.circular(2)),
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
           // Title
-          Row(children: [
-            Text(result.ticker,
-              style: const TextStyle(color: Colors.white, fontSize: 20,
-                fontWeight: FontWeight.w700)),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(6),
+          Row(
+            children: [
+              Text(
+                result.ticker,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-              child: Text(result.bucket.label,
-                style: TextStyle(color: color, fontSize: 12,
-                  fontWeight: FontWeight.w600)),
-            ),
-          ]),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  result.bucket.label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
 
           // ML score + confidence
-          _DetailRow('ML Score',         _score(result.mlScore)),
-          _DetailRow('Transition Risk',  '${(result.transitionProb * 100).toStringAsFixed(0)}%'),
-          _DetailRow('Confidence',       '${(result.confidence * 100).toStringAsFixed(0)}%'),
-          _DetailRow('Regime Duration',  '${f.regimeDurationDays} days'),
+          _DetailRow('ML Score', _score(result.mlScore)),
+          _DetailRow(
+            'Transition Risk',
+            '${(result.transitionProb * 100).toStringAsFixed(0)}%',
+          ),
+          _DetailRow(
+            'Confidence',
+            '${(result.confidence * 100).toStringAsFixed(0)}%',
+          ),
+          _DetailRow('Regime Duration', '${f.regimeDurationDays} days'),
           const Divider(color: Colors.white12, height: 20),
-          _DetailRow('ZGL Distance',     _pct(f.spotToZglPct)),
-          _DetailRow('ZGL Trend',        f.spotToZglTrend != null
-              ? '${f.spotToZglTrend! >= 0 ? '+' : ''}${f.spotToZglTrend!.toStringAsFixed(2)}%/obs'
-              : '—'),
-          _DetailRow('IVP',              _pct(f.ivp)),
-          _DetailRow('IVP Trend',        f.ivpTrend != null
-              ? '${f.ivpTrend! >= 0 ? '+' : ''}${f.ivpTrend!.toStringAsFixed(2)}/obs'
-              : '—'),
-          _DetailRow('HMM State',        f.hmmState ?? '—'),
-          _DetailRow('HMM Probability',  _pct(f.hmmProbability != null
-              ? f.hmmProbability! * 100
-              : null)),
-          _DetailRow('SMA Aligned',      f.smaAligned == null ? '—'
-              : f.smaAligned! ? 'Yes (bullish)' : 'No (bearish)'),
-          _DetailRow('VIX Dev',          _pct(f.vixDevPct)),
+          _DetailRow('ZGL Distance', _pct(f.spotToZglPct)),
+          _DetailRow(
+            'ZGL Trend',
+            f.spotToZglTrend != null
+                ? '${f.spotToZglTrend! >= 0 ? '+' : ''}${f.spotToZglTrend!.toStringAsFixed(2)}%/obs'
+                : '—',
+          ),
+          _DetailRow('IVP', _pct(f.ivp)),
+          _DetailRow(
+            'IVP Trend',
+            f.ivpTrend != null
+                ? '${f.ivpTrend! >= 0 ? '+' : ''}${f.ivpTrend!.toStringAsFixed(2)}/obs'
+                : '—',
+          ),
+          _DetailRow('HMM State', f.hmmState ?? '—'),
+          _DetailRow(
+            'HMM Probability',
+            _pct(f.hmmProbability != null ? f.hmmProbability! * 100 : null),
+          ),
+          _DetailRow(
+            'SMA Aligned',
+            f.smaAligned == null
+                ? '—'
+                : f.smaAligned
+                ? 'Yes (bullish)'
+                : 'No (bearish)',
+          ),
+          _DetailRow('VIX Dev', _pct(f.vixDevPct)),
           const Divider(color: Colors.white12, height: 20),
-          const Text('ML Signals',
-            style: TextStyle(color: Colors.white70, fontSize: 12,
-              fontWeight: FontWeight.w600)),
+          const Text(
+            'ML Signals',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 6),
-          ...result.signals
-              .where((s) => s.startsWith('ML:'))
-              .map((s) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text('• $s',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
-              )),
+          if (result.signals.where((s) => s.startsWith('ML:')).isEmpty)
+            Text(
+              'No ML signals',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            )
+          else
+            ...result.signals
+                .where((s) => s.startsWith('ML:'))
+                .map(
+                  (s) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '• $s',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
         ],
       ),
     );
@@ -770,14 +933,27 @@ class _DetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(children: [
-      SizedBox(width: 130,
-        child: Text(label,
-          style: TextStyle(color: AppTheme.neutralColor, fontSize: 13))),
-      Text(value,
-        style: const TextStyle(color: Colors.white, fontSize: 13,
-          fontWeight: FontWeight.w500)),
-    ]),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            label,
+            style: TextStyle(color: AppTheme.neutralColor, fontSize: 13),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    ),
   );
 }
 
@@ -795,18 +971,31 @@ class _ErrorBody extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline_rounded, color: AppTheme.lossColor, size: 40),
+          const Icon(
+            Icons.error_outline_rounded,
+            color: AppTheme.lossColor,
+            size: 40,
+          ),
           const SizedBox(height: 12),
-          const Text('Failed to load regime data',
-            style: TextStyle(color: Colors.white, fontSize: 16,
-              fontWeight: FontWeight.w600)),
+          const Text(
+            'Failed to load regime data',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text(error,
+          Text(
+            error,
             style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
-            textAlign: TextAlign.center),
+            textAlign: TextAlign.center,
+          ),
           const SizedBox(height: 16),
-          const Text('Ensure the Python API is running and reachable.',
-            style: TextStyle(color: Colors.white54, fontSize: 12)),
+          const Text(
+            'Ensure the Python API is running and reachable.',
+            style: TextStyle(color: Colors.white54, fontSize: 12),
+          ),
         ],
       ),
     ),
