@@ -1,5 +1,6 @@
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
@@ -27,6 +28,9 @@ const id = setTimeout(() => controller.abort(), 15000); // 15s timeout
     }
 
     const url = `https://api.census.gov/data/${endpoint}?${parts.join('&')}`
+    console.log("Full Census URL:", url)
+    console.log("Endpoint:", endpoint)
+    console.log("Parts:", parts)
 const response = await fetch(url, { signal: controller.signal });
   clearTimeout(id);
 

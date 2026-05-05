@@ -45,8 +45,7 @@ class EconomyPulseScreen extends ConsumerStatefulWidget {
 
 class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
+  Widget build(BuildContext context) {
     final storage = ref.read(economyStorageServiceProvider);
 
     // ── Snapshot (Schwab quotes + gov indicators) — persist on each fetch
@@ -227,10 +226,7 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
         (_, next) => next.whenData(saveFredRecessionProb));
     ref.listen<AsyncValue<FredSeries>>(fredHousingStartsProvider,
         (_, next) => next.whenData(saveFredHousingStarts));
-  }
 
-  @override
-  Widget build(BuildContext context) {
     final pulseAsync = ref.watch(economyPulseProvider);
 
     return DefaultTabController(
@@ -1007,7 +1003,7 @@ class _EconTile extends StatelessWidget {
     }
 
     Color valueColor = Colors.white;
-    if (warnHigh && point != null) {
+    if (warnHigh) {
       final v = point!.value;
       if (dangerAt != null && v >= dangerAt!) {
         valueColor = AppTheme.lossColor;

@@ -45,3 +45,11 @@ final secSearchProvider =
 final secRecentEventsProvider = FutureProvider<List<SecFiling>>((ref) {
   return ref.watch(secServiceProvider).getRecentEvents();
 });
+
+/// Form 4 insider filings for a specific ticker (used by ApiForm4Sheet)
+final secForm4FilingsProvider =
+    FutureProvider.family<List<SecFiling>, String>((ref, ticker) {
+  return ref
+      .watch(secServiceProvider)
+      .getFilingsForTicker(ticker, formTypes: ['4'], limit: 20);
+});

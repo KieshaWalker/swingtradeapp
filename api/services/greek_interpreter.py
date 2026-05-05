@@ -66,6 +66,31 @@ def _ctx(pctile: int, n: int) -> str:
     return f"{pctile}th percentile of {n}-session history"
 
 
+# Scores used to compute net sentiment: prevents a single CAUTION from
+# dominating a headline when the majority of signals are BULLISH.
+_SIGNAL_SCORE = {BULLISH: 2, NEUTRAL: 0, CAUTION: -1, BEARISH: -2}
+
+
+def _best_headline_line(lines: list[dict]) -> dict:
+    """Return the line that best represents the net sentiment of all signals."""
+    if len(lines) == 1:
+        return lines[0]
+    score = sum(_SIGNAL_SCORE.get(l["signal"], 0) for l in lines)
+    if score >= 2:
+        order = [BULLISH, NEUTRAL, CAUTION, BEARISH]
+    elif score <= -2:
+        order = [BEARISH, CAUTION, NEUTRAL, BULLISH]
+    elif score < 0:
+        order = [CAUTION, BEARISH, NEUTRAL, BULLISH]
+    else:
+        order = [NEUTRAL, BULLISH, CAUTION, BEARISH]
+    for sig in order:
+        match = next((l for l in lines if l["signal"] == sig), None)
+        if match:
+            return match
+    return lines[0]
+
+
 def _build_result(
     today: list[dict],
     period: list[dict],
@@ -80,17 +105,7 @@ def _build_result(
             "period_obs":      n_obs,
         }
 
-    priority_order = [CAUTION, BEARISH, BULLISH, NEUTRAL]
-    top = None
-    for sig in priority_order:
-        for line in today:
-            if line["signal"] == sig:
-                top = line
-                break
-        if top:
-            break
-    if top is None:
-        top = today[0]
+    top = _best_headline_line(today) if today else period[0]
 
     text_parts = top["text"].split("—")
     suffix = text_parts[-1].strip().split(".")[0] if len(text_parts) > 1 else top["text"].split(".")[0]
@@ -427,7 +442,7 @@ def interpret_greek_grid(
     charm = weekly_c.get("charm") if weekly_c else None
     if charm is not None:
         abs_charm = abs(charm)
-        direction = "delta eroding toward OTM" if charm < 0 else "delta building toward ITM"
+        direction = "time-decay eroding delta" if charm < 0 else "delta building with time"
         pctile    = _pctile_rank(abs_charm_sorted, abs_charm)
         n_ch      = len(abs_charm_sorted)
         if pctile >= 0:
@@ -458,26 +473,35 @@ def interpret_greek_grid(
 
     # ── PERIOD ─────────────────────────────────────────────────────────────────
 
-    # ATM time-series from all dates (monthly preferred)
+    # ATM time-series: prefer monthly; fall back to near_monthly only if monthly
+    # is too sparse. Never mix buckets — that compares different instruments.
     atm_series = sorted(
         [c for c in grid_cells if c["strike_band"] == ATM and c["expiry_bucket"] == MONTHLY],
         key=lambda c: c["obs_date"],
     )
     if len(atm_series) < 2:
         atm_series = sorted(
-            [c for c in grid_cells if c["strike_band"] == ATM and c["expiry_bucket"] in (MONTHLY, NEAR_MONTHLY)],
+            [c for c in grid_cells if c["strike_band"] == ATM and c["expiry_bucket"] == NEAR_MONTHLY],
             key=lambda c: c["obs_date"],
         )
 
     all_dates = len({c["obs_date"] for c in grid_cells})
 
     if len(atm_series) >= 2:
-        first = atm_series[0]
-        last  = atm_series[-1]
+        # Split into first-half / second-half and average each segment.
+        # Point-to-point (first vs last) is sensitive to individual noisy
+        # observations; segment averages are more robust.
+        mid       = max(1, len(atm_series) // 2)
+        first_seg = atm_series[:mid]
+        last_seg  = atm_series[mid:] or atm_series[-1:]
 
-        # IV trend
-        first_iv = first.get("iv")
-        last_iv  = last.get("iv")
+        def _savg(seg: list[dict], key: str) -> float | None:
+            vals = [s[key] for s in seg if s.get(key) is not None]
+            return sum(vals) / len(vals) if vals else None
+
+        # IV trend — compression is regime-neutral; not labeled BULLISH
+        first_iv = _savg(first_seg, "iv")
+        last_iv  = _savg(last_seg,  "iv")
         if first_iv and last_iv and first_iv > 0:
             chg = (last_iv - first_iv) / first_iv * 100
             label = "Expanding" if chg > 5 else "Compressing" if chg < -5 else "Stable"
@@ -485,12 +509,12 @@ def interpret_greek_grid(
                 "IV Trend",
                 f"{label} — ATM IV {_pct(first_iv)} → {_pct(last_iv)} "
                 f"({'+' if chg >= 0 else ''}{chg:.1f}%) over {all_dates} observation{'s' if all_dates != 1 else ''}.",
-                CAUTION if chg > 5 else BULLISH if chg < -5 else NEUTRAL,
+                CAUTION if chg > 5 else NEUTRAL,
             ))
 
         # Gamma trend
-        first_g = first.get("gamma")
-        last_g  = last.get("gamma")
+        first_g = _savg(first_seg, "gamma")
+        last_g  = _savg(last_seg,  "gamma")
         if first_g and last_g and first_g > 0:
             chg = (last_g - first_g) / first_g * 100
             if abs(chg) > 15:
@@ -506,8 +530,8 @@ def interpret_greek_grid(
                 ))
 
         # Volga trend
-        first_vg = first.get("volga")
-        last_vg  = last.get("volga")
+        first_vg = _savg(first_seg, "volga")
+        last_vg  = _savg(last_seg,  "volga")
         if first_vg is not None and last_vg is not None and abs(first_vg) > 1e-6:
             chg = (abs(last_vg) - abs(first_vg)) / abs(first_vg) * 100
             if chg > 20:
@@ -526,8 +550,8 @@ def interpret_greek_grid(
                 ))
 
         # Vanna structural shift
-        first_vn = first.get("vanna")
-        last_vn  = last.get("vanna")
+        first_vn = _savg(first_seg, "vanna")
+        last_vn  = _savg(last_seg,  "vanna")
         if first_vn is not None and last_vn is not None:
             if first_vn > 0.002 and last_vn < -0.002:
                 period.append(_line(
@@ -620,6 +644,8 @@ def interpret_greek_chart(
         ))
 
     # 3. Theta / Vega efficiency
+    #    A very low ratio (vega-dominated) is CAUTION: vol regime controls P&L,
+    #    making premium collection unreliable.
     call_theta = latest.get("call_theta")
     call_vega  = latest.get("call_vega")
     if call_theta is not None and call_vega is not None and abs(call_vega) > 0.001:
@@ -631,10 +657,18 @@ def interpret_greek_chart(
                 f"vega ({_greek_fmt(call_vega)}/1% IV). Premium selling efficient at this DTE.",
                 NEUTRAL,
             ))
-        else:
+        elif ratio < 0.15:
             today.append(_line(
                 "Theta / Vega",
                 f"Ratio {ratio:.2f} — vega ({_greek_fmt(call_vega)}/1% IV) dominates "
+                f"theta ({_greek_fmt(call_theta)}/day). Vol regime controls P&L; "
+                "premium capture is inefficient.",
+                CAUTION,
+            ))
+        else:
+            today.append(_line(
+                "Theta / Vega",
+                f"Ratio {ratio:.2f} — vega ({_greek_fmt(call_vega)}/1% IV) outweighs "
                 f"theta ({_greek_fmt(call_theta)}/day). Long-vol position favored over premium capture.",
                 NEUTRAL,
             ))
@@ -679,7 +713,7 @@ def interpret_greek_chart(
                 "IV Direction",
                 f"{label} — call IV {_pct(first_call_iv)} → {_pct(latest_call_iv)} "
                 f"({'+' if chg >= 0 else ''}{chg:.1f}%) over {n} sessions.",
-                CAUTION if chg > 8 else BULLISH if chg < -8 else NEUTRAL,
+                CAUTION if chg > 8 else NEUTRAL,
             ))
 
         # Gamma structural change

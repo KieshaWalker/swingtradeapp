@@ -53,7 +53,7 @@ import '../models/ticker_profile_models.dart';
 import '../providers/ticker_profile_notifier.dart';
 import '../providers/ticker_profile_providers.dart';
 import '../widgets/add_earnings_reaction_sheet.dart';
-import '../widgets/paste_form4_sheet.dart';
+import '../widgets/api_form4_sheet.dart';
 import '../widgets/add_sr_level_sheet.dart';
 import '../widgets/add_ticker_note_sheet.dart';
 import 'ticker_profile_cards.dart';
@@ -124,7 +124,7 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
       case 4:
         return FloatingActionButton(
           heroTag: 'insider_fab',
-          onPressed: () => _showSheet(PasteForm4Sheet(symbol: _sym)),
+          onPressed: () => _showSheet(ApiForm4Sheet(symbol: _sym)),
           child: const Icon(Icons.upload_file_outlined),
         );
       default:
@@ -192,7 +192,7 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
         children: [
           _OverviewTab(
             symbol: _sym,
-            onAddInsider: () => _showSheet(PasteForm4Sheet(symbol: _sym)),
+            onAddInsider: () => _showSheet(ApiForm4Sheet(symbol: _sym)),
             onAddEarnings: () => _showSheet(AddEarningsReactionSheet(symbol: _sym)),
             onSeeAllInsiders: () => _tabs.animateTo(4),
           ),
