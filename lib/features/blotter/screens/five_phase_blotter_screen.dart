@@ -469,6 +469,7 @@ class _FivePhaseBlotterScreenState
                           gamma:        gamma,
                           vega:         vega,
                           quantity:     _qty,
+                          contractStrike: contract?.strikePrice,
                           onResult:     (r) =>
                               _notifyResult(3, r, autoExpand: true),
                           onPricingData: (fv, wi) => setState(() {

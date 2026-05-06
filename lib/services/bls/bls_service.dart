@@ -21,7 +21,7 @@ class BlsService {
         'startyear': startYear.toString(),
         'endyear': end.toString(),
       },
-    );
+    ).timeout(const Duration(seconds: 15));
     if (response.status != 200) {
       throw Exception('BLS Edge Function error ${response.status}');
     }

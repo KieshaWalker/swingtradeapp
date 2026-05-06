@@ -35,7 +35,7 @@ Future<FredSeries> getSeries(String seriesId, {int limit = 500}) async {
         'series_id': seriesId,
         'limit': limit.toString(),
       },
-    );
+    ).timeout(const Duration(seconds: 10));
 
     if (response.status != 200) throw Exception('Function error');
 

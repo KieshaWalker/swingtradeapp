@@ -22,7 +22,8 @@ class KalshiService {
     try {
       final body = {'path': path, 'params': params ?? <String, String>{}};
 
-      final res = await _fn.invoke('get-kalshi-data', body: body);
+      final res = await _fn.invoke('get-kalshi-data', body: body)
+          .timeout(const Duration(seconds: 10));
 
       if (res.status != 200) {
         throw Exception('Kalshi $path ${res.status}');

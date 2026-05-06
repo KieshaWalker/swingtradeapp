@@ -57,6 +57,10 @@ class BlotterPhasePanel extends ConsumerStatefulWidget {
   final String  ticker;
   final double  spot;
   final double  strike;
+  /// Actual strike of the contract found in the chain.
+  /// When the chain doesn't list [strike] exactly, the screen passes the
+  /// nearest listed strike here so the panel can warn the user.
+  final double? contractStrike;
   /// Pass as decimal — e.g. 0.21 for 21% IV.
   /// If your source is Schwab (percent), divide by 100 before passing.
   final double  impliedVol;
@@ -83,6 +87,7 @@ class BlotterPhasePanel extends ConsumerStatefulWidget {
     required this.gamma,
     required this.vega,
     required this.quantity,
+    this.contractStrike,
     this.onResult,
     this.onPricingData,
   });
@@ -95,6 +100,7 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
   PhaseResult?    _lastResult;
   FairValueResult? _fv;
   String?          _lastFvKey;
+  String?          _fetchError;
   bool             _hasFiredPricingCallback = false;
 
   Future<void> _fetchFairValue({double? rho, double? nu}) async {
@@ -120,7 +126,9 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
           impliedVol:     widget.impliedVol,
         ));
       }
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) setState(() => _fetchError = e.toString());
+    }
   }
 
   bool get _hasData =>
@@ -152,13 +160,31 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     if (fvKey != _lastFvKey) {
       _lastFvKey = fvKey;
       _fv = null;
+      _fetchError = null;
       _hasFiredPricingCallback = false;
       WidgetsBinding.instance.addPostFrameCallback(
           (_) => _fetchFairValue(rho: sabrSlice?.rho, nu: sabrSlice?.nu));
     }
 
+    if (_fetchError != null) {
+      final errResult = PhaseResult(
+        status: PhaseStatus.fail,
+        headline: 'Pricing API unreachable',
+        signals: ['Backend error: $_fetchError'],
+      );
+      _notifyIfChanged(errResult);
+      return _ApiErrorTile(
+        message: _fetchError!,
+        onRetry: () => setState(() {
+          _fetchError = null;
+          _lastFvKey = null;
+          _hasFiredPricingCallback = false;
+        }),
+      );
+    }
+
     final fv = _fv;
-    if (fv == null) return const _NotReadyTile();
+    if (fv == null) return const _BlotterLoadingSkeleton();
 
     // ── ES₉₅ component decomposition ──────────────────────────────────────
     final T      = widget.daysToExpiry / 365.0;
@@ -177,8 +203,9 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     final tradeEs95 = (deltaEs + gammaEs).clamp(0.0, maxLoss);
 
     // ── Portfolio what-if (async portfolio state, fallback to empty) ───────
-    final portfolioAsync = ref.watch(portfolioStateProvider);
-    final portfolio = portfolioAsync.value ?? PortfolioState.empty;
+    final portfolioAsync  = ref.watch(portfolioStateProvider);
+    final portfolio       = portfolioAsync.value ?? PortfolioState.empty;
+    final portfolioError  = portfolioAsync.hasError;
 
     // ── IV analytics — GEX regime (non-blocking) ───────────────────────────
     final ivAsync = ref.watch(ivAnalysisProvider(widget.ticker));
@@ -195,13 +222,18 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
       daysToExpiry: widget.daysToExpiry,
     );
 
+    final strikeSubstituted = widget.contractStrike != null &&
+        widget.contractStrike != widget.strike;
+
     final result = _computeResult(
-      fv:         fv,
-      whatIf:     whatIf,
-      tradeEs95:  tradeEs95,
-      deltaEs:    deltaEs,
-      gammaEs:    gammaEs,
-      ivAnalysis: ivAnalysis,
+      fv:                fv,
+      whatIf:            whatIf,
+      tradeEs95:         tradeEs95,
+      deltaEs:           deltaEs,
+      gammaEs:           gammaEs,
+      ivAnalysis:        ivAnalysis,
+      portfolioError:    portfolioError,
+      strikeSubstituted: strikeSubstituted,
     );
 
     // Don't emit a phase status or pricing data while the portfolio is still
@@ -215,22 +247,26 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     }
 
     return _PanelBody(
-      fv:               fv,
-      whatIf:           whatIf,
-      portfolio:        portfolio,
-      portfolioLoading: portfolioAsync.isLoading,
-      deltaEs:          deltaEs,
-      gammaEs:          gammaEs,
-      result:           result,
-      spot:             widget.spot,
-      impliedVol:       widget.impliedVol,
-      daysToExpiry:     widget.daysToExpiry,
-      isCall:           widget.isCall,
-      ticker:           widget.ticker,
-      delta:            widget.delta,
-      quantity:         widget.quantity,
-      ivAnalysis:       ivAnalysis,
-      ivLoading:        ivAsync.isLoading,
+      fv:                fv,
+      whatIf:            whatIf,
+      portfolio:         portfolio,
+      portfolioLoading:  portfolioAsync.isLoading,
+      portfolioError:    portfolioError,
+      strikeSubstituted: strikeSubstituted,
+      enteredStrike:     widget.strike,
+      contractStrike:    widget.contractStrike,
+      deltaEs:           deltaEs,
+      gammaEs:           gammaEs,
+      result:            result,
+      spot:              widget.spot,
+      impliedVol:        widget.impliedVol,
+      daysToExpiry:      widget.daysToExpiry,
+      isCall:            widget.isCall,
+      ticker:            widget.ticker,
+      delta:             widget.delta,
+      quantity:          widget.quantity,
+      ivAnalysis:        ivAnalysis,
+      ivLoading:         ivAsync.isLoading,
     );
   }
 
@@ -243,56 +279,21 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
     required double          deltaEs,
     required double          gammaEs,
     IvAnalysis?              ivAnalysis,
+    bool                     portfolioError = false,
+    bool                     strikeSubstituted = false,
   }) {
     final edgeBps = fv.edgeBps;
     final isCall  = widget.isCall;
 
-    // ── Regime multipliers — mirror Python option_scoring.py exactly ──────────
-    // Gm (GEX multiplier): negative=0.50 FAIL, near-flip=0.70, pos+deep=1.20,
-    //   pos+rising=1.10, pos+flat=1.00, pos+falling=0.85
-    // Vm (Vanna multiplier): falling slope + bearish vanna = 0.60
-    double gexMultiplier   = 1.0;
-    double vannaMultiplier = 1.0;
-    bool   regimeFail      = false;
-    bool   nearFlip        = false;
-    String? slopeSignal;
-    String? vannaSignal;
-
-    if (ivAnalysis != null) {
-      final gr       = ivAnalysis.gammaRegime;
-      final slope    = ivAnalysis.gammaSlope;
-      final flipPct  = ivAnalysis.spotToZeroGammaPct;
-      final totalGex = ivAnalysis.totalGex;
-      final vr       = ivAnalysis.vannaRegime;
-
-      if (gr == GammaRegime.negative) {
-        regimeFail    = true;
-        gexMultiplier = 0.50;
-      } else if (flipPct != null && flipPct.abs() <= 0.5) {
-        nearFlip      = true;
-        gexMultiplier = 0.70;
-      } else if (gr == GammaRegime.positive) {
-        if (totalGex != null && totalGex >= 1000.0) {
-          gexMultiplier = 1.20;
-        } else if (slope == GammaSlope.rising) {
-          gexMultiplier = 1.10;
-        } else if (slope == GammaSlope.falling) {
-          gexMultiplier = 0.85;
-        }
-        slopeSignal = 'Gamma slope ${slope.label}  →  Gm ${gexMultiplier.toStringAsFixed(2)}×';
-      }
-
-      final slopeFalling = slope == GammaSlope.falling;
-      final vannaBearish = vr == VannaRegime.bearishOnVolCrush ||
-                           vr == VannaRegime.bearishOnVolSpike;
-      if (slopeFalling && vannaBearish) {
-        vannaMultiplier = 0.60;
-        vannaSignal = 'Vanna Divergence: declining slope + bearish dealer hedge — '
-            'fragile rally; reversal risk elevated  (Vm 0.60×)';
-      }
-    }
-
-    final regimeMultiplier = gexMultiplier * vannaMultiplier;
+    // ── Regime multipliers — single source of truth in RegimeMultipliers ────────
+    final rm               = RegimeMultipliers.from(ivAnalysis);
+    final gexMultiplier    = rm.gexMultiplier;
+    final vannaMultiplier  = rm.vannaMultiplier;
+    final regimeFail       = rm.regimeFail;
+    final nearFlip         = rm.nearFlip;
+    final slopeSignal      = rm.slopeSignal;
+    final vannaSignal      = rm.vannaSignal;
+    final regimeMultiplier = rm.regimeMultiplier;
 
     // ── Direction alignment ───────────────────────────────────────────────────
     final gr = ivAnalysis?.gammaRegime ?? GammaRegime.unknown;
@@ -314,7 +315,9 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
                regimeFail ||
                nearFlip ||
                gexMisaligned ||
-               vannaMultiplier < 1.0) {
+               vannaMultiplier < 1.0 ||
+               portfolioError ||
+               strikeSubstituted) {
       status = PhaseStatus.warn;
     } else {
       status = PhaseStatus.pass;
@@ -352,6 +355,12 @@ class _BlotterPhasePanelState extends ConsumerState<BlotterPhasePanel> {
         '✓ GEX aligned — ${isCall ? "Positive GEX (Long Gamma) supports calls" : "Negative GEX (Short Gamma) supports puts"}',
       if (!gexKnown)
         '⚠ GEX regime unavailable — cannot confirm directional alignment',
+      if (portfolioError)
+        '⚠ Portfolio data unavailable — book impact computed against empty book',
+      if (strikeSubstituted)
+        '⚠ Strike substituted: \$${widget.contractStrike!.toStringAsFixed(2)} used '
+        '(entered \$${widget.strike.toStringAsFixed(2)}, '
+        '\$${(widget.contractStrike! - widget.strike).abs().toStringAsFixed(2)} apart)',
     ];
 
     final multiplierTag = ivAnalysis != null
@@ -382,6 +391,10 @@ class _PanelBody extends StatelessWidget {
   final WhatIfResult    whatIf;
   final PortfolioState  portfolio;
   final bool            portfolioLoading;
+  final bool            portfolioError;
+  final bool            strikeSubstituted;
+  final double          enteredStrike;
+  final double?         contractStrike;
   final double          deltaEs;
   final double          gammaEs;
   final PhaseResult     result;
@@ -400,6 +413,9 @@ class _PanelBody extends StatelessWidget {
     required this.whatIf,
     required this.portfolio,
     required this.portfolioLoading,
+    required this.portfolioError,
+    required this.strikeSubstituted,
+    required this.enteredStrike,
     required this.deltaEs,
     required this.gammaEs,
     required this.result,
@@ -411,6 +427,7 @@ class _PanelBody extends StatelessWidget {
     required this.delta,
     required this.quantity,
     required this.ivLoading,
+    this.contractStrike,
     this.ivAnalysis,
   });
 
@@ -419,6 +436,13 @@ class _PanelBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 0. Strike substitution warning
+        if (strikeSubstituted && contractStrike != null)
+          _StrikeSubstitutionBanner(
+            enteredStrike: enteredStrike,
+            actualStrike:  contractStrike!,
+          ),
+
         // 1. Phase header
         _PhaseHeader(result: result),
         const SizedBox(height: 14),
@@ -449,11 +473,12 @@ class _PanelBody extends StatelessWidget {
         _SectionLabel('Expected Shortfall  (ES₉₅)'),
         const SizedBox(height: 8),
         _Es95Card(
-          deltaEs:      deltaEs,
-          gammaEs:      gammaEs,
+          deltaEs:         deltaEs,
+          gammaEs:         gammaEs,
           portfolioBefore: portfolio.totalEs95,
           portfolioAfter:  whatIf.newEs95,
-          loading:      portfolioLoading,
+          loading:         portfolioLoading,
+          error:           portfolioError,
         ),
         const SizedBox(height: 16),
 
@@ -461,8 +486,9 @@ class _PanelBody extends StatelessWidget {
         _SectionLabel('Portfolio Impact'),
         const SizedBox(height: 8),
         _WhatIfCard(
-          whatIf:   whatIf,
-          loading:  portfolioLoading,
+          whatIf:        whatIf,
+          loading:       portfolioLoading,
+          error:         portfolioError,
           openPositions: portfolio.openPositions,
         ),
         const SizedBox(height: 16),
@@ -1021,12 +1047,14 @@ class _Es95Card extends StatelessWidget {
   final double portfolioBefore;
   final double portfolioAfter;
   final bool   loading;
+  final bool   error;
   const _Es95Card({
     required this.deltaEs,
     required this.gammaEs,
     required this.portfolioBefore,
     required this.portfolioAfter,
     required this.loading,
+    this.error = false,
   });
 
   @override
@@ -1100,7 +1128,12 @@ class _Es95Card extends StatelessWidget {
           ),
 
           // Portfolio impact (async)
-          if (!loading) ...[
+          if (error) ...[
+            const SizedBox(height: 12),
+            Divider(height: 1, color: AppTheme.borderColor.withValues(alpha: 0.5)),
+            const SizedBox(height: 10),
+            const _PortfolioErrorNote(),
+          ] else if (!loading) ...[
             const SizedBox(height: 12),
             Divider(height: 1, color: AppTheme.borderColor.withValues(alpha: 0.5)),
             const SizedBox(height: 10),
@@ -1205,11 +1238,13 @@ class _Es95Component extends StatelessWidget {
 class _WhatIfCard extends StatelessWidget {
   final WhatIfResult whatIf;
   final bool         loading;
+  final bool         error;
   final int          openPositions;
   const _WhatIfCard({
     required this.whatIf,
     required this.loading,
     required this.openPositions,
+    this.error = false,
   });
 
   @override
@@ -1223,6 +1258,18 @@ class _WhatIfCard extends StatelessWidget {
           border:       Border.all(color: AppTheme.borderColor),
         ),
         child: const _LoadingRow(label: 'Loading portfolio positions…'),
+      );
+    }
+
+    if (error) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color:        AppTheme.cardColor,
+          borderRadius: BorderRadius.circular(10),
+          border:       Border.all(color: AppTheme.borderColor),
+        ),
+        child: const _PortfolioErrorNote(),
       );
     }
 
@@ -1381,6 +1428,33 @@ class _WhatIfRow extends StatelessWidget {
   }
 }
 
+// ── Portfolio error note ──────────────────────────────────────────────────────
+
+class _PortfolioErrorNote extends StatelessWidget {
+  const _PortfolioErrorNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.warning_amber_outlined,
+            size: 14, color: Color(0xFFFBBF24)),
+        SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Portfolio data unavailable (timed out) — '
+            'book impact shown against empty book. '
+            'Reload to retry.',
+            style: TextStyle(
+                color: Color(0xFFFBBF24), fontSize: 11, height: 1.4),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ── Loading row ───────────────────────────────────────────────────────────────
 
 class _LoadingRow extends StatelessWidget {
@@ -1402,6 +1476,127 @@ class _LoadingRow extends StatelessWidget {
       ],
     );
   }
+}
+
+// ── Strike substitution banner ────────────────────────────────────────────────
+
+class _StrikeSubstitutionBanner extends StatelessWidget {
+  final double enteredStrike;
+  final double actualStrike;
+  const _StrikeSubstitutionBanner({
+    required this.enteredStrike,
+    required this.actualStrike,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final diff = (actualStrike - enteredStrike).abs();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color:        const Color(0xFFFBBF24).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border:       Border.all(
+            color: const Color(0xFFFBBF24).withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.swap_horiz_rounded,
+              color: Color(0xFFFBBF24), size: 15),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Nearest listed strike used: \$${actualStrike.toStringAsFixed(2)} '
+              '(entered \$${enteredStrike.toStringAsFixed(2)}, '
+              '\$${diff.toStringAsFixed(2)} apart)',
+              style: const TextStyle(
+                  color: Color(0xFFFBBF24), fontSize: 12, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── API error tile (with retry) ───────────────────────────────────────────────
+
+class _ApiErrorTile extends StatelessWidget {
+  final String       message;
+  final VoidCallback onRetry;
+  const _ApiErrorTile({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color:        AppTheme.lossColor.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border:       Border.all(color: AppTheme.lossColor.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.cloud_off_rounded,
+                    color: AppTheme.lossColor, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Backend unreachable — $message',
+                    style: const TextStyle(
+                        color: AppTheme.lossColor, fontSize: 12, height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 14),
+              label: const Text('Retry'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.lossColor,
+                side: BorderSide(
+                    color: AppTheme.lossColor.withValues(alpha: 0.5)),
+                textStyle: const TextStyle(fontSize: 12),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 6),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BlotterLoadingSkeleton extends StatelessWidget {
+  const _BlotterLoadingSkeleton();
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 32),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(strokeWidth: 2),
+              SizedBox(height: 12),
+              Text('Computing fair value…',
+                  style: TextStyle(
+                      color: AppTheme.neutralColor, fontSize: 12)),
+            ],
+          ),
+        ),
+      );
 }
 
 // ── Not-ready / loading ───────────────────────────────────────────────────────
@@ -1472,36 +1667,13 @@ class _GexRegimeCard extends StatelessWidget {
     final flipPct  = ivAnalysis?.spotToZeroGammaPct;
     final gexWall  = ivAnalysis?.maxGexStrike;
 
-    // ── Regime multipliers — mirror Python option_scoring.py ─────────────────
-    double gexMultiplier   = 1.0;
-    double vannaMultiplier = 1.0;
-    bool   regimeFail      = false;
-    bool   nearFlip        = false;
-
-    if (ivAnalysis != null) {
-      if (regime == GammaRegime.negative) {
-        regimeFail    = true;
-        gexMultiplier = 0.50;
-      } else if (flipPct != null && flipPct.abs() <= 0.5) {
-        nearFlip      = true;
-        gexMultiplier = 0.70;
-      } else if (regime == GammaRegime.positive) {
-        if (totalGex != null && totalGex >= 1000.0) {
-          gexMultiplier = 1.20;
-        } else if (slope == GammaSlope.rising) {
-          gexMultiplier = 1.10;
-        } else if (slope == GammaSlope.falling) {
-          gexMultiplier = 0.85;
-        }
-      }
-
-      final slopeFalling = slope == GammaSlope.falling;
-      final vannaBearish = vr == VannaRegime.bearishOnVolCrush ||
-                           vr == VannaRegime.bearishOnVolSpike;
-      if (slopeFalling && vannaBearish) vannaMultiplier = 0.60;
-    }
-
-    final regimeMultiplier = gexMultiplier * vannaMultiplier;
+    // ── Regime multipliers — single source of truth in RegimeMultipliers ────────
+    final rm               = RegimeMultipliers.from(ivAnalysis);
+    final gexMultiplier    = rm.gexMultiplier;
+    final vannaMultiplier  = rm.vannaMultiplier;
+    final regimeFail       = rm.regimeFail;
+    final nearFlip         = rm.nearFlip;
+    final regimeMultiplier = rm.regimeMultiplier;
     final gexKnown         = regime != GammaRegime.unknown;
     final gexMisaligned    = gexKnown &&
         ((isCall && regime == GammaRegime.negative) ||

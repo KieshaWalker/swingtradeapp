@@ -886,3 +886,91 @@ class IvAnalysis {
     return c >= 0 ? '+$fmt/day' : '-$fmt/day';
   }
 }
+
+// =============================================================================
+// RegimeMultipliers — single source of truth for Gm/Vm computation.
+// Mirrors Python option_scoring.py exactly.  Used by Phase 3 scoring logic
+// and Phase 3 GEX display widget so the table is never duplicated.
+// =============================================================================
+
+class RegimeMultipliers {
+  // Near-flip threshold: spot is within this % of the zero-gamma level.
+  static const double nearFlipPct = 0.5;
+
+  final double  gexMultiplier;    // Gm  0.50 / 0.70 / 0.85 / 1.00 / 1.10 / 1.20
+  final double  vannaMultiplier;  // Vm  0.60 / 1.00
+  final bool    regimeFail;       // true = negative gamma hard gate
+  final bool    nearFlip;         // true = spot within nearFlipPct% of zero-gamma
+  final String? slopeSignal;      // human-readable Gm label (positive regime only)
+  final String? vannaSignal;      // human-readable Vm label (divergence only)
+
+  const RegimeMultipliers._({
+    required this.gexMultiplier,
+    required this.vannaMultiplier,
+    required this.regimeFail,
+    required this.nearFlip,
+    this.slopeSignal,
+    this.vannaSignal,
+  });
+
+  double get regimeMultiplier => gexMultiplier * vannaMultiplier;
+
+  static const RegimeMultipliers neutral = RegimeMultipliers._(
+    gexMultiplier:   1.0,
+    vannaMultiplier: 1.0,
+    regimeFail:      false,
+    nearFlip:        false,
+  );
+
+  factory RegimeMultipliers.from(IvAnalysis? ivAnalysis) {
+    if (ivAnalysis == null) return neutral;
+
+    final gr       = ivAnalysis.gammaRegime;
+    final slope    = ivAnalysis.gammaSlope;
+    final flipPct  = ivAnalysis.spotToZeroGammaPct;
+    final totalGex = ivAnalysis.totalGex;
+    final vr       = ivAnalysis.vannaRegime;
+
+    double  gexMultiplier = 1.0;
+    bool    regimeFail    = false;
+    bool    nearFlip      = false;
+    String? slopeSignal;
+
+    if (gr == GammaRegime.negative) {
+      regimeFail    = true;
+      gexMultiplier = 0.50;
+    } else if (flipPct != null && flipPct.abs() <= nearFlipPct) {
+      nearFlip      = true;
+      gexMultiplier = 0.70;
+    } else if (gr == GammaRegime.positive) {
+      if (totalGex != null && totalGex >= 1000.0) {
+        gexMultiplier = 1.20;
+      } else if (slope == GammaSlope.rising) {
+        gexMultiplier = 1.10;
+      } else if (slope == GammaSlope.falling) {
+        gexMultiplier = 0.85;
+      }
+      slopeSignal =
+          'Gamma slope ${slope.label}  →  Gm ${gexMultiplier.toStringAsFixed(2)}×';
+    }
+
+    double  vannaMultiplier = 1.0;
+    String? vannaSignal;
+    if (slope == GammaSlope.falling &&
+        (vr == VannaRegime.bearishOnVolCrush ||
+         vr == VannaRegime.bearishOnVolSpike)) {
+      vannaMultiplier = 0.60;
+      vannaSignal = 'Vanna Divergence: declining slope + bearish dealer hedge — '
+          'fragile rally; reversal risk elevated  (Vm 0.60×)';
+    }
+
+    return RegimeMultipliers._(
+      gexMultiplier:   gexMultiplier,
+      vannaMultiplier: vannaMultiplier,
+      regimeFail:      regimeFail,
+      nearFlip:        nearFlip,
+      slopeSignal:     slopeSignal,
+      vannaSignal:     vannaSignal,
+    );
+  }
+}

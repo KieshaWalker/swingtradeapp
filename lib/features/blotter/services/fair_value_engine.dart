@@ -54,33 +54,30 @@ class FairValueEngine {
   // ── Portfolio state (Supabase) ────────────────────────────────────────────
 
   static Future<PortfolioState> loadPortfolioState() async {
-    try {
-      final rows = await Supabase.instance.client
-          .from('blotter_trades')
-          .select('delta,vega,quantity,es95_after,status')
-          .inFilter('status', ['committed', 'sent']);
+    final rows = await Supabase.instance.client
+        .from('blotter_trades')
+        .select('delta,vega,quantity,es95_after,status')
+        .inFilter('status', ['committed', 'sent'])
+        .timeout(const Duration(seconds: 8));
 
-      double totalDelta = 0;
-      double totalVega  = 0;
-      double latestEs   = 0;
+    double totalDelta = 0;
+    double totalVega  = 0;
+    double latestEs   = 0;
 
-      for (final r in rows) {
-        final qty = (r['quantity'] as int? ?? 0);
-        totalDelta += (r['delta'] as num? ?? 0).toDouble() * qty * 100;
-        totalVega  += (r['vega']  as num? ?? 0).toDouble() * qty * 100;
-        final es = (r['es95_after'] as num? ?? 0).toDouble();
-        latestEs += es;
-      }
-
-      return PortfolioState(
-        totalDelta:    totalDelta,
-        totalVega:     totalVega,
-        totalEs95:     latestEs,
-        openPositions: rows.length,
-      );
-    } catch (_) {
-      return PortfolioState.empty;
+    for (final r in rows) {
+      final qty = (r['quantity'] as int? ?? 0);
+      totalDelta += (r['delta'] as num? ?? 0).toDouble() * qty * 100;
+      totalVega  += (r['vega']  as num? ?? 0).toDouble() * qty * 100;
+      final es = (r['es95_after'] as num? ?? 0).toDouble();
+      latestEs += es;
     }
+
+    return PortfolioState(
+      totalDelta:    totalDelta,
+      totalVega:     totalVega,
+      totalEs95:     latestEs,
+      openPositions: rows.length,
+    );
   }
 
   // ── ES₉₅ helper ──────────────────────────────────────────────────────────

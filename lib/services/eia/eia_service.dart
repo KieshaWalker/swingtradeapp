@@ -28,7 +28,7 @@ class EiaService {
         'end': ?end,
         'facets': ?facets,
       },
-    );
+    ).timeout(const Duration(seconds: 10));
     if (response.status != 200) {
       throw Exception('EIA Edge Function error ${response.status}');
     }

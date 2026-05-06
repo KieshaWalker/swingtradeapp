@@ -17,6 +17,10 @@ class SchwabService {
 
   FunctionsClient get _fn => Supabase.instance.client.functions;
 
+  Future<FunctionResponse> _invoke(String name, {Object? body}) =>
+      _fn.invoke(name, body: body)
+         .timeout(const Duration(seconds: 15));
+
   // ── Quotes ──────────────────────────────────────────────────────────────────
 
   Future<StockQuote?> getQuote(String symbol) async {
@@ -27,7 +31,7 @@ class SchwabService {
   Future<List<StockQuote>> getQuotes(List<String> symbols) async {
     if (symbols.isEmpty) return [];
     try {
-      final res = await _fn.invoke(
+      final res = await _invoke(
         'get-schwab-quotes',
         body: {'symbols': symbols},
       );
@@ -55,7 +59,7 @@ class SchwabService {
     String? expirationDate,
   }) async {
     try {
-      final res = await _fn.invoke(
+      final res = await _invoke(
         'get-schwab-chains',
         body: {
           'symbol': symbol,
@@ -80,7 +84,7 @@ class SchwabService {
   Future<List<SchwabInstrument>> searchTicker(String query) async {
     if (query.isEmpty) return [];
     try {
-      final res = await _fn.invoke(
+      final res = await _invoke(
         'get-schwab-instruments',
         body: {'query': query},
       );
@@ -101,7 +105,7 @@ class SchwabService {
 
   Future<SchwabFundamentals?> getFundamentals(String symbol) async {
     try {
-      final res = await _fn.invoke(
+      final res = await _invoke(
         'get-schwab-quotes',
         body: {'symbols': [symbol]},
       );
@@ -126,7 +130,7 @@ class SchwabService {
   /// — no extra network call or edge function needed.
   Future<EarningsDate?> getEarningsDate(String symbol) async {
     try {
-      final res = await _fn.invoke(
+      final res = await _invoke(
         'get-schwab-quotes',
         body: {'symbols': [symbol]},
       );
@@ -160,7 +164,7 @@ class SchwabService {
     int    frequency = 0,
   }) async {
     try {
-      final res = await _fn.invoke(
+      final res = await _invoke(
         'get-schwab-movers',
         body: {'symbolId': symbolId, 'sort': sort, 'frequency': frequency},
       );

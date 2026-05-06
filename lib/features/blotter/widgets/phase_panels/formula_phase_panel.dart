@@ -66,6 +66,7 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
   OptionScore?         _score;
   OptionDecisionResult? _decisionResult;
   String?              _lastFetchKey;
+  String?              _fetchError;
 
   Future<void> _fetchAnalysis(
     SchwabOptionContract contract,
@@ -79,7 +80,10 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
         underlyingPrice: underlyingPrice,
       );
       if (mounted) setState(() => _score = OptionScore.fromJson(raw));
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) setState(() => _fetchError = e.toString());
+      return;
+    }
 
     if (widget.priceTarget != null && widget.priceTarget! > 0) {
       try {
@@ -94,7 +98,7 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
           setState(() => _decisionResult =
               OptionDecisionResult.fromJson(raw, contract: contract));
         }
-      } catch (_) {}
+      } catch (_) {}  // decision is optional — panel renders without it
     }
   }
 
@@ -148,28 +152,49 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
       _lastFetchKey = fetchKey;
       _score = null;
       _decisionResult = null;
+      _fetchError = null;
       WidgetsBinding.instance.addPostFrameCallback(
           (_) => _fetchAnalysis(contract, chain.underlyingPrice));
+    }
+
+    if (_fetchError != null) {
+      final errResult = PhaseResult(
+        status: PhaseStatus.fail,
+        headline: 'Scoring API unreachable',
+        signals: ['Backend error: $_fetchError'],
+      );
+      _notifyIfChanged(errResult);
+      return _ApiErrorTile(
+        message: _fetchError!,
+        onRetry: () => setState(() {
+          _fetchError = null;
+          _lastFetchKey = null;
+        }),
+      );
     }
 
     final score = _score;
     if (score == null) return const _LoadingSkeleton();
 
+    final strikeSubstituted = contract.strikePrice != widget.strike!;
+
     final result = _computeResult(
-      score:          score,
-      decisionResult: _decisionResult,
-      contract:       contract,
-      underlying:     chain.underlyingPrice,
+      score:             score,
+      decisionResult:    _decisionResult,
+      contract:          contract,
+      underlying:        chain.underlyingPrice,
+      strikeSubstituted: strikeSubstituted,
     );
     _notifyIfChanged(result);
 
     return _PanelBody(
-      ticker:         widget.ticker,
-      contractType:   widget.contractType,
-      contract:       contract,
-      underlying:     chain.underlyingPrice,
-      score:          score,
-      decisionResult: _decisionResult,
+      ticker:            widget.ticker,
+      contractType:      widget.contractType,
+      contract:          contract,
+      underlying:        chain.underlyingPrice,
+      score:             score,
+      decisionResult:    _decisionResult,
+      enteredStrike:     widget.strike!,
       result:         result,
     );
   }
@@ -204,6 +229,7 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
     required OptionDecisionResult? decisionResult,
     required SchwabOptionContract  contract,
     required double                underlying,
+    bool                           strikeSubstituted = false,
   }) {
     // Hard fail conditions
     final isIlliquid = score.flags.any(
@@ -219,7 +245,8 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
       status = PhaseStatus.fail;
     } else if (score.total < 65 ||
                badReturn ||
-               score.flags.isNotEmpty) {
+               score.flags.isNotEmpty ||
+               strikeSubstituted) {
       status = PhaseStatus.warn;
     } else {
       status = PhaseStatus.pass;
@@ -240,6 +267,10 @@ class _FormulaPhasePanelState extends ConsumerState<FormulaPhasePanel> {
             '(${decisionResult.breakEvenMovePct.toStringAsFixed(1)}% move)',
       ],
       for (final f in score.flags) '⚠ $f',
+      if (strikeSubstituted)
+        '⚠ Strike substituted: \$${contract.strikePrice.toStringAsFixed(2)} used '
+        '(entered \$${widget.strike!.toStringAsFixed(2)}, '
+        '\$${(contract.strikePrice - widget.strike!).abs().toStringAsFixed(2)} apart)',
     ];
 
     final isCall = widget.contractType == ContractType.call;
@@ -272,6 +303,7 @@ class _PanelBody extends StatelessWidget {
   final OptionScore          score;
   final OptionDecisionResult? decisionResult;
   final PhaseResult          result;
+  final double               enteredStrike;
 
   const _PanelBody({
     required this.ticker,
@@ -281,15 +313,25 @@ class _PanelBody extends StatelessWidget {
     required this.score,
     required this.decisionResult,
     required this.result,
+    required this.enteredStrike,
   });
 
   @override
   Widget build(BuildContext context) {
     final isCall = contractType == ContractType.call;
 
+    final strikeSubstituted = contract.strikePrice != enteredStrike;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 0. Strike substitution warning (shown before everything else)
+        if (strikeSubstituted)
+          _StrikeSubstitutionBanner(
+            enteredStrike: enteredStrike,
+            actualStrike:  contract.strikePrice,
+          ),
+
         // 1. Phase status header
         _PhaseHeader(result: result),
         const SizedBox(height: 14),
@@ -1025,6 +1067,102 @@ class _NotReadyTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _StrikeSubstitutionBanner extends StatelessWidget {
+  final double enteredStrike;
+  final double actualStrike;
+  const _StrikeSubstitutionBanner({
+    required this.enteredStrike,
+    required this.actualStrike,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final diff = (actualStrike - enteredStrike).abs();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color:        const Color(0xFFFBBF24).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border:       Border.all(
+            color: const Color(0xFFFBBF24).withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.swap_horiz_rounded,
+              color: Color(0xFFFBBF24), size: 15),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Nearest listed strike used: \$${actualStrike.toStringAsFixed(2)} '
+              '(entered \$${enteredStrike.toStringAsFixed(2)}, '
+              '\$${diff.toStringAsFixed(2)} apart)',
+              style: const TextStyle(
+                  color: Color(0xFFFBBF24), fontSize: 12, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ApiErrorTile extends StatelessWidget {
+  final String       message;
+  final VoidCallback onRetry;
+  const _ApiErrorTile({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color:        AppTheme.lossColor.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+          border:       Border.all(color: AppTheme.lossColor.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.cloud_off_rounded,
+                    color: AppTheme.lossColor, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Backend unreachable — $message',
+                    style: const TextStyle(
+                        color: AppTheme.lossColor, fontSize: 12, height: 1.4),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 14),
+              label: const Text('Retry'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.lossColor,
+                side: BorderSide(
+                    color: AppTheme.lossColor.withValues(alpha: 0.5)),
+                textStyle: const TextStyle(fontSize: 12),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 6),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
