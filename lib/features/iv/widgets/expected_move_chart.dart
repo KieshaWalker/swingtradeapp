@@ -129,8 +129,11 @@ class _ExpectedMoveChartState extends ConsumerState<ExpectedMoveChart>
               ),
               data: (snaps) {
                 final valid = snaps.where((s) => s.hasBands).toList();
-                if (valid.length < 2) {
-                  return _EmptyState(count: valid.length);
+                if (valid.isEmpty) {
+                  return const _EmptyState(count: 0);
+                }
+                if (valid.length == 1) {
+                  return _SingleSnapshot(snapshot: valid.first);
                 }
                 return _BandChart(snapshots: valid);
               },
@@ -349,6 +352,70 @@ class _BandChart extends StatelessWidget {
           ),
         ),
       )),
+    );
+  }
+}
+
+// ── Single snapshot ───────────────────────────────────────────────────────────
+
+class _SingleSnapshot extends StatelessWidget {
+  final ExpectedMoveSnapshot snapshot;
+  const _SingleSnapshot({required this.snapshot});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = snapshot;
+    final fmt = NumberFormat('\$#,##0.00');
+
+    Widget row(String label, Color color, double? lo, double? hi) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 10, height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 60,
+            child: Text(label,
+                style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11)),
+          ),
+          Text(
+            lo != null && hi != null
+                ? '${fmt.format(lo)}  –  ${fmt.format(hi)}'
+                : '—',
+            style: const TextStyle(color: Colors.white, fontSize: 12,
+                fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+          ),
+        ],
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Spot  ${fmt.format(s.spot)}   '
+            'IV ${((s.iv ?? 0) * 100).toStringAsFixed(1)}%   '
+            'EM ±\$${s.emDollars?.toStringAsFixed(2) ?? '—'}',
+            style: const TextStyle(
+                color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 14),
+          row('±1σ  68%',   _green,  s.lower1s, s.upper1s),
+          row('±2σ  95%',   _yellow, s.lower2s, s.upper2s),
+          row('±3σ  99.7%', _red,    s.lower3s, s.upper3s),
+          const SizedBox(height: 14),
+          const Text(
+            'Chart builds after 2+ market closes.',
+            style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 }
