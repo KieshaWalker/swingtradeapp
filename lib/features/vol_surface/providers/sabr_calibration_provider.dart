@@ -126,10 +126,15 @@ class _SabrCalibrationNotifier
       return ref.read(_sabrRepoProvider).loadLatest(ticker);
     }
 
+    // Spot price is required for SABR log-moneyness; fall back to persisted calibration if absent.
+    if (latest.spotPrice == null) {
+      return ref.read(_sabrRepoProvider).loadLatest(ticker);
+    }
+
     final points = latest.points.map((p) => p.toJson()).toList();
     final raw = await PythonApiClient.sabrCalibrate(
       points:    points,
-      spotPrice: latest.spotPrice ?? 0,
+      spotPrice: latest.spotPrice!,
       ticker:    ticker,
       obsDate:   latest.obsDateStr,
     );

@@ -195,11 +195,11 @@ def calibrate_heston(
     de_result = differential_evolution(
         _objective,
         bounds,
-        maxiter=150,
+        maxiter=80,
         tol=1e-5,
         seed=42,
         init="sobol",
-        popsize=8,
+        popsize=6,
         workers=1,
         polish=False,
     )

@@ -10,12 +10,16 @@ class VolHeatmap extends StatefulWidget {
   final List<VolPoint> points;
   final double? spotPrice;
   final String ivMode;
+  final bool zeroCentered;
+  final String legendTitle;
 
   const VolHeatmap({
     super.key,
     required this.points,
     this.spotPrice,
     required this.ivMode,
+    this.zeroCentered = false,
+    this.legendTitle = 'IV %',
   });
 
   @override
@@ -37,13 +41,15 @@ class _VolHeatmapState extends State<VolHeatmap> {
     super.didUpdateWidget(old);
     if (old.points != widget.points ||
         old.ivMode != widget.ivMode ||
-        old.spotPrice != widget.spotPrice) {
+        old.spotPrice != widget.spotPrice ||
+        old.zeroCentered != widget.zeroCentered) {
       _rebuild();
     }
   }
 
   void _rebuild() {
-    _grid = _GridData.build(widget.points, widget.spotPrice, widget.ivMode);
+    _grid = _GridData.build(
+        widget.points, widget.spotPrice, widget.ivMode, widget.zeroCentered);
     _hit = null;
   }
 
@@ -91,7 +97,7 @@ class _VolHeatmapState extends State<VolHeatmap> {
           child: LayoutBuilder(
             builder: (_, constraints) => CustomPaint(
               size: constraints.biggest,
-              painter: _HeatmapPainter(grid: g, spotPrice: widget.spotPrice),
+              painter: _HeatmapPainter(grid: g, spotPrice: widget.spotPrice, legendTitle: widget.legendTitle),
             ),
           ),
         ),
@@ -129,7 +135,8 @@ class _GridData {
     required this.maxIv,
   });
 
-  static _GridData build(List<VolPoint> points, double? spot, String mode) {
+  static _GridData build(List<VolPoint> points, double? spot, String mode,
+      [bool zeroCentered = false]) {
     final strikes = points.map((p) => p.strike).toSet().toList()..sort();
     final dtes = points.map((p) => p.dte).toSet().toList()..sort();
 
@@ -152,18 +159,25 @@ class _GridData {
       if (iv > maxIv) maxIv = iv;
     }
 
-    // Use 5th/95th percentile IV bounds so extreme far-OTM IV values
-    // (e.g. 500–1100% on deep OTM strikes) don't compress the ATM color range.
-    final sortedIvs = <double>[];
-    for (final row in grid) {
-      for (final iv in row) {
-        if (iv != null) sortedIvs.add(iv);
+    if (zeroCentered) {
+      // Diff heatmap: pin zero to the color midpoint so the scale is symmetric.
+      final absMax = max(minIv.abs(), maxIv.abs());
+      minIv = -absMax;
+      maxIv = absMax;
+    } else {
+      // Use 5th/95th percentile IV bounds so extreme far-OTM IV values
+      // (e.g. 500–1100% on deep OTM strikes) don't compress the ATM color range.
+      final sortedIvs = <double>[];
+      for (final row in grid) {
+        for (final iv in row) {
+          if (iv != null) sortedIvs.add(iv);
+        }
       }
-    }
-    sortedIvs.sort();
-    if (sortedIvs.length >= 20) {
-      minIv = sortedIvs[(sortedIvs.length * 0.05).floor()];
-      maxIv = sortedIvs[(sortedIvs.length * 0.95).floor()];
+      sortedIvs.sort();
+      if (sortedIvs.length >= 20) {
+        minIv = sortedIvs[(sortedIvs.length * 0.05).floor()];
+        maxIv = sortedIvs[(sortedIvs.length * 0.95).floor()];
+      }
     }
 
     return _GridData(
@@ -187,7 +201,10 @@ class _HeatmapPainter extends CustomPainter {
   static const rightMargin = 8.0;
   static const legendWidth = 56.0;
 
-  const _HeatmapPainter({required this.grid, this.spotPrice});
+  final String legendTitle;
+
+  const _HeatmapPainter(
+      {required this.grid, this.spotPrice, this.legendTitle = 'IV %'});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -339,7 +356,7 @@ class _HeatmapPainter extends CustomPainter {
 
     // ── Legend title "IV %" ──
     labelPainter
-      ..text = TextSpan(text: 'IV %', style: titleStyle)
+      ..text = TextSpan(text: legendTitle, style: titleStyle)
       ..layout();
     labelPainter.paint(
         canvas, Offset(lx2 + lw / 2 - labelPainter.width / 2, ly - labelPainter.height - 2));
@@ -357,7 +374,7 @@ class _HeatmapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_HeatmapPainter old) =>
-      old.grid != grid || old.spotPrice != spotPrice;
+      old.grid != grid || old.spotPrice != spotPrice || old.legendTitle != legendTitle;
 
   static String _fmtStrike(double s) =>
       s == s.truncateToDouble() ? s.toInt().toString() : s.toStringAsFixed(1);

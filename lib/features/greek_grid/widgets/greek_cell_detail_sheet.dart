@@ -14,8 +14,8 @@ import '../models/greek_grid_models.dart';
 import '../providers/greek_grid_providers.dart';
 
 class GreekCellDetailSheet extends ConsumerStatefulWidget {
-  final String       ticker;
-  final StrikeBand   band;
+  final String ticker;
+  final StrikeBand band;
   final ExpiryBucket bucket;
 
   const GreekCellDetailSheet({
@@ -30,25 +30,25 @@ class GreekCellDetailSheet extends ConsumerStatefulWidget {
       _GreekCellDetailSheetState();
 }
 
-class _GreekCellDetailSheetState
-    extends ConsumerState<GreekCellDetailSheet> {
+class _GreekCellDetailSheetState extends ConsumerState<GreekCellDetailSheet> {
   GreekSelector _chartGreek = GreekSelector.delta;
 
   @override
   Widget build(BuildContext context) {
-    final series = ref.watch(greekGridTimeSeriesProvider(
-        (widget.ticker, widget.band, widget.bucket)));
+    final series = ref.watch(
+      greekGridTimeSeriesProvider((widget.ticker, widget.band, widget.bucket)),
+    );
 
     final latest = series.isNotEmpty ? series.last : null;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.55,
-      minChildSize:     0.35,
-      maxChildSize:     0.85,
-      expand:           false,
+      minChildSize: 0.35,
+      maxChildSize: 0.85,
+      expand: false,
       builder: (_, controller) => Container(
         decoration: BoxDecoration(
-          color:        AppTheme.elevatedColor,
+          color: AppTheme.elevatedColor,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: ListView(
@@ -58,7 +58,8 @@ class _GreekCellDetailSheetState
             // Drag handle
             Center(
               child: Container(
-                width: 40, height: 4,
+                width: 40,
+                height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
                   color: Colors.white24,
@@ -71,9 +72,10 @@ class _GreekCellDetailSheetState
             Text(
               '${widget.band.label}  ×  ${widget.bucket.label}',
               style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700),
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             Text(
               '${series.length} observation${series.length == 1 ? '' : 's'}  ·  ${widget.ticker}',
@@ -96,8 +98,7 @@ class _GreekCellDetailSheetState
             if (series.length >= 2)
               SizedBox(
                 height: 160,
-                child: _TimeSeriesChart(
-                    series: series, greek: _chartGreek),
+                child: _TimeSeriesChart(series: series, greek: _chartGreek),
               )
             else
               const Center(
@@ -140,20 +141,24 @@ class _GreekChips extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color:        AppTheme.cardColor,
+            color: AppTheme.cardColor,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(g.shortLabel,
-                  style: const TextStyle(
-                      color: Colors.white54, fontSize: 10)),
-              Text(fmt(v, g),
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600)),
+              Text(
+                g.shortLabel,
+                style: const TextStyle(color: Colors.white54, fontSize: 10),
+              ),
+              Text(
+                fmt(v, g),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         );
@@ -167,8 +172,7 @@ class _GreekChips extends StatelessWidget {
 class _ChartGreekSelector extends StatelessWidget {
   final GreekSelector selected;
   final ValueChanged<GreekSelector> onChanged;
-  const _ChartGreekSelector(
-      {required this.selected, required this.onChanged});
+  const _ChartGreekSelector({required this.selected, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -184,14 +188,14 @@ class _ChartGreekSelector extends StatelessWidget {
               margin: const EdgeInsets.only(right: 6),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color:        active ? AppTheme.profitColor : AppTheme.cardColor,
+                color: active ? AppTheme.profitColor : AppTheme.cardColor,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
                 g.shortLabel,
                 style: TextStyle(
-                  color:      active ? Colors.black : Colors.white70,
-                  fontSize:   12,
+                  color: active ? Colors.black : Colors.white70,
+                  fontSize: 12,
                   fontWeight: active ? FontWeight.w700 : FontWeight.w400,
                 ),
               ),
@@ -207,7 +211,7 @@ class _ChartGreekSelector extends StatelessWidget {
 
 class _TimeSeriesChart extends StatelessWidget {
   final List<GreekGridPoint> series;
-  final GreekSelector        greek;
+  final GreekSelector greek;
   const _TimeSeriesChart({required this.series, required this.greek});
 
   @override
@@ -219,8 +223,10 @@ class _TimeSeriesChart extends StatelessWidget {
     }
     if (spots.length < 2) {
       return const Center(
-        child: Text('Insufficient data for chart',
-            style: TextStyle(color: Colors.white38)),
+        child: Text(
+          'Insufficient data for chart',
+          style: TextStyle(color: Colors.white38),
+        ),
       );
     }
 
@@ -230,8 +236,8 @@ class _TimeSeriesChart extends StatelessWidget {
       LineChartData(
         gridData: FlGridData(
           drawVerticalLine: false,
-          getDrawingHorizontalLine: (_) => FlLine(
-            color: Colors.white10, strokeWidth: 0.5),
+          getDrawingHorizontalLine: (_) =>
+              FlLine(color: Colors.white10, strokeWidth: 0.5),
         ),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
@@ -243,8 +249,7 @@ class _TimeSeriesChart extends StatelessWidget {
                 greek == GreekSelector.iv
                     ? '${(v * 100).toStringAsFixed(0)}%'
                     : v.toStringAsFixed(2),
-                style: const TextStyle(
-                    color: Colors.white38, fontSize: 9),
+                style: const TextStyle(color: Colors.white38, fontSize: 9),
               ),
             ),
           ),
@@ -256,25 +261,26 @@ class _TimeSeriesChart extends StatelessWidget {
                 final idx = v.toInt().clamp(0, series.length - 1);
                 return Text(
                   fmt.format(series[idx].obsDate),
-                  style: const TextStyle(
-                      color: Colors.white38, fontSize: 9),
+                  style: const TextStyle(color: Colors.white38, fontSize: 9),
                 );
               },
             ),
           ),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
         ),
         lineBarsData: [
           LineChartBarData(
-            spots:          spots,
-            isCurved:       true,
-            color:          AppTheme.profitColor,
-            barWidth:       2,
-            dotData:        const FlDotData(show: false),
-            belowBarData:   BarAreaData(
+            spots: spots,
+            isCurved: true,
+            color: AppTheme.profitColor,
+            barWidth: 2,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(
               show: true,
               color: AppTheme.profitColor.withValues(alpha: 0.08),
             ),

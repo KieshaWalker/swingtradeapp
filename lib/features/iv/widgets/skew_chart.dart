@@ -21,9 +21,9 @@ class SkewChart extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color:        AppTheme.cardColor,
+        color: AppTheme.cardColor,
         borderRadius: BorderRadius.circular(12),
-        border:       Border.all(color: AppTheme.borderColor),
+        border: Border.all(color: AppTheme.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -34,22 +34,24 @@ class SkewChart extends StatelessWidget {
               const Text(
                 'VOLATILITY SKEW',
                 style: TextStyle(
-                  color:      AppTheme.neutralColor,
-                  fontSize:   11,
+                  color: AppTheme.neutralColor,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.0,
                 ),
               ),
               const Spacer(),
-              if (analysis.skew != null)
-                _SkewBadge(skew: analysis.skew!),
+              if (analysis.skew != null) _SkewBadge(skew: analysis.skew!),
             ],
           ),
           const SizedBox(height: 4),
           Text(
             analysis.skewLabel,
-            style: const TextStyle(color: Colors.white, fontSize: 13,
-                fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
 
           const SizedBox(height: 16),
@@ -57,21 +59,20 @@ class SkewChart extends StatelessWidget {
           if (points.length < 3) ...[
             const SizedBox(height: 40),
             const Center(
-              child: Text('Insufficient strikes for skew chart',
-                  style: TextStyle(color: AppTheme.neutralColor)),
+              child: Text(
+                'Insufficient strikes for skew chart',
+                style: TextStyle(color: AppTheme.neutralColor),
+              ),
             ),
             const SizedBox(height: 40),
           ] else ...[
-            SizedBox(
-              height: 160,
-              child: _SkewLineChart(points: points),
-            ),
+            SizedBox(height: 160, child: _SkewLineChart(points: points)),
             const SizedBox(height: 8),
             // Legend
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _legend(AppTheme.lossColor,   'Put IV'),
+                _legend(AppTheme.lossColor, 'Put IV'),
                 const SizedBox(width: 20),
                 _legend(AppTheme.profitColor, 'Call IV'),
               ],
@@ -89,12 +90,19 @@ class SkewChart extends StatelessWidget {
 
   Widget _legend(Color color, String label) => Row(
     children: [
-      Container(width: 14, height: 3,
-          decoration: BoxDecoration(color: color,
-              borderRadius: BorderRadius.circular(2))),
+      Container(
+        width: 14,
+        height: 3,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
       const SizedBox(width: 6),
-      Text(label, style: const TextStyle(
-          color: AppTheme.neutralColor, fontSize: 11)),
+      Text(
+        label,
+        style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+      ),
     ],
   );
 }
@@ -108,23 +116,23 @@ class _SkewLineChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Build separate spot lists for puts and calls, keyed by moneyness
-    final putSpots  = <FlSpot>[];
+    final putSpots = <FlSpot>[];
     final callSpots = <FlSpot>[];
 
     for (final p in points) {
-      if (p.putIv  != null) putSpots.add(FlSpot(p.moneyness, p.putIv!));
+      if (p.putIv != null) putSpots.add(FlSpot(p.moneyness, p.putIv!));
       if (p.callIv != null) callSpots.add(FlSpot(p.moneyness, p.callIv!));
     }
 
-    final allIvs = [
-      ...putSpots.map((s)  => s.y),
-      ...callSpots.map((s) => s.y),
-    ];
+    final allIvs = [...putSpots.map((s) => s.y), ...callSpots.map((s) => s.y)];
     if (allIvs.isEmpty) return const SizedBox.shrink();
     if (putSpots.length + callSpots.length < 2) return const SizedBox.shrink();
 
-    final minY = (allIvs.reduce((a, b) => a < b ? a : b) - 5).clamp(0.0, double.infinity);
-    final maxY =  allIvs.reduce((a, b) => a > b ? a : b) + 5;
+    final minY = (allIvs.reduce((a, b) => a < b ? a : b) - 5).clamp(
+      0.0,
+      double.infinity,
+    );
+    final maxY = allIvs.reduce((a, b) => a > b ? a : b) + 5;
 
     return LineChart(
       LineChartData(
@@ -147,7 +155,9 @@ class _SkewLineChart extends StatelessWidget {
               getTitlesWidget: (v, _) => Text(
                 '${v.toStringAsFixed(0)}%',
                 style: const TextStyle(
-                    color: AppTheme.neutralColor, fontSize: 9),
+                  color: AppTheme.neutralColor,
+                  fontSize: 9,
+                ),
               ),
             ),
           ),
@@ -156,36 +166,48 @@ class _SkewLineChart extends StatelessWidget {
               showTitles: true,
               reservedSize: 24,
               getTitlesWidget: (v, _) {
-                final label = v == 0 ? 'ATM'
-                    : v > 0 ? '+${v.toStringAsFixed(0)}%'
+                final label = v == 0
+                    ? 'ATM'
+                    : v > 0
+                    ? '+${v.toStringAsFixed(0)}%'
                     : '${v.toStringAsFixed(0)}%';
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text(label,
-                      style: const TextStyle(
-                          color: AppTheme.neutralColor, fontSize: 9)),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: AppTheme.neutralColor,
+                      fontSize: 9,
+                    ),
+                  ),
                 );
               },
               interval: 5,
             ),
           ),
-          rightTitles:  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles:    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
         ),
         // Vertical line at ATM (moneyness = 0)
         extraLinesData: ExtraLinesData(
           verticalLines: [
             VerticalLine(
-              x:          0,
-              color:      Colors.white.withValues(alpha: 0.25),
+              x: 0,
+              color: Colors.white.withValues(alpha: 0.25),
               strokeWidth: 1,
-              dashArray:  [4, 4],
+              dashArray: [4, 4],
               label: VerticalLineLabel(
-                show:      true,
+                show: true,
                 alignment: Alignment.topRight,
                 labelResolver: (_) => 'spot',
                 style: const TextStyle(
-                    color: AppTheme.neutralColor, fontSize: 9),
+                  color: AppTheme.neutralColor,
+                  fontSize: 9,
+                ),
               ),
             ),
           ],
@@ -193,24 +215,24 @@ class _SkewLineChart extends StatelessWidget {
         lineBarsData: [
           if (putSpots.isNotEmpty)
             LineChartBarData(
-              spots:         putSpots,
-              isCurved:      true,
-              color:         AppTheme.lossColor,
-              barWidth:      2,
-              dotData:       const FlDotData(show: false),
-              belowBarData:  BarAreaData(
+              spots: putSpots,
+              isCurved: true,
+              color: AppTheme.lossColor,
+              barWidth: 2,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
                 show: true,
                 color: AppTheme.lossColor.withValues(alpha: 0.07),
               ),
             ),
           if (callSpots.isNotEmpty)
             LineChartBarData(
-              spots:         callSpots,
-              isCurved:      true,
-              color:         AppTheme.profitColor,
-              barWidth:      2,
-              dotData:       const FlDotData(show: false),
-              belowBarData:  BarAreaData(
+              spots: callSpots,
+              isCurved: true,
+              color: AppTheme.profitColor,
+              barWidth: 2,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
                 show: true,
                 color: AppTheme.profitColor.withValues(alpha: 0.07),
               ),
@@ -224,8 +246,8 @@ class _SkewLineChart extends StatelessWidget {
               return LineTooltipItem(
                 '${isCall ? 'Call' : 'Put'} IV: ${s.y.toStringAsFixed(1)}%',
                 TextStyle(
-                  color:      s.bar.color,
-                  fontSize:   11,
+                  color: s.bar.color,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               );
@@ -245,23 +267,34 @@ class _SkewBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final steep   = skew > 10;
+    final steep = skew > 10;
     final elevated = skew > 5;
-    final color = steep    ? AppTheme.lossColor
-        : elevated ? const Color(0xFFFBBF24)
+    final color = steep
+        ? AppTheme.lossColor
+        : elevated
+        ? const Color(0xFFFBBF24)
         : AppTheme.profitColor;
-    final label = steep ? 'STEEP' : elevated ? 'ELEVATED' : 'NORMAL';
+    final label = steep
+        ? 'STEEP'
+        : elevated
+        ? 'ELEVATED'
+        : 'NORMAL';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color:        color.withValues(alpha: 0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(5),
-        border:       Border.all(color: color.withValues(alpha: 0.4)),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
-      child: Text(label,
-          style: TextStyle(
-              color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }
@@ -275,32 +308,39 @@ class _SkewInterpretation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final skew = analysis.skew;
-    final z    = analysis.skewZScore;
+    final z = analysis.skewZScore;
 
     String text;
     if (skew == null) {
       text = 'Skew data unavailable — load options chain with more strikes.';
     } else if (skew > 10) {
-      text = 'Steep put skew (${skew.toStringAsFixed(1)}pp) — market pricing significant downside risk. '
+      text =
+          'Steep put skew (${skew.toStringAsFixed(1)}pp) — market pricing significant downside risk. '
           'Put spreads are expensive; consider call spreads or cash-secured puts for premium collection.';
     } else if (skew > 5) {
-      text = 'Elevated put skew (${skew.toStringAsFixed(1)}pp) — typical in bearish or uncertain regimes. '
+      text =
+          'Elevated put skew (${skew.toStringAsFixed(1)}pp) — typical in bearish or uncertain regimes. '
           'Directional put trades carry extra IV premium.';
     } else if (skew >= 0) {
-      text = 'Normal put skew (${skew.toStringAsFixed(1)}pp) — healthy market conditions. '
+      text =
+          'Normal put skew (${skew.toStringAsFixed(1)}pp) — healthy market conditions. '
           'Options priced near fair value across the curve.';
     } else {
-      text = 'Flat or inverted skew (${skew.toStringAsFixed(1)}pp) — calls may be bid up. '
+      text =
+          'Flat or inverted skew (${skew.toStringAsFixed(1)}pp) — calls may be bid up. '
           'Watch for short-squeeze or FOMO-driven upside moves.';
     }
 
     if (z != null && z.abs() >= 1.5) {
       final dir = z > 0 ? 'steeper' : 'flatter';
-      text += '\n\nSkew is historically $dir than average '
+      text +=
+          '\n\nSkew is historically $dir than average '
           '(Z=${z.toStringAsFixed(1)}) — potential precursor to a major move.';
     }
 
-    return Text(text,
-        style: const TextStyle(color: AppTheme.neutralColor, fontSize: 12));
+    return Text(
+      text,
+      style: const TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+    );
   }
 }

@@ -84,7 +84,8 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
           );
           _pointsLoading = false;
         });
-      } catch (_) {
+      } catch (e) {
+        debugPrint('vol_surface: failed to load points for ${s.id}: $e');
         if (mounted) setState(() => _pointsLoading = false);
       }
     }
@@ -997,9 +998,11 @@ class _DiffHeatmap extends StatelessWidget {
       ),
       Expanded(
         child: VolHeatmap(
-          points:    diffPoints,
-          spotPrice: compare.spotPrice,
-          ivMode:    'call',
+          points:       diffPoints,
+          spotPrice:    compare.spotPrice,
+          ivMode:       'call',
+          zeroCentered: true,
+          legendTitle:  'ΔIV',
         ),
       ),
     ]);
