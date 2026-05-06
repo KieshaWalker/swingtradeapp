@@ -195,6 +195,15 @@ class _RvChart extends StatelessWidget {
           belowBarData: BarAreaData(show: false),
         );
 
+    // Only include lines that have at least one valid spot
+    bool hasValidSpot(List<FlSpot> spots) => spots.any((s) => s != FlSpot.nullSpot);
+    final lineBars = <LineChartBarData>[
+      if (hasValidSpot(rv1dSpots))  line(rv1dSpots,  _white.withValues(alpha: 0.4), 1, dash: [3, 3]),
+      if (hasValidSpot(rv5dSpots))  line(rv5dSpots,  _yellow, 1.5),
+      if (hasValidSpot(rv21dSpots)) line(rv21dSpots, _green,  2),
+      if (hasValidSpot(ivSpots))    line(ivSpots,    _indigo, 2),
+    ];
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 12, 12, 8),
       child: LineChart(LineChartData(
@@ -243,12 +252,7 @@ class _RvChart extends StatelessWidget {
           rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           topTitles:   const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
-        lineBarsData: [
-          line(rv1dSpots,  _white.withValues(alpha: 0.4), 1, dash: [3, 3]),
-          line(rv5dSpots,  _yellow, 1.5),
-          line(rv21dSpots, _green,  2),
-          line(ivSpots,    _indigo, 2),
-        ],
+        lineBarsData: lineBars,
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
             getTooltipColor: (_) => AppTheme.elevatedColor,

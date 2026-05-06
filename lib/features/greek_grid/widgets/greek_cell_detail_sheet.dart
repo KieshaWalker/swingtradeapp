@@ -217,9 +217,9 @@ class _TimeSeriesChart extends StatelessWidget {
       final v = series[i].greekValue(greek);
       if (v != null) spots.add(FlSpot(i.toDouble(), v));
     }
-    if (spots.isEmpty) {
+    if (spots.length < 2) {
       return const Center(
-        child: Text('No data for this greek',
+        child: Text('Insufficient data for chart',
             style: TextStyle(color: Colors.white38)),
       );
     }

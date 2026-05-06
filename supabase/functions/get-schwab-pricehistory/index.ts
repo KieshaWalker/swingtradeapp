@@ -33,14 +33,14 @@ Deno.serve(async (req) => {
       needExtendedHoursData: 'false',
     })
 
+    // periodType=year is always required for frequencyType=daily to be valid.
+    // When startDate is provided, Schwab uses the date range instead of period.
+    params.set('periodType', 'year')
     if (startDate != null) {
-      // Exact date range — Schwab ignores periodType/period when startDate is set
       params.set('startDate', String(startDate))
       params.set('endDate',   String(endDate ?? Date.now()))
     } else {
-      // Default: 1 year rolling window
-      params.set('periodType', 'year')
-      params.set('period',     '1')
+      params.set('period', '1')
     }
 
     const ac  = new AbortController()

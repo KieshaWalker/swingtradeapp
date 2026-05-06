@@ -644,6 +644,16 @@ class _PnlChart extends StatelessWidget {
       labels.add(DateTime(months[i] ~/ 100, months[i] % 100));
     }
 
+    if (spots.length < 2) {
+      return const SizedBox(
+        height: 180,
+        child: Center(
+          child: Text('At least 2 data points needed',
+              style: TextStyle(color: AppTheme.neutralColor, fontSize: 12)),
+        ),
+      );
+    }
+
     final lineColor =
         cumulative >= 0 ? AppTheme.profitColor : AppTheme.lossColor;
     final n = labels.length;

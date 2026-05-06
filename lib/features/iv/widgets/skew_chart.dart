@@ -121,6 +121,7 @@ class _SkewLineChart extends StatelessWidget {
       ...callSpots.map((s) => s.y),
     ];
     if (allIvs.isEmpty) return const SizedBox.shrink();
+    if (putSpots.length + callSpots.length < 2) return const SizedBox.shrink();
 
     final minY = (allIvs.reduce((a, b) => a < b ? a : b) - 5).clamp(0.0, double.infinity);
     final maxY =  allIvs.reduce((a, b) => a > b ? a : b) + 5;
