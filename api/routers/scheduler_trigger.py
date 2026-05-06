@@ -164,6 +164,16 @@ async def vol_period_monthly_trigger(request: Request):
     return result
 
 
+@router.post("/backfill-rv")
+async def backfill_rv_trigger(request: Request):
+    """One-time backfill: 10 years of daily RV for all watched tickers → realized_vol_snapshots."""
+    _verify_scheduler(request)
+    from jobs.backfill_rv import run_backfill_rv
+    result = await run_backfill_rv()
+    log.info("backfill_rv_complete result=%s", result)
+    return result
+
+
 @router.post("/regime-train")
 def regime_train_trigger(request: Request):
     """Triggered by Cloud Scheduler weekly (recommended: Sunday 00:00 UTC).

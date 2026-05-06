@@ -118,43 +118,37 @@ extension RealizedVolRatingX on RealizedVolRating {
 /// One row from realized_vol_snapshots table (daily batch persisted)
 class RealizedVolSnapshot {
   final String symbol;
-  final DateTime date; // observation date (UTC, normalized to midnight)
-  final double rv20d; // 20-day RV on that date
-  final double rv60d; // 60-day RV on that date
-  final double? rv20dPercentile; // percentile rank (null if < 10 obs)
-  final double? rv60dPercentile;
+  final DateTime date;
+  final double? rv1d;   // daily: |ln(P_t/P_{t-1})| × √252
+  final double? rv5d;   // weekly: 5-day rolling annualized RV
+  final double? rv21d;  // monthly: 21-day rolling annualized RV
   final DateTime persistedAt;
 
   const RealizedVolSnapshot({
     required this.symbol,
     required this.date,
-    required this.rv20d,
-    required this.rv60d,
-    this.rv20dPercentile,
-    this.rv60dPercentile,
+    this.rv1d,
+    this.rv5d,
+    this.rv21d,
     required this.persistedAt,
   });
 
-  /// Serialize to Supabase
   Map<String, dynamic> toJson() => {
-    'symbol': symbol,
-    'date': date.toIso8601String(),
-    'rv_20d': rv20d,
-    'rv_60d': rv60d,
-    'rv_20d_percentile': rv20dPercentile,
-    'rv_60d_percentile': rv60dPercentile,
+    'symbol':       symbol,
+    'date':         date.toIso8601String(),
+    'rv_1d':        rv1d,
+    'rv_5d':        rv5d,
+    'rv_21d':       rv21d,
     'persisted_at': persistedAt.toIso8601String(),
   };
 
-  /// Deserialize from Supabase
   factory RealizedVolSnapshot.fromJson(Map<String, dynamic> j) =>
       RealizedVolSnapshot(
-        symbol: j['symbol'] as String,
-        date: DateTime.parse(j['date'] as String),
-        rv20d: (j['rv_20d'] as num).toDouble(),
-        rv60d: (j['rv_60d'] as num).toDouble(),
-        rv20dPercentile: (j['rv_20d_percentile'] as num?)?.toDouble(),
-        rv60dPercentile: (j['rv_60d_percentile'] as num?)?.toDouble(),
+        symbol:      j['symbol'] as String,
+        date:        DateTime.parse(j['date'] as String),
+        rv1d:        (j['rv_1d']  as num?)?.toDouble(),
+        rv5d:        (j['rv_5d']  as num?)?.toDouble(),
+        rv21d:       (j['rv_21d'] as num?)?.toDouble(),
         persistedAt: DateTime.parse(j['persisted_at'] as String),
       );
 }

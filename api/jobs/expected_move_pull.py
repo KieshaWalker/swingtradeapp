@@ -20,14 +20,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from datetime import date, datetime, timezone
 
 import httpx
 
 from core.supabase_client import get_supabase
 from core.chain_utils import parse_expirations
-from jobs.common import get_tickers, fetch_schwab_chain
+from jobs.common import get_tickers, fetch_schwab_chain, fetch_schwab_closes
 from services.expected_move import compute as em_compute, atm_iv_from_chain
+from services.realized_vol import compute_rv
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +55,10 @@ async def run_expected_move_pull() -> dict:
     async with httpx.AsyncClient(timeout=60.0) as client:
         async def _process(ticker: str) -> tuple[str, str]:
             try:
-                chain = await fetch_schwab_chain(client, ticker)
+                (chain, (closes, _)) = await asyncio.gather(
+                    fetch_schwab_chain(client, ticker),
+                    fetch_schwab_closes(client, ticker, days=65),
+                )
                 if chain is None:
                     return ticker, "chain_error"
 
@@ -68,7 +73,7 @@ async def run_expected_move_pull() -> dict:
                 slices_written = 0
                 for period_type, target_dte in _DTE_TARGETS.items():
                     iv, actual_dte = atm_iv_from_chain(expirations, spot, target_dte)
-                    if iv is None or iv <= 0:
+                    if iv is None or iv <= 0 or actual_dte is None:
                         log.warning(
                             "expected_move_no_iv ticker=%s period=%s target_dte=%d",
                             ticker, period_type, target_dte,
@@ -84,6 +89,15 @@ async def run_expected_move_pull() -> dict:
                         result.em_dollars, result.em_pct,
                     )
 
+                # Persist daily RV alongside expected move
+                clean_closes = [c for c in closes if c and c > 0]
+                if len(clean_closes) >= 2:
+                    rv1d  = abs(math.log(clean_closes[-1] / clean_closes[-2])) * math.sqrt(252)
+                    rv5d  = compute_rv(clean_closes[-5:]  if len(clean_closes) >= 5  else clean_closes)
+                    rv21d = compute_rv(clean_closes[-21:] if len(clean_closes) >= 21 else clean_closes)
+                    _upsert_rv(db, ticker, today, rv1d, rv5d, rv21d)
+                    log.info("rv_ok ticker=%s rv1d=%.3f rv5d=%.3f rv21d=%.3f", ticker, rv1d, rv5d, rv21d)
+
                 return ticker, f"ok:{slices_written}"
             except Exception as exc:
                 log.error("expected_move_failed ticker=%s error=%r", ticker, exc, exc_info=True)
@@ -92,6 +106,20 @@ async def run_expected_move_pull() -> dict:
         results = dict(await asyncio.gather(*[_process(t) for t in unique_tickers]))
 
     return {"status": "complete", "tickers": results, "date": today}
+
+
+def _upsert_rv(db, ticker: str, today: str, rv1d: float, rv5d: float, rv21d: float) -> None:
+    db.table("realized_vol_snapshots").upsert(
+        {
+            "symbol":       ticker,
+            "date":         today,
+            "rv_1d":        rv1d,
+            "rv_5d":        rv5d,
+            "rv_21d":       rv21d,
+            "persisted_at": datetime.now(timezone.utc).isoformat(),
+        },
+        on_conflict="symbol,date",
+    ).execute()
 
 
 def _upsert(db, ticker: str, today: str, spot: float, period_type: str, result) -> None:

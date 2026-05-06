@@ -26,6 +26,7 @@ import '../../../services/economy/economy_storage_service.dart';
 import '../../../services/fred/fred_models.dart';
 import '../providers/api_data_providers.dart';
 import '../../iv/widgets/expected_move_chart.dart';
+import '../../iv/widgets/realized_vol_chart.dart';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,12 @@ class _EconomyChartsTabState extends ConsumerState<EconomyChartsTab> {
         const _SectionHeader('IV Expected Move'),
         const SizedBox(height: 8),
         const ExpectedMoveChart(ticker: 'SPY'),
+        const SizedBox(height: 16),
+
+        // Realized Volatility — rv_1d / rv_5d / rv_21d with IV overlay
+        const _SectionHeader('Realized Volatility'),
+        const SizedBox(height: 8),
+        const RealizedVolChart(ticker: 'SPY'),
         const SizedBox(height: 24),
 
         // Interest Rates - Treasury yields from Treasury API (stored in economy_treasury_snapshots)

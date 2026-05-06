@@ -550,7 +550,7 @@ class VolSurfaceInterpretation extends ConsumerWidget {
 class _IvCard extends StatelessWidget {
   final _A a;
   final IvSnapshot? ivSnap;
-  final RealizedVolResult? rvResult;
+  final RealizedVolSnapshot? rvResult;
   const _IvCard({required this.a, this.ivSnap, this.rvResult});
 
   @override
@@ -638,11 +638,11 @@ class _IvCard extends StatelessWidget {
                 fontSize: 9,
                 fontFamily: 'monospace'),
           ),
-          if (rvResult != null && rvResult!.rv20d > 0) ...[
+          if (rvResult != null && (rvResult!.rv21d ?? 0) > 0) ...[
             const SizedBox(height: 2),
             Text(
-              'HV20d ${(rvResult!.rv20d * 100).toStringAsFixed(1)}%'
-              '  ·  HV60d ${(rvResult!.rv60d * 100).toStringAsFixed(1)}%',
+              'HV1d ${(rvResult!.rv1d! * 100).toStringAsFixed(1)}%'
+              '  ·  HV21d ${(rvResult!.rv21d! * 100).toStringAsFixed(1)}%',
               style: const TextStyle(
                   color: Color(0xFF6b7280),
                   fontSize: 9,

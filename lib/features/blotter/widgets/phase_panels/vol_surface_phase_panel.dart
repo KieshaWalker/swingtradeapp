@@ -178,7 +178,7 @@ PhaseResult _toPhaseResult({
   required double            strike,
   required double?           spot,
   EarningsDate?           earnings,
-  RealizedVolResult?         rvResult,
+  RealizedVolSnapshot?       rvResult,
   double?                    vixNow,
   double?                    vxvNow,
   double?                    vega,
@@ -331,20 +331,18 @@ PhaseResult _toPhaseResult({
 
   // ── 7. IV / Realized Vol spread ────────────────────────────────────────────
   bool ivBelowRv = false;
-  if (rvResult != null &&
-      rvResult.rating != RealizedVolRating.noData &&
-      a.cellIv != null) {
-    final iv   = a.cellIv!;         // decimal (e.g. 0.28)
-    final rv   = rvResult.rv20d;    // decimal (e.g. 0.32)
-    final diff = ((iv - rv) * 100); // percentage points
+  final rv21d = rvResult?.rv21d;
+  if (rvResult != null && rv21d != null && rv21d > 0 && a.cellIv != null) {
+    final iv   = a.cellIv!;
+    final rv   = rv21d;
+    final diff = ((iv - rv) * 100);
     final ivPct = (iv * 100).toStringAsFixed(1);
     final rvPct = (rv * 100).toStringAsFixed(1);
 
     if (iv < rv * 0.90) {
-      // IV is materially below RV — selling premium is undercompensated
       ivBelowRv = true;
       warnings.add(
-          'IV/RV Spread: surface IV $ivPct% < 20d RV $rvPct% '
+          'IV/RV Spread: surface IV $ivPct% < 21d RV $rvPct% '
           '(${diff.toStringAsFixed(1)}pp gap). '
           'IV is underpricing the actual moves being realized. '
           'Selling premium here is like selling fire insurance below actuarial cost. '
@@ -352,15 +350,12 @@ PhaseResult _toPhaseResult({
     } else if (iv > rv * 1.30) {
       signals.add(
           'IV/RV spread: surface IV $ivPct% — ${diff.abs().toStringAsFixed(1)}pp '
-          'above 20d RV $rvPct%. IV is expensive vs realized moves. '
+          'above 21d RV $rvPct%. IV is expensive vs realized moves. '
           'Premium sellers are collecting above actuarial cost.');
     } else {
       signals.add(
-          'IV/RV spread: surface IV $ivPct% vs 20d RV $rvPct% — '
+          'IV/RV spread: surface IV $ivPct% vs 21d RV $rvPct% — '
           'fairly priced (${diff.toStringAsFixed(1)}pp gap).');
-    }
-    if (rvResult.rv20dPercentile != null) {
-      signals.add('Realized vol percentile: ${rvResult.rv20dPercentile!.toStringAsFixed(0)}th — ${rvResult.rating.label}. ${rvResult.rating.description}');
     }
   }
 

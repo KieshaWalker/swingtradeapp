@@ -21,6 +21,14 @@ from __future__ import annotations
 #   7. Realized vol (from Schwab price history) → log result
 # =============================================================================
 
+
+
+
+
+
+#******** THIS HAS BEEN DISABLED ***************
+# =============================================================================
+
 import asyncio
 import logging
 from datetime import datetime, date, timezone

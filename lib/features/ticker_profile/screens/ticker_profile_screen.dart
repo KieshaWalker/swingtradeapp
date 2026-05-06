@@ -59,6 +59,7 @@ import '../widgets/add_ticker_note_sheet.dart';
 import 'ticker_profile_cards.dart';
 import 'ticker_profile_shared_widgets.dart';
 import '../../iv/widgets/expected_move_chart.dart';
+import '../../iv/widgets/realized_vol_chart.dart';
 
 final _tickerIvSnapshotProvider =
     FutureProvider.family<IvSnapshot?, String>((ref, symbol) async {
@@ -414,6 +415,10 @@ class _OverviewTab extends ConsumerWidget {
 
         // Expected move bands (daily / monthly)
         ExpectedMoveChart(ticker: symbol),
+        const SizedBox(height: 20),
+
+        // Realized volatility (1d / 5d / 21d) with IV overlay
+        RealizedVolChart(ticker: symbol),
         const SizedBox(height: 20),
 
         // Next earnings card
