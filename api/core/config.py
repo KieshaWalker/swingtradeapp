@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     supabase_service_key: str
     supabase_anon_key: str = ""
     python_api_secret: str = ""
+    fred_api_key: str = ""      # https://fred.stlouisfed.org/docs/api/api_key.html
     port: int = 8000
     log_level: str = "INFO"
 

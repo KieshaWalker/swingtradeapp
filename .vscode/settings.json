@@ -1,4 +1,8 @@
 {
+  "python.defaultInterpreterPath": "/Users/k/trading/apps/swing_options_trader/api/.venv/bin/python",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingModuleSource": "none"
+  },
   "deno.enable": true,
   "deno.enablePaths": [
     "supabase/functions"

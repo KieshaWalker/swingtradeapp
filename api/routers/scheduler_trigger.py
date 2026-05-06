@@ -113,6 +113,18 @@ async def greek_snapshots_pull_trigger(request: Request):
     return result
 
 
+@router.post("/sofr-pull")
+async def sofr_pull_trigger(request: Request):
+    """Job 0 — Fetch live SOFR rate from FRED → update in-process cache.
+    Cron: 30 13 * * 1-5  (8:30 AM ET Mon–Fri, after NY Fed publishes)
+    """
+    _verify_scheduler(request)
+    from jobs.sofr_pull import run_sofr_pull
+    result = await run_sofr_pull()
+    log.info("sofr_pull_complete result=%s", result)
+    return result
+
+
 @router.post("/regime-pull")
 async def regime_pull_trigger(request: Request):
     """Job 7 — iv_snapshots + price history + VIX → regime_snapshots.

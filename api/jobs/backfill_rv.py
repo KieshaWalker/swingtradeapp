@@ -96,10 +96,12 @@ def _build_rows(ticker: str, dates: list[str], closes: list[float]) -> list[dict
     for i in range(1, len(clean_closes)):  # start at 1 — need at least 2 closes for rv_1d
         rv1d = abs(math.log(clean_closes[i] / clean_closes[i - 1])) * math.sqrt(252)
 
-        w5  = clean_closes[max(0, i - 4): i + 1]
+        w5  = clean_closes[max(0, i - 4):  i + 1]
         w21 = clean_closes[max(0, i - 20): i + 1]
+        w63 = clean_closes[max(0, i - 62): i + 1]
         rv5d  = _compute_rv(w5)
         rv21d = _compute_rv(w21)
+        rv63d = _compute_rv(w63)
 
         rows.append({
             "symbol":       ticker,
@@ -107,6 +109,7 @@ def _build_rows(ticker: str, dates: list[str], closes: list[float]) -> list[dict
             "rv_1d":        rv1d,
             "rv_5d":        rv5d,
             "rv_21d":       rv21d,
+            "rv_63d":       rv63d,
             "persisted_at": now,
         })
     return rows

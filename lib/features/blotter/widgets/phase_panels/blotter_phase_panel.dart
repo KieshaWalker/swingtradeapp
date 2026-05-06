@@ -429,7 +429,15 @@ class _PanelBody extends StatelessWidget {
         _PricingStackCard(fv: fv, isCall: isCall, gammaRegime: ivAnalysis?.gammaRegime),
         const SizedBox(height: 16),
 
-        // 3. Second-order Greeks
+        // 3. Term comparison (DTE-matched IV / RV / rate)
+        if (fv.termComparison != null) ...[
+          _SectionLabel('${fv.termComparison!.periodLabel.toUpperCase()}  Term Comparison'),
+          const SizedBox(height: 8),
+          _TermComparisonCard(tc: fv.termComparison!),
+          const SizedBox(height: 16),
+        ],
+
+        // 4. Second-order Greeks
         if (fv.vanna != null) ...[
           _SectionLabel('Second-Order Greeks'),
           const SizedBox(height: 8),
@@ -549,7 +557,10 @@ class _PricingStackCard extends StatelessWidget {
           // Black-Scholes
           _PricingRow(
             label:    'Black-Scholes',
-            sublabel: 'Baseline — constant vol, log-normal',
+            sublabel: 'Starting point — vol fixed at '
+                '${(fv.impliedVol * 100).toStringAsFixed(1)}% (Schwab IV)  ·  '
+                'r=${(fv.rateUsed * 100).toStringAsFixed(2)}% '
+                '(${fv.rateTenor.isNotEmpty ? fv.rateTenor : "risk-free"})',
             value:    '\$${fv.bsFairValue.toStringAsFixed(3)}',
             delta:    null,
             color:    AppTheme.neutralColor,
@@ -557,10 +568,10 @@ class _PricingStackCard extends StatelessWidget {
           ),
           // SABR
           _PricingRow(
-            label:    'SABR',
-            sublabel: 'Smile/skew adjusted  '
-                '(β=0.5, ρ=−0.7, ν=0.40)  '
-                'σ_SABR=${(fv.sabrVol * 100).toStringAsFixed(1)}%',
+            label:    'SABR  (smile-adjusted)',
+            sublabel: 'OTM options are usually pricier than BS predicts — '
+                'SABR corrects for that skew  '
+                '→ σ=${(fv.sabrVol * 100).toStringAsFixed(1)}%',
             value:    '\$${fv.sabrFairValue.toStringAsFixed(3)}',
             delta:    sabrDelta,
             color:    sabrDelta >= 0 ? AppTheme.profitColor : AppTheme.lossColor,
@@ -568,7 +579,8 @@ class _PricingStackCard extends StatelessWidget {
           // Heston
           _PricingRow(
             label:    'Model  (SABR + Heston)',
-            sublabel: 'Stochastic vol correction  (κ=2.0, ξ=0.5, ρ=−0.7)',
+            sublabel: 'Final price — adds stochastic vol so the model '
+                'knows vol itself moves over time',
             value:    '\$${fv.modelFairValue.toStringAsFixed(3)}',
             delta:    hestonDelta,
             color:    hestonDelta >= 0 ? AppTheme.profitColor : AppTheme.lossColor,
@@ -581,13 +593,15 @@ class _PricingStackCard extends StatelessWidget {
           // Broker mid
           _PricingRow(
             label:    'Broker Mid',
-            sublabel: 'What you actually pay',
+            sublabel: '(bid + ask) ÷ 2 — the price you\'d pay to enter right now',
             value:    '\$${fv.brokerMid.toStringAsFixed(3)}',
             delta:    null,
             color:    AppTheme.neutralColor,
           ),
           // Edge banner
           _EdgeBanner(fv: fv, isCall: isCall, gammaRegime: gammaRegime),
+          // IV check note
+          if (fv.ivNote != null) _IvCheckNote(fv: fv),
         ],
       ),
     );
@@ -704,6 +718,177 @@ class _EdgeBanner extends StatelessWidget {
             style: const TextStyle(
                 color: AppTheme.neutralColor, fontSize: 11),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── IV check note ─────────────────────────────────────────────────────────────
+
+class _IvCheckNote extends StatelessWidget {
+  final FairValueResult fv;
+  const _IvCheckNote({required this.fv});
+
+  @override
+  Widget build(BuildContext context) {
+    final diff = fv.ivDiffPct;
+    final color = diff == null || diff.abs() < 0.5
+        ? AppTheme.neutralColor
+        : diff.abs() < 2.0
+            ? const Color(0xFFFFD700)   // amber — minor gap
+            : AppTheme.lossColor;       // red — significant gap
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        border: Border(top: BorderSide(color: color.withValues(alpha: 0.2))),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, color: color, size: 13),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              fv.ivNote!,
+              style: TextStyle(color: color, fontSize: 10, height: 1.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Term comparison card ──────────────────────────────────────────────────────
+
+class _TermComparisonCard extends StatelessWidget {
+  final TermComparison tc;
+  const _TermComparisonCard({required this.tc});
+
+  @override
+  Widget build(BuildContext context) {
+    final premiumColor = tc.isExpensive
+        ? AppTheme.lossColor
+        : tc.isCheap
+            ? AppTheme.profitColor
+            : AppTheme.neutralColor;
+
+    return Container(
+      decoration: BoxDecoration(
+        color:        AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(10),
+        border:       Border.all(color: AppTheme.borderColor),
+      ),
+      child: Column(
+        children: [
+          // Three metric columns
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+            child: Row(
+              children: [
+                _TermMetric(
+                  label: 'Risk-Free Rate',
+                  sublabel: tc.rateTenor,
+                  value: '${tc.termRate.toStringAsFixed(2)}%',
+                  color: AppTheme.neutralColor,
+                ),
+                _TermMetric(
+                  label: 'ATM Implied Vol',
+                  sublabel: 'What market prices in',
+                  value: tc.termIv != null ? '${tc.termIv!.toStringAsFixed(1)}%' : '—',
+                  color: AppTheme.neutralColor,
+                ),
+                _TermMetric(
+                  label: 'Realized Vol',
+                  sublabel: 'Past ${tc.periodLabel}',
+                  value: tc.termRv != null ? '${tc.termRv!.toStringAsFixed(1)}%' : '—',
+                  color: AppTheme.neutralColor,
+                ),
+              ],
+            ),
+          ),
+          // Vol premium banner
+          if (tc.volPremium != null) ...[
+            Divider(height: 1, color: AppTheme.borderColor.withValues(alpha: 0.6)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+              child: Row(
+                children: [
+                  Icon(
+                    tc.isExpensive
+                        ? Icons.trending_up_rounded
+                        : tc.isCheap
+                            ? Icons.trending_down_rounded
+                            : Icons.trending_flat_rounded,
+                    color: premiumColor,
+                    size: 15,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    tc.isExpensive
+                        ? 'Options priced RICH vs history'
+                        : tc.isCheap
+                            ? 'Options priced CHEAP vs history'
+                            : 'Options fairly priced vs history',
+                    style: TextStyle(
+                        color: premiumColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'Vol premium  ${tc.volPremium! >= 0 ? '+' : ''}${tc.volPremium!.toStringAsFixed(1)} vpts',
+                    style: TextStyle(color: premiumColor, fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _TermMetric extends StatelessWidget {
+  final String label;
+  final String sublabel;
+  final String value;
+  final Color  color;
+  const _TermMetric({
+    required this.label,
+    required this.sublabel,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(value,
+              style: TextStyle(
+                  color: color,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800)),
+          const SizedBox(height: 3),
+          Text(label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 1),
+          Text(sublabel,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: AppTheme.neutralColor, fontSize: 9)),
         ],
       ),
     );

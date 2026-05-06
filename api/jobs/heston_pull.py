@@ -22,8 +22,8 @@ log = logging.getLogger(__name__)
 
 async def run_heston_pull() -> dict:
     now = datetime.now(timezone.utc)
-    if now.hour >= 16:
-        log.info("heston_pull: skipped (after 4 PM UTC)")
+    if now.hour >= 21:
+        log.info("heston_pull: skipped (after 4 PM ET)")
         return {"status": "after_4pm"}
     
     db = get_supabase()

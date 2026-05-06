@@ -55,6 +55,42 @@ enum StrategyTag {
 
 // ── Fair value result ─────────────────────────────────────────────────────────
 
+// ── Term comparison (DTE-matched IV / RV / rate) ─────────────────────────────
+
+class TermComparison {
+  final String periodLabel;   // "1-week", "1-month", "3-month"
+  final double? termIv;       // ATM IV for this period (%)
+  final double? termRv;       // Realized vol over past period (%)
+  final double termRate;      // Risk-free rate for this tenor (%)
+  final String rateTenor;     // e.g. "3-month T-bill"
+  final double? volPremium;   // termIv - termRv in pct pts
+
+  const TermComparison({
+    required this.periodLabel,
+    required this.termRate,
+    required this.rateTenor,
+    this.termIv,
+    this.termRv,
+    this.volPremium,
+  });
+
+  static TermComparison? fromJson(Map<String, dynamic>? j) {
+    if (j == null) return null;
+    return TermComparison(
+      periodLabel: j['period_label'] as String? ?? '',
+      termIv:     (j['term_iv']     as num?)?.toDouble(),
+      termRv:     (j['term_rv']     as num?)?.toDouble(),
+      termRate:   (j['term_rate']   as num?)?.toDouble() ?? 0.0,
+      rateTenor:  j['rate_tenor']   as String? ?? '',
+      volPremium: (j['vol_premium'] as num?)?.toDouble(),
+    );
+  }
+
+  // Positive vol premium = implied > realized = options priced expensive vs history
+  bool get isExpensive => (volPremium ?? 0) > 2.0;
+  bool get isCheap     => (volPremium ?? 0) < -2.0;
+}
+
 class FairValueResult {
   final double bsFairValue;
   final double sabrFairValue;
@@ -67,6 +103,12 @@ class FairValueResult {
   final double? charm;
   final double? volga;
   final double? rho;
+  final double? computedIv;    // IV back-solved from broker_mid
+  final double? ivDiffPct;     // computedIv - impliedVol in vol points
+  final String? ivNote;        // human-readable IV check message
+  final double rateUsed;             // risk-free rate used in pricing (decimal)
+  final String rateTenor;            // e.g. "3-month T-bill"
+  final TermComparison? termComparison;
 
   const FairValueResult({
     required this.bsFairValue,
@@ -80,6 +122,12 @@ class FairValueResult {
     this.charm,
     this.volga,
     this.rho,
+    this.computedIv,
+    this.ivDiffPct,
+    this.ivNote,
+    this.rateUsed = 0.0,
+    this.rateTenor = '',
+    this.termComparison,
   });
 
   /// Positive edge = model thinks contract is cheap vs broker → buy signal.
@@ -117,6 +165,12 @@ class FairValueResult {
       charm: (j['charm'] as num?)?.toDouble(),
       volga: (j['volga'] as num?)?.toDouble(),
       rho: (j['rho'] as num?)?.toDouble(),
+      computedIv: (j['computed_iv'] as num?)?.toDouble(),
+      ivDiffPct: (j['iv_diff_pct'] as num?)?.toDouble(),
+      ivNote: j['iv_note'] as String?,
+      rateUsed: (j['rate_used'] as num?)?.toDouble() ?? 0.0,
+      rateTenor: j['rate_tenor'] as String? ?? '',
+      termComparison: TermComparison.fromJson(j['term_comparison'] as Map<String, dynamic>?),
     );
   }
 }

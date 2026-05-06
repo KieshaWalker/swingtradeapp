@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 async def run_greek_grid_pull() -> dict:
     now = datetime.now(timezone.utc)
-    if now.hour >= 16:
+    if now.hour >= 21:
         log.info("greek_grid_pull: skipped (after 4 PM UTC)")
         return {"status": "after_4pm"}
     

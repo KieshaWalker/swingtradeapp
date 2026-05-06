@@ -34,9 +34,10 @@ from services.realized_vol import compute_rv
 log = logging.getLogger(__name__)
 
 _DTE_TARGETS = {
-    "daily":   1,
-    "weekly":  7,
-    "monthly": 30,
+    "daily":     1,
+    "weekly":    7,
+    "monthly":  30,
+    "quarterly": 90,   # 3-month option comparison
 }
 
 
@@ -57,7 +58,7 @@ async def run_expected_move_pull() -> dict:
             try:
                 (chain, (closes, _)) = await asyncio.gather(
                     fetch_schwab_chain(client, ticker),
-                    fetch_schwab_closes(client, ticker, days=65),
+                    fetch_schwab_closes(client, ticker, days=90),  # 90 trading days for rv_63d
                 )
                 if chain is None:
                     return ticker, "chain_error"
@@ -95,8 +96,10 @@ async def run_expected_move_pull() -> dict:
                     rv1d  = abs(math.log(clean_closes[-1] / clean_closes[-2])) * math.sqrt(252)
                     rv5d  = compute_rv(clean_closes[-5:]  if len(clean_closes) >= 5  else clean_closes)
                     rv21d = compute_rv(clean_closes[-21:] if len(clean_closes) >= 21 else clean_closes)
-                    _upsert_rv(db, ticker, today, rv1d, rv5d, rv21d)
-                    log.info("rv_ok ticker=%s rv1d=%.3f rv5d=%.3f rv21d=%.3f", ticker, rv1d, rv5d, rv21d)
+                    rv63d = compute_rv(clean_closes[-63:] if len(clean_closes) >= 63 else clean_closes)
+                    _upsert_rv(db, ticker, today, rv1d, rv5d, rv21d, rv63d)
+                    log.info("rv_ok ticker=%s rv1d=%.3f rv5d=%.3f rv21d=%.3f rv63d=%.3f",
+                             ticker, rv1d, rv5d, rv21d, rv63d)
 
                 return ticker, f"ok:{slices_written}"
             except Exception as exc:
@@ -108,7 +111,7 @@ async def run_expected_move_pull() -> dict:
     return {"status": "complete", "tickers": results, "date": today}
 
 
-def _upsert_rv(db, ticker: str, today: str, rv1d: float, rv5d: float, rv21d: float) -> None:
+def _upsert_rv(db, ticker: str, today: str, rv1d: float, rv5d: float, rv21d: float, rv63d: float) -> None:
     db.table("realized_vol_snapshots").upsert(
         {
             "symbol":       ticker,
@@ -116,6 +119,7 @@ def _upsert_rv(db, ticker: str, today: str, rv1d: float, rv5d: float, rv21d: flo
             "rv_1d":        rv1d,
             "rv_5d":        rv5d,
             "rv_21d":       rv21d,
+            "rv_63d":       rv63d,   # 63 trading days ≈ 3 calendar months
             "persisted_at": datetime.now(timezone.utc).isoformat(),
         },
         on_conflict="symbol,date",

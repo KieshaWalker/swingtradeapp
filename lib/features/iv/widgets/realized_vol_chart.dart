@@ -25,6 +25,51 @@ class RealizedVolChart extends ConsumerWidget {
   final String ticker;
   const RealizedVolChart({super.key, required this.ticker});
 
+  static void _showVolNote(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.elevatedColor,
+        title: const Text(
+          'Volatility & Options',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _NotePoint(
+                number: '1',
+                text:
+                    'In dollar terms, a volatility change has a greater effect on an at-the-money option than an equivalent in-the-money or out-of-the-money option.',
+              ),
+              const SizedBox(height: 12),
+              _NotePoint(
+                number: '2',
+                text:
+                    'In percent terms, a volatility change has a greater effect on an out-of-the-money option than an equivalent in-the-money or at-the-money option.',
+              ),
+              const SizedBox(height: 12),
+              _NotePoint(
+                number: '3',
+                text:
+                    'Future realized volatility determines the true value of options on a contract; implied volatility reflects their market price. '
+                    'When IV is low relative to expected future RV, prefer buying options. '
+                    'When IV is high relative to expected future RV, prefer selling.',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rvAsync = ref.watch(realizedVolHistoryProvider(ticker));
@@ -41,7 +86,7 @@ class RealizedVolChart extends ConsumerWidget {
         children: [
           // ── Header ───────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 14, 8, 0),
             child: Row(
               children: [
                 const Text(
@@ -71,6 +116,17 @@ class RealizedVolChart extends ConsumerWidget {
                       },
                     ) ??
                     const SizedBox.shrink(),
+                IconButton(
+                  icon: const Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: AppTheme.neutralColor,
+                  ),
+                  padding: const EdgeInsets.only(left: 8),
+                  constraints: const BoxConstraints(),
+                  tooltip: 'About IV vs RV',
+                  onPressed: () => _showVolNote(context),
+                ),
               ],
             ),
           ),
@@ -300,8 +356,9 @@ class _RvChart extends StatelessWidget {
                 final ivVal =
                     ivByDate['${s.date.year}-${s.date.month.toString().padLeft(2, '0')}-${s.date.day.toString().padLeft(2, '0')}'];
                 return spots.map((ts) {
-                  if (ts.barIndex != 0)
+                  if (ts.barIndex != 0) {
                     return LineTooltipItem('', const TextStyle());
+                  }
                   return LineTooltipItem(
                     '${s.date.month}/${s.date.day}/${s.date.year}\n'
                     'RV 1d   ${_fmtPct(s.rv1d)}\n'
@@ -326,6 +383,51 @@ class _RvChart extends StatelessWidget {
 
   String _fmtPct(double? v) =>
       v == null ? '—' : '${(v * 100).toStringAsFixed(1)}%';
+}
+
+// ── Note point ────────────────────────────────────────────────────────────────
+
+class _NotePoint extends StatelessWidget {
+  final String number;
+  final String text;
+  const _NotePoint({required this.number, required this.text});
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        width: 18,
+        height: 18,
+        margin: const EdgeInsets.only(right: 8, top: 1),
+        decoration: BoxDecoration(
+          color: _indigo.withValues(alpha: 0.2),
+          shape: BoxShape.circle,
+          border: Border.all(color: _indigo.withValues(alpha: 0.5)),
+        ),
+        child: Center(
+          child: Text(
+            number,
+            style: const TextStyle(
+              color: _indigo,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+      Expanded(
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 13,
+            height: 1.4,
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 // ── Empty state ───────────────────────────────────────────────────────────────

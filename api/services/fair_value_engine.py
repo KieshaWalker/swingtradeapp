@@ -26,7 +26,8 @@ from core.constants import (
     FV_SABR_VOL_MIN,
     FV_SABR_VOL_MAX,
 )
-from services.black_scholes import bs_price, bs_vanna, bs_charm, bs_vomma
+from services.rate_service import get_rate_for_dte
+from services.black_scholes import bs_price, bs_vanna, bs_charm, bs_vomma, bs_implied_vol
 from services.sabr import sabr_alpha, sabr_iv
 from services.heston import HestonParams, heston_correction, heston_price
 
@@ -39,11 +40,16 @@ class FairValueResult:
     broker_mid: float
     edge_bps: float
     sabr_vol: float
-    implied_vol: float
+    implied_vol: float          # Schwab-supplied IV (decimal)
     vanna: float | None = None
     charm: float | None = None
     volga: float | None = None
     heston_fair_value: float | None = None   # set when calibrated HestonParams provided
+    computed_iv: float | None = None         # IV back-solved from broker_mid
+    iv_diff_pct: float | None = None         # (computed_iv - implied_vol) × 100 in vol points
+    iv_note: str | None = None               # human-readable explanation for UI
+    rate_used: float = 0.0                   # actual risk-free rate used in pricing (decimal)
+    rate_tenor: str = ""                     # e.g. "3-month T-bill"
 
 
 def compute(
@@ -53,7 +59,7 @@ def compute(
     days_to_expiry: int,
     is_call: bool,
     broker_mid: float,
-    r: float = DEFAULT_R,
+    r: float | None = None,
     calibrated_rho: float | None = None,
     calibrated_nu: float | None = None,
     heston_params: HestonParams | None = None,
@@ -76,6 +82,10 @@ def compute(
     Returns:
         FairValueResult with all model prices and edge_bps.
     """
+    live_rate, rate_tenor = get_rate_for_dte(days_to_expiry)
+    r = r if r is not None else live_rate
+    rate_tenor = rate_tenor if r == live_rate else "override"
+
     # Guard: zero DTE or zero IV → return broker mid unchanged
     if days_to_expiry <= 0 or implied_vol <= 0:
         return FairValueResult(
@@ -122,6 +132,53 @@ def compute(
         else 0.0
     )
 
+    # IV comparison: back-solve IV from broker_mid and compare to Schwab's feed value
+    computed_iv: float | None = None
+    iv_diff_pct: float | None = None
+    iv_note: str | None = None
+    if broker_mid > 0.001:
+        computed_iv = bs_implied_vol(
+            market_price=broker_mid,
+            F=F,
+            K=strike,
+            T=T,
+            r=r,
+            is_call=is_call,
+            initial_guess=implied_vol,  # use Schwab IV as seed for fast convergence
+        )
+        if computed_iv is not None:
+            iv_diff_pct = (computed_iv - implied_vol) * 100  # in vol points
+            abs_diff = abs(iv_diff_pct)
+            if abs_diff < 0.5:
+                iv_note = (
+                    f"IV check: Schwab reports {implied_vol*100:.1f}% IV; "
+                    f"our model computes {computed_iv*100:.1f}% from the market price. "
+                    f"These agree within {abs_diff:.2f} vol pts — quote looks clean."
+                )
+            elif abs_diff < 2.0:
+                direction = "higher" if iv_diff_pct > 0 else "lower"
+                iv_note = (
+                    f"IV check: Schwab reports {implied_vol*100:.1f}% IV; "
+                    f"our model computes {computed_iv*100:.1f}% from the market price "
+                    f"({abs_diff:.2f} vol pts {direction}). "
+                    f"Minor discrepancy — possibly stale quote or wide spread."
+                )
+            else:
+                direction = "higher" if iv_diff_pct > 0 else "lower"
+                iv_note = (
+                    f"IV check: Schwab reports {implied_vol*100:.1f}% IV; "
+                    f"our model computes {computed_iv*100:.1f}% from the market price "
+                    f"({abs_diff:.2f} vol pts {direction}). "
+                    f"Significant divergence — Schwab IV may be stale or the spread is very wide. "
+                    f"Edge calculation uses Schwab IV."
+                )
+        else:
+            iv_note = (
+                "IV check: could not back-solve IV from the market price "
+                "(price outside no-arbitrage bounds or solver failed). "
+                "Using Schwab-supplied IV."
+            )
+
     return FairValueResult(
         bs_fair_value=bs_val,
         sabr_fair_value=sabr_val,
@@ -134,4 +191,9 @@ def compute(
         charm=charm,
         volga=vomma,
         heston_fair_value=heston_val,
+        computed_iv=computed_iv,
+        iv_diff_pct=iv_diff_pct,
+        iv_note=iv_note,
+        rate_used=r,
+        rate_tenor=rate_tenor,
     )

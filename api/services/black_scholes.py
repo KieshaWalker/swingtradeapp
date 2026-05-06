@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # =============================================================================
 # services/black_scholes.py
 # =============================================================================
@@ -149,6 +151,45 @@ def bs_vomma(F: float, K: float, T: float, r: float, sigma: float, is_call: bool
     d1, d2 = _d1d2(F, K, T, sigma)
     vega = F * math.exp(-r * T) * _pdf(d1) * sqrt_T
     return vega * d1 * d2 / sigma
+
+
+# ── Implied vol solver ────────────────────────────────────────────────────────
+
+def bs_implied_vol(
+    market_price: float,
+    F: float,
+    K: float,
+    T: float,
+    r: float,
+    is_call: bool,
+    initial_guess: float = 0.25,
+    max_iter: int = 100,
+    tol: float = 1e-7,
+) -> float | None:
+    """Newton-Raphson IV solver: find σ such that bs_price(σ) = market_price.
+
+    Returns None when the solver fails to converge or the price is outside
+    the no-arbitrage bounds (below intrinsic or above the forward).
+    """
+    df = math.exp(-r * T)
+    intrinsic = df * max(F - K, 0) if is_call else df * max(K - F, 0)
+    upper = df * (F if is_call else K)
+    if market_price <= intrinsic or market_price >= upper:
+        return None
+
+    sigma = initial_guess
+    for _ in range(max_iter):
+        price = bs_price(F, K, T, r, sigma, is_call)
+        vega = bs_vega(F, K, T, r, sigma)
+        if vega < 1e-10:
+            return None
+        diff = price - market_price
+        sigma -= diff / vega
+        if sigma <= 0:
+            sigma = 1e-6
+        if abs(diff) < tol:
+            return sigma
+    return None  # did not converge
 
 
 # ── Convenience bundle ────────────────────────────────────────────────────────
