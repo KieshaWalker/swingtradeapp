@@ -192,15 +192,15 @@ def calibrate_heston(
     x0 = np.array([2.0, V_atm, 0.5, -0.7, V_atm])
 
     # Global search (differential evolution with Sobol initialisation)
-    # Reduced from maxiter=80, popsize=6 for faster convergence in production
+    # Aggressively reduced for production speed: maxiter=20, popsize=4
     de_result = differential_evolution(
         _objective,
         bounds,
-        maxiter=35,
-        tol=1e-4,
+        maxiter=20,
+        tol=1e-3,
         seed=42,
         init="sobol",
-        popsize=5,
+        popsize=4,
         workers=1,
         polish=False,
     )

@@ -88,7 +88,13 @@ async def run_heston_pull() -> dict:
             log.error("heston_failed ticker=%s error=%r", ticker, exc, exc_info=True)
             return ticker, f"error:{exc!r}"
 
-    results = dict(await asyncio.gather(*[_process(r) for r in rows]))
+    # Limit concurrency to 3 tickers at a time to prevent timeout
+    semaphore = asyncio.Semaphore(3)
+    async def _process_limited(row: dict) -> tuple[str, str]:
+        async with semaphore:
+            return await _process(row)
+    
+    results = dict(await asyncio.gather(*[_process_limited(r) for r in rows]))
     return {"status": "complete", "tickers": results, "date": today}
 
 
