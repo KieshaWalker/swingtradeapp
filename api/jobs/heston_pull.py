@@ -20,15 +20,19 @@ from services.heston_calibrator import calibrate_heston
 log = logging.getLogger(__name__)
 
 
-async def run_heston_pull() -> dict:
+async def run_heston_pull(batch: int = 1) -> dict:
     now = datetime.now(timezone.utc)
     if now.hour >= 21:
         log.info("heston_pull: skipped (after 4 PM ET)")
         return {"status": "after_4pm"}
-    
+
     db = get_supabase()
     today = date.today().isoformat()
-    rows = get_tickers(db)
+    all_rows = get_tickers(db)
+    all_rows.sort(key=lambda r: r["ticker"])
+    mid = len(all_rows) // 2
+    rows = all_rows[:mid] if batch == 1 else all_rows[mid:]
+
     if not rows:
         log.warning("heston_pull: no tickers")
         return {"status": "no_tickers"}
@@ -114,5 +118,5 @@ def _upsert_heston_calibration(db, ticker: str, today: str, result, user_id: str
             "n_points":  int(result.n_points) if result.n_points is not None else None,
             "converged": bool(result.converged) if result.converged is not None else None,
         },
-        on_conflict="heston_calibrations_user_id_ticker_obs_date_key",
+        on_conflict="user_id,ticker,obs_date",
     ).execute()

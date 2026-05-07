@@ -7,7 +7,7 @@
 
 import logging
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Query
 
 from core.config import settings
 
@@ -66,14 +66,15 @@ async def sabr_pull_trigger(request: Request):
 
 
 @router.post("/heston-pull")
-async def heston_pull_trigger(request: Request):
+async def heston_pull_trigger(request: Request, batch: int = Query(1)):
     """Job 3 — vol_surface_snapshots → heston_calibrations.
-    Cron: 6 * * * 1-5
+    batch=1 (A–M) cron: 6 * * * 1-5
+    batch=2 (N–Z) cron: 20 * * * 1-5
     """
     _verify_scheduler(request)
     from jobs.heston_pull import run_heston_pull
-    result = await run_heston_pull()
-    log.info("heston_pull_complete result=%s", result)
+    result = await run_heston_pull(batch=batch)
+    log.info("heston_pull_complete batch=%d result=%s", batch, result)
     return result
 
 

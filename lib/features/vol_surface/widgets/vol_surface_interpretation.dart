@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/vol_surface_models.dart';
 import '../providers/sabr_calibration_provider.dart';
+import '../providers/heston_calibration_provider.dart';
 import '../../../services/iv/iv_models.dart';
 import '../../../services/iv/iv_storage_service.dart';
 import '../../../services/iv/iv_providers.dart';
@@ -533,6 +534,7 @@ class VolSurfaceInterpretation extends ConsumerWidget {
                   _FlowCard(snap: snap, ivSnap: ivSnap),
                   _ReadsCard(a: a, ivSnap: ivSnap),
                   _SabrCard(snap: snap),
+                  _HestonCard(snap: snap),
                   _ArbCard(snap: snap),
                   _RndCard(ivAsync: ivAsync),
                 ],
@@ -2894,6 +2896,324 @@ class _Card extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Heston Calibration card ───────────────────────────────────────────────────
+
+class _HestonCard extends ConsumerWidget {
+  final VolSnapshot snap;
+  const _HestonCard({required this.snap});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(hestonCalibrationProvider(snap.ticker));
+    return _Card(
+      width: 300,
+      label: 'HESTON CALIBRATION',
+      child: async.when(
+        loading: () => const Center(
+          child: SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+                strokeWidth: 1.5, color: Color(0xFF3b82f6)),
+          ),
+        ),
+        error: (_, _) => const Text(
+          'Unavailable',
+          style: TextStyle(
+              color: Color(0xFF6b7280),
+              fontSize: 9,
+              fontFamily: 'monospace'),
+        ),
+        data: (h) {
+          if (h == null) {
+            return const Text(
+              'No Heston calibration\nfor this ticker.',
+              style: TextStyle(
+                  color: Color(0xFF4b5563),
+                  fontSize: 9,
+                  height: 1.5,
+                  fontFamily: 'monospace'),
+            );
+          }
+
+          final read = _HestonRead.from(h);
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── What is Heston? ────────────────────────────────────────────
+              const Text(
+                'Stochastic-vol model: variance follows its own mean-reverting '
+                'process. Captures skew (ρ) and fat tails (ξ) simultaneously — '
+                'SABR fits per-expiry; Heston fits the whole surface at once.',
+                style: TextStyle(
+                    color: Color(0xFF4b5563),
+                    fontSize: 7.5,
+                    height: 1.45,
+                    fontFamily: 'monospace'),
+              ),
+              const SizedBox(height: 8),
+              const Divider(color: Color(0xFF1f2937), height: 1),
+              const SizedBox(height: 8),
+
+              // ── Parameter table ────────────────────────────────────────────
+              Row(children: const [
+                SizedBox(width: 44, child: _ColHdr('PARAM')),
+                SizedBox(width: 44, child: _ColHdr('VALUE')),
+                Expanded(child: _ColHdr('WHAT IT MEANS')),
+              ]),
+              const SizedBox(height: 4),
+              _ParamRow('κ  reversion', h.kappa.toStringAsFixed(2),
+                  read.kappaDetail),
+              _ParamRow('θ  long-run',
+                  '${(h.longRunVol * 100).toStringAsFixed(1)}%',
+                  read.thetaDetail),
+              _ParamRow('ξ  vol-of-vol', h.xi.toStringAsFixed(2),
+                  read.xiDetail),
+              _ParamRow('ρ  skew', h.rho.toStringAsFixed(2), read.rhoDetail),
+              _ParamRow('V₀ current',
+                  '${(h.currentVol * 100).toStringAsFixed(1)}%',
+                  read.v0Detail),
+
+              // ── Fit quality ────────────────────────────────────────────────
+              const SizedBox(height: 6),
+              Row(children: [
+                const Text('FIT  ',
+                    style: TextStyle(
+                        color: Color(0xFF4b5563),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                        fontFamily: 'monospace')),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: read.fitColor.withValues(alpha: 0.12),
+                    border: Border.all(
+                        color: read.fitColor.withValues(alpha: 0.40)),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(read.fitLabel,
+                      style: TextStyle(
+                          color: read.fitColor,
+                          fontSize: 7,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                          fontFamily: 'monospace')),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  h.rmseIv != null
+                      ? 'RMSE ${(h.rmseIv! * 100).toStringAsFixed(2)}%  ·  n=${h.nPoints ?? "–"}'
+                      : 'n=${h.nPoints ?? "–"}',
+                  style: const TextStyle(
+                      color: Color(0xFF4b5563),
+                      fontSize: 8,
+                      fontFamily: 'monospace'),
+                ),
+              ]),
+
+              // ── Surface read ───────────────────────────────────────────────
+              const SizedBox(height: 10),
+              const Divider(color: Color(0xFF1f2937), height: 1),
+              const SizedBox(height: 8),
+              Row(children: const [
+                Text('SURFACE READ  ',
+                    style: TextStyle(
+                        color: Color(0xFF4b5563),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.9,
+                        fontFamily: 'monospace')),
+                Text('κ × ξ × ρ × V₀',
+                    style: TextStyle(
+                        color: Color(0xFF374151),
+                        fontSize: 8,
+                        fontFamily: 'monospace')),
+              ]),
+              const SizedBox(height: 5),
+              Text(read.synthesis,
+                  style: const TextStyle(
+                      color: Color(0xFF9ca3af),
+                      fontSize: 8,
+                      height: 1.5,
+                      fontFamily: 'monospace')),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ── Heston interpretation logic ───────────────────────────────────────────────
+
+class _HestonRead {
+  final String kappaDetail;
+  final String thetaDetail;
+  final String xiDetail;
+  final String rhoDetail;
+  final String v0Detail;
+  final String fitLabel;
+  final Color  fitColor;
+  final String synthesis;
+
+  const _HestonRead({
+    required this.kappaDetail,
+    required this.thetaDetail,
+    required this.xiDetail,
+    required this.rhoDetail,
+    required this.v0Detail,
+    required this.fitLabel,
+    required this.fitColor,
+    required this.synthesis,
+  });
+
+  factory _HestonRead.from(HestonCalibration h) {
+    final kappaDetail = h.kappa > 5
+        ? 'Fast — vol spikes fade within days'
+        : h.kappa > 1.5
+            ? 'Moderate — shocks take weeks to unwind'
+            : 'Slow — vol regimes are sticky';
+
+    final lvPct      = (h.longRunVol * 100).toStringAsFixed(1);
+    final thetaDetail = 'Baseline IV expected to settle at $lvPct%';
+
+    final xiDetail = h.xi > 1.0
+        ? 'High — fat tails; OTM options expensive'
+        : h.xi > 0.4
+            ? 'Moderate — normal tail pricing'
+            : 'Low — thin tails; vol is stable';
+
+    final rhoDetail = h.rho < -0.6
+        ? 'Steep put skew — market fears sharp drops'
+        : h.rho < -0.2
+            ? 'Moderate negative skew — typical equity'
+            : 'Flat/positive — unusual; watch call skew';
+
+    final ratio    = h.v0 / h.theta;
+    final cvPct    = (h.currentVol * 100).toStringAsFixed(1);
+    final v0Detail = ratio > 1.3
+        ? 'Vol elevated vs baseline ($cvPct% vs $lvPct%) — surface stretched'
+        : ratio < 0.7
+            ? 'Vol suppressed vs baseline ($cvPct% vs $lvPct%) — contango expected'
+            : 'Vol near fair value ($cvPct% ≈ baseline)';
+
+    final rmse = h.rmseIv ?? 1.0;
+    final (fitLabel, fitColor) = rmse < 0.02
+        ? ('GOOD',       const Color(0xFF4ade80))
+        : rmse < 0.05
+            ? ('ACCEPTABLE', const Color(0xFFfbbf24))
+            : ('POOR',       const Color(0xFFf87171));
+
+    return _HestonRead(
+      kappaDetail: kappaDetail,
+      thetaDetail: thetaDetail,
+      xiDetail:    xiDetail,
+      rhoDetail:   rhoDetail,
+      v0Detail:    v0Detail,
+      fitLabel:    fitLabel,
+      fitColor:    fitColor,
+      synthesis:   _synthesize(h),
+    );
+  }
+
+  static String _synthesize(HestonCalibration h) {
+    final ratio = h.v0 / h.theta;
+
+    if (h.rho < -0.5 && h.xi > 0.8 && ratio > 1.2) {
+      return 'Elevated vol + steep put skew + fat tails: market pricing tail '
+          'risk. Selling premium is expensive but risky — prefer defined-risk '
+          'structures (spreads) over naked short vol.';
+    }
+    if (h.rho < -0.5 && h.xi > 0.8 && ratio < 0.8) {
+      return 'Put skew steep and tails fat, but current vol below baseline. '
+          'Surface pricing future risk cheaply relative to history — vol '
+          'buyers have an edge if a catalyst is expected.';
+    }
+    if (h.kappa > 5 && ratio > 1.3) {
+      return 'Fast reversion + current vol well above baseline: model expects '
+          'IV to compress quickly. Short-dated premium sellers are favored '
+          'if no near-term catalyst.';
+    }
+    if (h.kappa < 1.5 && ratio > 1.2) {
+      return 'Slow reversion + elevated vol: regime is sticky. Avoid naked '
+          'short vol — elevated IV may persist. Calendar spreads benefit '
+          'from gradual term-structure normalization.';
+    }
+    if (h.xi < 0.35 && h.rho > -0.3) {
+      return 'Low vol-of-vol + flat skew: surface is unusually stable. '
+          'OTM options are cheap relative to history — debit structures '
+          'and long gamma plays are well-priced.';
+    }
+    if (ratio < 0.75) {
+      return 'Current vol significantly below long-run baseline. Heston '
+          'projects mean reversion upward — long vega or calendar spreads '
+          '(long back month) are directionally aligned.';
+    }
+    return 'ρ=${h.rho.toStringAsFixed(2)}, ξ=${h.xi.toStringAsFixed(2)}, '
+        'κ=${h.kappa.toStringAsFixed(2)}. Surface within normal ranges — '
+        'no dominant Heston signal. Refer to SABR skew and IV rank cards '
+        'for the primary trading read.';
+  }
+}
+
+// ── Shared helper widgets for _HestonCard ─────────────────────────────────────
+
+class _ColHdr extends StatelessWidget {
+  final String text;
+  const _ColHdr(this.text);
+  @override
+  Widget build(BuildContext context) => Text(text,
+      style: const TextStyle(
+          color: Color(0xFF4b5563),
+          fontSize: 8,
+          fontWeight: FontWeight.w700,
+          fontFamily: 'monospace'));
+}
+
+class _ParamRow extends StatelessWidget {
+  final String param;
+  final String value;
+  final String detail;
+  const _ParamRow(this.param, this.value, this.detail);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: 44,
+          child: Text(param,
+              style: const TextStyle(
+                  color: Color(0xFF6b7280),
+                  fontSize: 7.5,
+                  fontFamily: 'monospace')),
+        ),
+        SizedBox(
+          width: 44,
+          child: Text(value,
+              style: const TextStyle(
+                  color: Color(0xFFd1d5db),
+                  fontSize: 7.5,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace')),
+        ),
+        Expanded(
+          child: Text(detail,
+              style: const TextStyle(
+                  color: Color(0xFF9ca3af),
+                  fontSize: 7.5,
+                  height: 1.4,
+                  fontFamily: 'monospace')),
+        ),
+      ]),
     );
   }
 }

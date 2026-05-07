@@ -124,13 +124,21 @@ upsert_job sabr-pull \
   --attempt-deadline=900s \
   --description="SABR calibration from vol surface snapshots (Mon-Fri hourly)"
 
-# Job 3 — Heston calibration
+# Job 3a — Heston calibration batch 1 (first half of tickers, alphabetically)
 upsert_job heston-pull \
   "${COMMON_FLAGS[@]}" \
   --schedule="6 * * * 1-5" \
-  --uri="${SERVICE_URL}/jobs/heston-pull" \
+  --uri="${SERVICE_URL}/jobs/heston-pull?batch=1" \
   --attempt-deadline=1800s \
-  --description="Heston calibration from vol surface snapshots (Mon-Fri hourly)"
+  --description="Heston calibration batch 1 (Mon-Fri hourly)"
+
+# Job 3b — Heston calibration batch 2 (second half of tickers, alphabetically)
+upsert_job heston-pull-2 \
+  "${COMMON_FLAGS[@]}" \
+  --schedule="20 * * * 1-5" \
+  --uri="${SERVICE_URL}/jobs/heston-pull?batch=2" \
+  --attempt-deadline=1800s \
+  --description="Heston calibration batch 2 (Mon-Fri hourly)"
 
 # Job 4 — IV analytics
 upsert_job iv-pull \
@@ -199,7 +207,7 @@ upsert_job regime-train \
 echo ""
 echo "Done. Resources in project ${PROJECT_ID}:"
 echo "  Cloud Run:  ${SERVICE_URL}"
-echo "  Scheduler:  vol-surface-pull, sabr-pull, heston-pull, iv-pull,"
+echo "  Scheduler:  vol-surface-pull, sabr-pull, heston-pull, heston-pull-2, iv-pull,"
 echo "              greek-grid-pull, greek-snapshots-pull, regime-pull,"
 echo "              expected-move-pull, vol-period-weekly, vol-period-monthly,"
 echo "              regime-train"

@@ -127,6 +127,38 @@ def _build_quotes(
     return result
 
 
+# ── Surface downsampling ──────────────────────────────────────────────────────
+
+_MAX_EXPIRIES = 5
+_MAX_STRIKES  = 7
+
+def _downsample_quotes(
+    quotes: dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray]],
+) -> dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray]]:
+    """Reduce to at most _MAX_EXPIRIES spanning the term structure,
+    keeping the _MAX_STRIKES strikes nearest ATM at each expiry."""
+    if not quotes:
+        return quotes
+
+    dtes = sorted(quotes)
+    if len(dtes) > _MAX_EXPIRIES:
+        n = len(dtes)
+        indices = sorted({round(i * (n - 1) / (_MAX_EXPIRIES - 1)) for i in range(_MAX_EXPIRIES)})
+        dtes = [dtes[i] for i in indices]
+
+    out: dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray]] = {}
+    for dte in dtes:
+        F, K_arr, iv_arr, is_call_arr = quotes[dte]
+        if len(K_arr) > _MAX_STRIKES:
+            keep = np.argsort(np.abs(K_arr - F))[:_MAX_STRIKES]
+            K_arr       = K_arr[keep]
+            iv_arr      = iv_arr[keep]
+            is_call_arr = is_call_arr[keep]
+        out[dte] = (F, K_arr, iv_arr, is_call_arr)
+
+    return out
+
+
 # ── Calibration ───────────────────────────────────────────────────────────────
 
 def calibrate_heston(
@@ -148,7 +180,7 @@ def calibrate_heston(
     Returns:
         HestonCalibResult or None if surface is too thin.
     """
-    by_dte = _build_quotes(surface_points, spot, r)
+    by_dte = _downsample_quotes(_build_quotes(surface_points, spot, r))
     n_total = sum(len(v[1]) for v in by_dte.values())
     if n_total < 8:
         return None
