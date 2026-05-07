@@ -58,7 +58,16 @@ async def run_heston_pull() -> dict:
             if not points:
                 return ticker, "no_points"
 
-            result = await asyncio.to_thread(calibrate_heston, surface_points=points, spot=spot)
+            # Calibration with 180s timeout per ticker
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(calibrate_heston, surface_points=points, spot=spot),
+                    timeout=180.0
+                )
+            except asyncio.TimeoutError:
+                log.warning("heston_calibration_timeout ticker=%s", ticker)
+                return ticker, "calibration_timeout"
+            
             if result is None:
                 return ticker, "no_result"
 
