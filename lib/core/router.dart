@@ -61,6 +61,7 @@ import '../features/ideas/screens/trade_ideas_screen.dart';
 import '../features/greek_grid/screens/greek_grid_screen.dart';
 import '../features/settings/screens/schwab_bootstrap_screen.dart';
 import '../features/current_regime/screens/current_regime_screen.dart';
+import '../features/positions/screens/positions_screen.dart';
 
 // =============================================================================
 // _RouterNotifier
@@ -204,6 +205,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/current-regime',
         pageBuilder: (context, state) => const NoTransitionPage(
           child: _AppShell(child: CurrentRegimeScreen()),
+        ),
+      ),
+      GoRoute(
+        path: '/positions',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: PositionsScreen()),
         ),
       ),
 

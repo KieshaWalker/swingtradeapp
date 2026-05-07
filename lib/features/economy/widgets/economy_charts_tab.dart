@@ -101,7 +101,7 @@ class _EconomyChartsTabState extends ConsumerState<EconomyChartsTab> {
         const _SectionHeader('Realized Volatility'),
         const SizedBox(height: 8),
         const RealizedVolChart(ticker: 'SPY'),
-        const SizedBox(height: 24),
+        const SizedBox(height: 30),
 
         // Interest Rates - Treasury yields from Treasury API (stored in economy_treasury_snapshots)
         _SectionHeader('Interest Rates'),

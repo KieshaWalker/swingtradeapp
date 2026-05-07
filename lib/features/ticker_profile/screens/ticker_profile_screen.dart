@@ -415,11 +415,11 @@ class _OverviewTab extends ConsumerWidget {
 
         // Expected move bands (daily / monthly)
         ExpectedMoveChart(ticker: symbol),
-        const SizedBox(height: 20),
+        const SizedBox(height: 30),
 
         // Realized volatility (1d / 5d / 21d) with IV overlay
         RealizedVolChart(ticker: symbol),
-        const SizedBox(height: 20),
+        const SizedBox(height: 30),
 
         // Next earnings card
         SectionHeader('Next Earnings'),

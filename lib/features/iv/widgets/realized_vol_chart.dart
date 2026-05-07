@@ -32,7 +32,7 @@ class RealizedVolChart extends ConsumerWidget {
         backgroundColor: AppTheme.elevatedColor,
         title: const Text(
           'Volatility & Options',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
         ),
         content: SingleChildScrollView(
           child: Column(
@@ -73,7 +73,7 @@ class RealizedVolChart extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final rvAsync = ref.watch(realizedVolHistoryProvider(ticker));
-    final ivAsync = ref.watch(expectedMoveDailyProvider(ticker));
+    final ivAsync = ref.watch(expectedMoveMonthlyProvider(ticker));
 
     return Container(
       decoration: BoxDecoration(
@@ -93,7 +93,7 @@ class RealizedVolChart extends ConsumerWidget {
                   'REALIZED VOLATILITY',
                   style: TextStyle(
                     color: AppTheme.neutralColor,
-                    fontSize: 11,
+                    fontSize: 13,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.0,
                   ),
@@ -109,7 +109,7 @@ class RealizedVolChart extends ConsumerWidget {
                           '21d ${_pct(last.rv21d)}',
                           style: const TextStyle(
                             color: AppTheme.neutralColor,
-                            fontSize: 10,
+                            fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
                         );
@@ -139,7 +139,7 @@ class RealizedVolChart extends ConsumerWidget {
             height: 220,
             child: rvAsync.when(
               loading: () => const Center(
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(strokeWidth: 3),
               ),
               error: (e, _) => const Center(
                 child: Text(
@@ -188,7 +188,7 @@ class RealizedVolChart extends ConsumerWidget {
     children: [
       Container(
         width: 12,
-        height: 3,
+        height: 4,
         decoration: BoxDecoration(
           color: color,
           borderRadius: BorderRadius.circular(2),
@@ -208,16 +208,61 @@ class RealizedVolChart extends ConsumerWidget {
 
 // ── Chart ─────────────────────────────────────────────────────────────────────
 
-class _RvChart extends StatelessWidget {
+class _RvChart extends StatefulWidget {
   final List<RealizedVolSnapshot> rvSnaps;
   final List<ExpectedMoveSnapshot> ivSnaps;
   const _RvChart({required this.rvSnaps, required this.ivSnaps});
 
   @override
+  State<_RvChart> createState() => _RvChartState();
+}
+
+class _RvChartState extends State<_RvChart> {
+  // ~90 trading days ≈ 4.5 months shown by default
+  static const _defaultWindow = 90.0;
+
+  late double _minX;
+  late double _maxX;
+  double _contentWidth = 300.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _initWindow();
+  }
+
+  @override
+  void didUpdateWidget(_RvChart old) {
+    super.didUpdateWidget(old);
+    if (old.rvSnaps.length != widget.rvSnaps.length) _initWindow();
+  }
+
+  void _initWindow() {
+    final n = widget.rvSnaps.length.toDouble();
+    _maxX = n - 1;
+    _minX = (_maxX - _defaultWindow + 1).clamp(0.0, _maxX);
+  }
+
+  void _scroll(double dxPixels) {
+    final windowSize = _maxX - _minX;
+    if (windowSize <= 0) return;
+    final pxPerUnit = _contentWidth / windowSize;
+    final delta = -dxPixels / pxPerUnit;
+    final n = widget.rvSnaps.length.toDouble();
+    final newMin = (_minX + delta).clamp(0.0, (n - 1) - windowSize);
+    if (newMin == _minX) return;
+    setState(() {
+      _minX = newMin;
+      _maxX = newMin + windowSize;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final rvSnaps = widget.rvSnaps;
+    final ivSnaps = widget.ivSnaps;
     final n = rvSnaps.length;
 
-    // Build IV lookup by date string for overlay alignment
     final ivByDate = <String, double>{};
     for (final s in ivSnaps) {
       if (s.iv != null) {
@@ -236,7 +281,6 @@ class _RvChart extends StatelessWidget {
     final rv5dSpots = toSpots((s) => s.rv5d);
     final rv21dSpots = toSpots((s) => s.rv21d);
 
-    // IV spots aligned to RV dates
     final ivSpots = List.generate(n, (i) {
       final s = rvSnaps[i];
       final key =
@@ -245,7 +289,6 @@ class _RvChart extends StatelessWidget {
       return iv != null ? FlSpot(i.toDouble(), iv * 100) : FlSpot.nullSpot;
     });
 
-    // Y range
     final allVals = [
       ...rv1dSpots,
       ...rv5dSpots,
@@ -274,7 +317,6 @@ class _RvChart extends StatelessWidget {
       belowBarData: BarAreaData(show: false),
     );
 
-    // Only include lines that have at least one valid spot
     bool hasValidSpot(List<FlSpot> spots) =>
         spots.any((s) => s != FlSpot.nullSpot);
     final lineBars = <LineChartBarData>[
@@ -285,98 +327,123 @@ class _RvChart extends StatelessWidget {
       if (hasValidSpot(ivSpots)) line(ivSpots, _indigo, 2),
     ];
 
+    final windowSize = _maxX - _minX;
+    final interval = (windowSize / 4).ceilToDouble().clamp(
+      1.0,
+      double.infinity,
+    );
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 12, 12, 8),
-      child: LineChart(
-        LineChartData(
-          minY: minY,
-          maxY: maxY,
-          clipData: const FlClipData.all(),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            getDrawingHorizontalLine: (_) => FlLine(
-              color: AppTheme.borderColor.withValues(alpha: 0.3),
-              strokeWidth: 1,
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 40,
-                getTitlesWidget: (v, _) => Text(
-                  '${v.toStringAsFixed(0)}%',
-                  style: const TextStyle(
-                    color: AppTheme.neutralColor,
-                    fontSize: 9,
-                  ),
+      child: LayoutBuilder(
+        builder: (ctx, constraints) {
+          // left padding(4) + y-axis reservedSize(40) + right padding(12)
+          _contentWidth = (constraints.maxWidth - 56).clamp(
+            1.0,
+            double.infinity,
+          );
+          return LineChart(
+            LineChartData(
+              minX: _minX,
+              maxX: _maxX,
+              minY: minY,
+              maxY: maxY,
+              clipData: const FlClipData.all(),
+
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                getDrawingHorizontalLine: (_) => FlLine(
+                  color: AppTheme.borderColor.withValues(alpha: 0.3),
+                  strokeWidth: 1,
                 ),
               ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 22,
-                interval: (n / 4).ceilToDouble().clamp(1, double.infinity),
-                getTitlesWidget: (v, _) {
-                  final i = v.toInt();
-                  if (i < 0 || i >= n) return const SizedBox.shrink();
-                  final d = rvSnaps[i].date;
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      '${d.month}/${d.day}',
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 40,
+                    getTitlesWidget: (v, _) => Text(
+                      '${v.toStringAsFixed(0)}%',
                       style: const TextStyle(
                         color: AppTheme.neutralColor,
                         fontSize: 9,
                       ),
                     ),
-                  );
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 22,
+                    interval: interval,
+                    getTitlesWidget: (v, _) {
+                      final i = v.round();
+                      if (i < 0 || i >= n) return const SizedBox.shrink();
+                      final d = rvSnaps[i].date;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '${d.month}/${d.day}',
+                          style: const TextStyle(
+                            color: AppTheme.neutralColor,
+                            fontSize: 9,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+              ), // horizontal scoll and hover
+
+              lineBarsData: lineBars,
+              lineTouchData: LineTouchData(
+                handleBuiltInTouches: true,
+                touchCallback: (event, response) {
+                  if (event is FlPanUpdateEvent) {
+                    _scroll(event.details.delta.dx);
+                  }
                 },
+                touchTooltipData: LineTouchTooltipData(
+                  getTooltipColor: (_) => AppTheme.elevatedColor,
+                  fitInsideHorizontally: true,
+                  fitInsideVertically: true,
+                  getTooltipItems: (spots) {
+                    final i = spots.first.x.toInt().clamp(0, n - 1);
+                    final s = rvSnaps[i];
+                    final ivVal =
+                        ivByDate['${s.date.year}-${s.date.month.toString().padLeft(2, '0')}-${s.date.day.toString().padLeft(2, '0')}'];
+                    return spots.map((ts) {
+                      if (ts.barIndex != 0) {
+                        return LineTooltipItem('', const TextStyle());
+                      }
+                      return LineTooltipItem(
+                        '${s.date.month}/${s.date.day}/${s.date.year}\n'
+                        'RV 1d   ${_fmtPct(s.rv1d)}\n'
+                        'RV 5d   ${_fmtPct(s.rv5d)}\n'
+                        'RV 21d  ${_fmtPct(s.rv21d)}\n'
+                        'IV       ${ivVal != null ? '${(ivVal * 100).toStringAsFixed(1)}%' : '—'}',
+                        const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          height: 1.5,
+                          fontFamily: 'monospace',
+                        ),
+                      );
+                    }).toList();
+                  },
+                ),
               ),
             ),
-            rightTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-            topTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-          ),
-          lineBarsData: lineBars,
-          lineTouchData: LineTouchData(
-            touchTooltipData: LineTouchTooltipData(
-              getTooltipColor: (_) => AppTheme.elevatedColor,
-              fitInsideHorizontally: true,
-              fitInsideVertically: true,
-              getTooltipItems: (spots) {
-                final i = spots.first.x.toInt().clamp(0, n - 1);
-                final s = rvSnaps[i];
-                final ivVal =
-                    ivByDate['${s.date.year}-${s.date.month.toString().padLeft(2, '0')}-${s.date.day.toString().padLeft(2, '0')}'];
-                return spots.map((ts) {
-                  if (ts.barIndex != 0) {
-                    return LineTooltipItem('', const TextStyle());
-                  }
-                  return LineTooltipItem(
-                    '${s.date.month}/${s.date.day}/${s.date.year}\n'
-                    'RV 1d   ${_fmtPct(s.rv1d)}\n'
-                    'RV 5d   ${_fmtPct(s.rv5d)}\n'
-                    'RV 21d  ${_fmtPct(s.rv21d)}\n'
-                    'IV       ${ivVal != null ? '${(ivVal * 100).toStringAsFixed(1)}%' : '—'}',
-                    const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      height: 1.5,
-                      fontFamily: 'monospace',
-                    ),
-                  );
-                }).toList();
-              },
-            ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }

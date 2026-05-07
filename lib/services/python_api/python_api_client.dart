@@ -210,6 +210,7 @@ class PythonApiClient {
     double? r,
     double? calibratedRho,
     double? calibratedNu,
+    String? ticker,               // when provided, Heston params are fetched from DB
   }) =>
       _post('/fair-value/compute', {
         'spot':            spot,
@@ -221,6 +222,7 @@ class PythonApiClient {
         'r': ?r,
         'calibrated_rho': ?calibratedRho,
         'calibrated_nu':  ?calibratedNu,
+        'ticker': ?ticker,
       });
 
   // ── IV Analytics ───────────────────────────────────────────────────────────
