@@ -277,8 +277,12 @@ PhaseResult _toPhaseResult({
 
   // ── 5. Earnings calendar ───────────────────────────────────────────────────
   bool earningsInWindow = false;
+  bool earningsNearAtm  = false;
   if (earnings != null) {
-    final daysToEarnings = earnings.date.difference(DateTime.now()).inDays;
+    final today = DateTime.now();
+    final daysToEarnings = DateTime(earnings.date.year, earnings.date.month, earnings.date.day)
+        .difference(DateTime(today.year, today.month, today.day))
+        .inDays;
     earningsInWindow = daysToEarnings >= 0 && daysToEarnings <= dte;
 
     final dateStr  = '${earnings.date.month}/${earnings.date.day}/${earnings.date.year}';
@@ -289,6 +293,7 @@ PhaseResult _toPhaseResult({
     if (earningsInWindow) {
       final moneyness = spot != null ? ((strike - spot) / spot).abs() : 0.0;
       final nearAtm   = moneyness < 0.05;
+      earningsNearAtm = nearAtm;
       final earningsText =
         'Earnings on $dateStr$timeNote — $daysToEarnings days away — falls inside your ${dte}d window. '
         '${nearAtm
@@ -320,7 +325,7 @@ PhaseResult _toPhaseResult({
     final backIv  = a.atmByDte[dteList.last]!;
     final String calSpread;
     if (frontIv > midIv && midIv > backIv) {
-      calSpread = 'Term structure fully inverted (front ${(frontIv*100).toStringAsFixed(1)}% → mid ${(midIv*100).toStringAsFixed(1)}% → back ${(backIv*100).toStringAsFixed(1)}%). Calendar spreads favor selling near-term vol, buying longer-dated. Wide contango of realized vs implied expected.';
+      calSpread = 'Term structure fully inverted (front ${(frontIv*100).toStringAsFixed(1)}% → mid ${(midIv*100).toStringAsFixed(1)}% → back ${(backIv*100).toStringAsFixed(1)}%). Calendar spreads favor selling near-term vol, buying longer-dated. Wide backwardation across the curve.';
     } else if (frontIv < midIv && midIv > backIv) {
       calSpread = 'Hump-shaped: mid-term IV elevated. This suggests a known binary event in the mid-tenor. Calendar spread at the peak DTE captures the elevated term.';
     } else {
@@ -459,11 +464,10 @@ PhaseResult _toPhaseResult({
   // ── Pass / Warn / Fail ─────────────────────────────────────────────────────
   final bool ivCrush       = a.termShape == _TermShape.backwardation && a.termSlope > 0.05;
   final bool ivHighBuy     = cellPct > 0.90;
-  final bool earningsFail  = earningsInWindow && a.termShape == _TermShape.backwardation;
+  final bool earningsFail  = earningsInWindow && earningsNearAtm;
 
   // Hard fails include panic-mode VIX term structure + extreme IV crush trap
-  final bool hardFail = ivCrush || ivHighBuy || earningsFail ||
-      (vixVxvPanic && ivHighBuy);
+  final bool hardFail = ivCrush || ivHighBuy || earningsFail || vixVxvPanic;
 
   // Soft warns require ≥2 independent warning signals to avoid hair-triggers.
   // A single structural flag (e.g. earnings outside window) is noted but not a warn.
@@ -498,7 +502,8 @@ PhaseResult _toPhaseResult({
     if (ivBelowRv) parts.add('IV < RV');
     if (skewSteepening) parts.add('skew steepening');
     if (crushEdgeNegative) parts.add('crush drag');
-    if (vixVxvPanic) parts.add('VIX/VXV panic');
+    if (vixVxvPanic)   parts.add('VIX/VXV panic');
+    if (surfaceHasArb) parts.add('surface arb');
     headline = 'Warn — ${parts.join(' · ')}';
   } else {
     status = PhaseStatus.pass;
@@ -620,6 +625,7 @@ class _VolSurfacePhasePanelState extends ConsumerState<VolSurfacePhasePanel> {
           return _NoDataTile(
             ticker:   widget.ticker,
             earnings: earningsAsync.valueOrNull,
+            dte:      widget.daysToExpiry,
           );
         }
 
@@ -703,8 +709,9 @@ class _ErrorTile extends StatelessWidget {
 
 class _NoDataTile extends StatelessWidget {
   final String          ticker;
-  final EarningsDate? earnings;
-  const _NoDataTile({required this.ticker, this.earnings});
+  final EarningsDate?   earnings;
+  final int?            dte;
+  const _NoDataTile({required this.ticker, this.earnings, this.dte});
 
   @override
   Widget build(BuildContext context) {
@@ -722,9 +729,9 @@ class _NoDataTile extends StatelessWidget {
             'on the Vol Surface screen to unlock this gate.',
             style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.4),
           ),
-          if (earnings != null) ...[
+          if (earnings != null && dte != null) ...[
             const SizedBox(height: 8),
-            _EarningsBanner(earnings: earnings!, dte: 999),
+            _EarningsBanner(earnings: earnings!, dte: dte!),
           ],
           const SizedBox(height: 10),
           TextButton.icon(
@@ -924,7 +931,10 @@ class _EarningsBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final daysAway     = earnings.date.difference(DateTime.now()).inDays;
+    final today        = DateTime.now();
+    final daysAway     = DateTime(earnings.date.year, earnings.date.month, earnings.date.day)
+        .difference(DateTime(today.year, today.month, today.day))
+        .inDays;
     final inWindow     = daysAway >= 0 && daysAway <= dte;
     final Color color  = inWindow ? const Color(0xFFFF6B8A) : const Color(0xFFFBBF24);
     final dateStr      = '${earnings.date.month}/${earnings.date.day}/${earnings.date.year}';

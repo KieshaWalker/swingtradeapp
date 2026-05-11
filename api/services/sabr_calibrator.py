@@ -101,10 +101,13 @@ def calibrate_slice(
         a, rh, nv = params
         sse = 0.0
         for K, iv_mkt in clean:
-            iv_model = sabr_iv(F=F, K=K, T=T, alpha=a, beta=beta, rho=rh, nu=nv)
-            # Use a severe penalty for domain failures, not just 1.0
+            try:
+                iv_model = sabr_iv(F=F, K=K, T=T, alpha=a, beta=beta, rho=rh, nu=nv)
+            except (ValueError, ZeroDivisionError):
+                sse += 1e4
+                continue
             if iv_model <= 0 or math.isnan(iv_model):
-                sse += 1e4 
+                sse += 1e4
                 continue
             
             diff = iv_model - iv_mkt
@@ -171,7 +174,9 @@ def calibrate_snapshot(
         strike = float(p.get("strike", 0))
         if dte <= 0 or strike <= 0:
             continue
-        iv = _select_iv(p, spot)
+        T = dte / 365.0
+        F = spot * math.exp(r * T)
+        iv = _select_iv(p, F)
         if iv is None or iv <= 0 or iv > SABR_MAX_IV_FILTER:
             continue
         by_dte.setdefault(dte, []).append((strike, iv))
@@ -189,13 +194,13 @@ def calibrate_snapshot(
 
 
 
-def _select_iv(point: dict, spot: float) -> float | None:
-    """OTM convention: call IV for strike >= spot, put IV otherwise.
+def _select_iv(point: dict, F: float) -> float | None:
+    """OTM convention: call IV for strike >= F, put IV otherwise.
     Falls back to whichever is available (matches SabrCalibrator._selectIv).
     """
     strike = float(point.get("strike", 0))
     call_iv = point.get("callIv") or point.get("call_iv")
     put_iv = point.get("putIv") or point.get("put_iv")
-    if strike >= spot:
+    if strike >= F:
         return float(call_iv) if call_iv else (float(put_iv) if put_iv else None)
     return float(put_iv) if put_iv else (float(call_iv) if call_iv else None)

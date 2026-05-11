@@ -177,6 +177,18 @@ async def vol_period_monthly_trigger(request: Request):
     return result
 
 
+@router.post("/position-eod-snapshot")
+async def position_eod_snapshot_trigger(request: Request):
+    """Job 10 — Capture EOD Greeks + fair-value theos for all open position legs.
+    Cron: 5 21 * * 1-5   (21:05 UTC Mon–Fri, ~5 min after US market close)
+    """
+    _verify_scheduler(request)
+    from jobs.position_eod_snapshot import run_position_eod_snapshot
+    result = await run_position_eod_snapshot()
+    log.info("position_eod_snapshot_complete result=%s", result)
+    return result
+
+
 @router.post("/backfill-rv")
 async def backfill_rv_trigger(request: Request):
     """One-time backfill: 10 years of daily RV for all watched tickers → realized_vol_snapshots."""

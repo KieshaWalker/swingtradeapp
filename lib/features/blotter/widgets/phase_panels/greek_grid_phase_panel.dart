@@ -98,7 +98,7 @@ class _GreekGridPhasePanelState
   }
 
   void _notifyIfChanged(PhaseResult result) {
-    if (_lastResult == null || _lastResult!.status != result.status) {
+    if (_lastResult == null || _lastResult!.status != result.status || _lastResult!.headline != result.headline) {
       _lastResult = result;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) widget.onResult?.call(result);
@@ -226,21 +226,13 @@ PhaseResult _computeResult({
     status = PhaseStatus.pass;
     if (isCall) {
       signals.add(
-        '✓ Long call in ${regime.label} gamma — ${
-          regime == GammaRegime.positive
-            ? 'rangebound/grinding conditions favor slow upside. '
-              'Positive gamma suppresses vol; use wider strikes or debit spreads.'
-            : 'negative gamma amplifies trending moves. Directional momentum aligns.'
-        }',
+        '✓ Long call in ${regime.label} gamma — rangebound/grinding conditions favor slow upside. '
+        'Positive gamma suppresses vol; use wider strikes or debit spreads.',
       );
     } else {
       signals.add(
-        '✓ Long put in ${regime.label} gamma — ${
-          regime == GammaRegime.negative
-            ? 'negative gamma amplifies downside moves. Dealer re-hedging '
-              'adds fuel to sell-offs.'
-            : 'positive gamma transitioning — structural support weakening.'
-        }',
+        '✓ Long put in ${regime.label} gamma — negative gamma amplifies downside moves. '
+        'Dealer re-hedging adds fuel to sell-offs.',
       );
     }
   }
@@ -371,7 +363,7 @@ PhaseResult _computeResult({
 
   final headline = switch (status) {
     PhaseStatus.fail => '${isCall ? 'Call' : 'Put'} opposes ${regime.label} gamma — '
-        '${regime == GammaRegime.positive ? 'dealer dip-buying suppresses downside' : 'dealer rally-selling suppresses upside'}',
+        '${regime == GammaRegime.positive ? 'dealer dip-buying suppresses downside' : 'dealer dip-selling amplifies downside, bleeding call delta'}',
     PhaseStatus.warn => 'Gamma environment — ${regime.label} regime, caution advised',
     PhaseStatus.pass => '${isCall ? 'Call' : 'Put'} aligns with ${regime.label} gamma environment',
     PhaseStatus.pending => 'Evaluating greek grid…',
@@ -765,7 +757,7 @@ class _GammaTrendBar extends StatelessWidget {
     final max  = [first.abs(), last.abs(), 1e-8].reduce((a, b) => a > b ? a : b);
     final fPct = (first.abs() / max).clamp(0.0, 1.0);
     final lPct = (last.abs() / max).clamp(0.0, 1.0);
-    final rising = last > first;
+    final rising = last.abs() > first.abs();
     final barColor = rising ? AppTheme.profitColor : AppTheme.lossColor;
 
     return Column(

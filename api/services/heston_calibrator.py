@@ -119,9 +119,9 @@ def _build_quotes(
     for dte, rows in by_dte.items():
         T = dte / 365.0
         F = spot * math.exp(r * T)
-        K_arr       = np.array([r[0] for r in rows])
-        iv_arr      = np.array([r[1] for r in rows])
-        is_call_arr = np.array([r[2] for r in rows])
+        K_arr       = np.array([row[0] for row in rows])
+        iv_arr      = np.array([row[1] for row in rows])
+        is_call_arr = np.array([row[2] for row in rows])
         result[dte] = (F, K_arr, iv_arr, is_call_arr)
 
     return result
@@ -203,12 +203,12 @@ def calibrate_heston(
                 params = HestonParams(kappa, theta, xi, rho, V0)
                 prices = heston_price_batch(F, K_arr, T, r, params, is_call_arr)
             except Exception:
-                sse += float(len(K_arr))
+                sse += float(len(K_arr)) * 0.25   # 0.5² per strike — same scale as IV errors
                 continue
 
             iv_h = _bs_iv_batch(prices, F, K_arr, T, r, is_call_arr)
             nan_mask = np.isnan(iv_h)
-            sse += float(np.sum(nan_mask))
+            sse += float(np.sum(nan_mask)) * 0.25  # 0.5² per NaN strike
             sse += float(np.sum((iv_h[~nan_mask] - iv_mkt[~nan_mask]) ** 2))
 
         return sse
@@ -242,21 +242,23 @@ def calibrate_heston(
         _objective,
         de_result.x,
         method="Nelder-Mead",
+        bounds=bounds,
         options={"maxiter": 1000, "fatol": 1e-9, "xatol": 1e-8},
     )
 
     kappa, theta, xi, rho, V0 = nm_result.x
-    # Clamp to feasible region after optimisation
+    # Clamp to feasible region after optimisation; rho <= 0 enforces equity skew
     kappa = max(0.01, kappa)
     theta = max(1e-4, theta)
     xi    = max(1e-4, xi)
-    rho   = max(-0.9999, min(0.9999, rho))
+    rho   = max(-0.9999, min(0.0, rho))
     V0    = max(1e-4, V0)
 
     params = HestonParams(kappa=kappa, theta=theta, xi=xi, rho=rho, V0=V0)
 
-    # Final RMSE
+    # Final RMSE — count only strikes where the model produced a valid IV
     sq_errors: list[float] = []
+    n_valid = 0
     for dte, (F, K_arr, iv_mkt, is_call_arr) in by_dte.items():
         T = dte / 365.0
         try:
@@ -266,12 +268,13 @@ def calibrate_heston(
         iv_h = _bs_iv_batch(prices, F, K_arr, T, r, is_call_arr)
         valid = ~np.isnan(iv_h)
         sq_errors.extend((iv_h[valid] - iv_mkt[valid]) ** 2)
+        n_valid += int(valid.sum())
 
-    rmse = math.sqrt(sum(sq_errors) / len(sq_errors)) if sq_errors else 1.0
+    rmse = math.sqrt(sum(sq_errors) / n_valid) if n_valid > 0 else 1.0
 
     return HestonCalibResult(
         params=params,
         rmse_iv=rmse,
-        n_points=n_total,
+        n_points=n_valid,
         converged=bool(nm_result.success),
     )

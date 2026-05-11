@@ -62,8 +62,7 @@ def bs_delta(F: float, K: float, T: float, r: float, sigma: float, is_call: bool
     if sig_sqt < FV_SIGXT_GUARD:
         return (1.0 if F > K else 0.0) if is_call else (-1.0 if F < K else 0.0)
     d1, _ = _d1d2(F, K, T, sigma)
-    df = math.exp(-r * T)
-    return df * _cdf(d1) if is_call else df * (_cdf(d1) - 1.0)
+    return _cdf(d1) if is_call else (_cdf(d1) - 1.0)
 
 
 def bs_gamma(F: float, K: float, T: float, r: float, sigma: float) -> float:
@@ -73,8 +72,9 @@ def bs_gamma(F: float, K: float, T: float, r: float, sigma: float) -> float:
     if sig_sqt < FV_SIGXT_GUARD or T < 1e-8:
         return 0.0
     d1, _ = _d1d2(F, K, T, sigma)
+    # S = F·e^{-rT}, so φ(d1)/(S·σ·√T) = φ(d1)/(F·df·sig_sqt)
     df = math.exp(-r * T)
-    return df * _pdf(d1) / (F * sig_sqt)
+    return _pdf(d1) / (F * df * sig_sqt)
 
 
 def bs_vega(F: float, K: float, T: float, r: float, sigma: float) -> float:
@@ -99,8 +99,8 @@ def bs_theta(F: float, K: float, T: float, r: float, sigma: float, is_call: bool
     phi_d1 = _pdf(d1)
     decay = -F * df * phi_d1 * sigma / (2 * sqrt_T)
     if is_call:
-        return (decay - r * K * df * _cdf(d2) + r * F * df * _cdf(d1)) / 365
-    return (decay + r * K * df * _cdf(-d2) - r * F * df * _cdf(-d1)) / 365
+        return (decay - r * K * df * _cdf(d2)) / 365
+    return (decay + r * K * df * _cdf(-d2)) / 365
 
 
 def bs_rho(F: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> float:
@@ -184,11 +184,11 @@ def bs_implied_vol(
         if vega < 1e-10:
             return None
         diff = price - market_price
+        if abs(diff) < tol:
+            return sigma
         sigma -= diff / vega
         if sigma <= 0:
             sigma = 1e-6
-        if abs(diff) < tol:
-            return sigma
     return None  # did not converge
 
 
@@ -221,7 +221,7 @@ def bs_all_greeks(
 
     if sig_sqt < FV_SIGXT_GUARD or T < 1e-8:
         return GreeksResult(
-            delta=df if (is_call and F > K) else 0.0,
+            delta=(1.0 if F > K else 0.0) if is_call else (-1.0 if F < K else 0.0),
             gamma=0.0, theta=0.0, vega=0.0, rho=0.0,
             vanna=0.0, charm=0.0, vomma=0.0,
         )
@@ -230,14 +230,13 @@ def bs_all_greeks(
     phi_d1 = _pdf(d1)
     cdf_d1 = _cdf(d1)
     cdf_d2 = _cdf(d2)
-    cdf_neg_d1 = _cdf(-d1)
     cdf_neg_d2 = _cdf(-d2)
 
-    # Delta
-    delta = df * cdf_d1 if is_call else df * (cdf_d1 - 1.0)
+    # Delta: spot ∂V/∂S = N(d1) for calls, N(d1)-1 for puts
+    delta = cdf_d1 if is_call else (cdf_d1 - 1.0)
 
-    # Gamma (same for calls and puts)
-    gamma = df * phi_d1 / (F * sig_sqt)
+    # Gamma: spot ∂²V/∂S² = φ(d1)/(S·σ·√T) = φ(d1)/(F·df·sig_sqt)
+    gamma = phi_d1 / (F * df * sig_sqt)
 
     # Vega (same for calls and puts)
     vega = F * df * phi_d1 * sqrt_T
@@ -245,9 +244,9 @@ def bs_all_greeks(
     # Theta
     decay = -F * df * phi_d1 * sigma / (2 * sqrt_T)
     if is_call:
-        theta = (decay - r * K * df * cdf_d2 + r * F * df * cdf_d1) / 365
+        theta = (decay - r * K * df * cdf_d2) / 365
     else:
-        theta = (decay + r * K * df * cdf_neg_d2 - r * F * df * cdf_neg_d1) / 365
+        theta = (decay + r * K * df * cdf_neg_d2) / 365
 
     # Rho
     rho = K * T * df * cdf_d2 if is_call else -K * T * df * cdf_neg_d2

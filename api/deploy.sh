@@ -172,6 +172,14 @@ upsert_job regime-pull \
   --attempt-deadline=900s \
   --description="Regime classification → regime_snapshots (Mon-Fri hourly)"
 
+# Job 10 — Position EOD snapshot (must run after market close)
+upsert_job position-eod-snapshot \
+  "${COMMON_FLAGS[@]}" \
+  --schedule="5 21 * * 1-5" \
+  --uri="${SERVICE_URL}/jobs/position-eod-snapshot" \
+  --attempt-deadline=600s \
+  --description="EOD Greeks + fair-value snapshot for all open position legs (Mon-Fri 21:05 UTC)"
+
 # Job 9 — Expected move (EOD)
 upsert_job expected-move-pull \
   "${COMMON_FLAGS[@]}" \
@@ -209,8 +217,8 @@ echo "Done. Resources in project ${PROJECT_ID}:"
 echo "  Cloud Run:  ${SERVICE_URL}"
 echo "  Scheduler:  vol-surface-pull, sabr-pull, heston-pull, heston-pull-2, iv-pull,"
 echo "              greek-grid-pull, greek-snapshots-pull, regime-pull,"
-echo "              expected-move-pull, vol-period-weekly, vol-period-monthly,"
-echo "              regime-train"
+echo "              expected-move-pull, position-eod-snapshot,"
+echo "              vol-period-weekly, vol-period-monthly, regime-train"
 echo ""
 echo "Manual triggers:"
 echo "  gcloud scheduler jobs run <job-name> --location=${REGION} --project=${PROJECT_ID}"
