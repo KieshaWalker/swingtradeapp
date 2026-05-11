@@ -16,6 +16,7 @@ class _LegDraft {
   double? strike;
   String? expiry;
   int? quantity;
+  double? entryPrice;
 
   _LegDraft({
     this.existingId,
@@ -24,6 +25,7 @@ class _LegDraft {
     this.strike,
     this.expiry,
     this.quantity,
+    this.entryPrice,
   });
 
   factory _LegDraft.fromLeg(PositionLeg l) => _LegDraft(
@@ -33,6 +35,7 @@ class _LegDraft {
         strike: l.strike,
         expiry: l.expiry,
         quantity: l.quantity,
+        entryPrice: l.entryPrice,
       );
 
   bool get isValid {
@@ -49,6 +52,7 @@ class _LegDraft {
         type: LegType.underlying,
         ticker: ticker.toUpperCase().trim(),
         quantity: quantity!,
+        entryPrice: entryPrice,
       );
     }
     return PositionLeg(
@@ -58,6 +62,7 @@ class _LegDraft {
       strike: strike,
       expiry: expiry,
       quantity: quantity!,
+      entryPrice: entryPrice,
     );
   }
 }
@@ -303,16 +308,15 @@ class _LegEditorState extends State<_LegEditor> {
   late final TextEditingController _tickerCtrl;
   late final TextEditingController _strikeCtrl;
   late final TextEditingController _qtyCtrl;
+  late final TextEditingController _entryCtrl;
 
   @override
   void initState() {
     super.initState();
-    _tickerCtrl =
-        TextEditingController(text: widget.draft.ticker);
-    _strikeCtrl =
-        TextEditingController(text: widget.draft.strike?.toString() ?? '');
-    _qtyCtrl = TextEditingController(
-        text: widget.draft.quantity?.toString() ?? '');
+    _tickerCtrl = TextEditingController(text: widget.draft.ticker);
+    _strikeCtrl = TextEditingController(text: widget.draft.strike?.toString() ?? '');
+    _qtyCtrl = TextEditingController(text: widget.draft.quantity?.toString() ?? '');
+    _entryCtrl = TextEditingController(text: widget.draft.entryPrice?.toString() ?? '');
   }
 
   @override
@@ -320,6 +324,7 @@ class _LegEditorState extends State<_LegEditor> {
     _tickerCtrl.dispose();
     _strikeCtrl.dispose();
     _qtyCtrl.dispose();
+    _entryCtrl.dispose();
     super.dispose();
   }
 
@@ -480,6 +485,22 @@ class _LegEditorState extends State<_LegEditor> {
               ],
             ),
           ],
+          // Entry price row
+          const SizedBox(height: 10),
+          TextField(
+            controller: _entryCtrl,
+            style: const TextStyle(color: Colors.white),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Entry price',
+              hintText: 'Filled price (optional)',
+              isDense: true,
+            ),
+            onChanged: (v) {
+              draft.entryPrice = double.tryParse(v);
+              widget.onChanged();
+            },
+          ),
         ],
       ),
     );

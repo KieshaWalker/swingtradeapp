@@ -1,11 +1,6 @@
 // =============================================================================
 // features/positions/screens/positions_screen.dart — Greek exposure table
 // =============================================================================
-// Each position the user enters (with option + underlying legs) is displayed
-// as a card showing per-leg aggregated Greeks, theoretical edge, and an
-// auto-generated interpretation of what the position wants the market to do.
-// A summary card at the bottom aggregates across all positions.
-// =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
@@ -108,7 +103,7 @@ class PositionsScreen extends ConsumerWidget {
 
 // ── Position card ─────────────────────────────────────────────────────────────
 
-class _PositionCard extends StatelessWidget {
+class _PositionCard extends ConsumerStatefulWidget {
   final EnrichedPosition ep;
   final int index;
   final VoidCallback onEdit;
@@ -122,7 +117,69 @@ class _PositionCard extends StatelessWidget {
   });
 
   @override
+  ConsumerState<_PositionCard> createState() => _PositionCardState();
+}
+
+class _PositionCardState extends ConsumerState<_PositionCard> {
+  bool _historyExpanded = false;
+  String? _expandedLegId;
+
+  void _toggleHistory(String legId) {
+    setState(() {
+      if (_historyExpanded && _expandedLegId == legId) {
+        _historyExpanded = false;
+        _expandedLegId = null;
+      } else {
+        _historyExpanded = true;
+        _expandedLegId = legId;
+      }
+    });
+  }
+
+  Future<void> _showCloseLegDialog(PositionLeg leg) async {
+    final ctrl = TextEditingController();
+    final confirmed = await showDialog<double>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.elevatedColor,
+        title: Text('Close ${leg.label}',
+            style: const TextStyle(color: Colors.white, fontSize: 15)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Exit price',
+            hintText: 'Your fill price',
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              final v = double.tryParse(ctrl.text);
+              if (v != null) Navigator.pop(context, v);
+            },
+            child: const Text('Close leg',
+                style: TextStyle(color: AppTheme.lossColor)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != null && mounted) {
+      await ref
+          .read(positionsProvider.notifier)
+          .closeLeg(leg.id, confirmed);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final ep = widget.ep;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -139,7 +196,7 @@ class _PositionCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _positionBadge('P${index + 1}'),
+                _positionBadge('P${widget.index + 1}'),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -156,9 +213,20 @@ class _PositionCard extends StatelessWidget {
                       Wrap(
                         spacing: 6,
                         runSpacing: 4,
-                        children: ep.position.legs
-                            .map((l) => _legChip(l.label))
-                            .toList(),
+                        children: ep.position.legs.map((l) {
+                          final isClosed = l.status == LegStatus.closed;
+                          return GestureDetector(
+                            onTap: () => _toggleHistory(l.id),
+                            child: _LegChip(
+                              leg: l,
+                              onClose: isClosed
+                                  ? null
+                                  : () => _showCloseLegDialog(l),
+                              isExpanded:
+                                  _historyExpanded && _expandedLegId == l.id,
+                            ),
+                          );
+                        }).toList(),
                       ),
                     ],
                   ),
@@ -166,20 +234,27 @@ class _PositionCard extends StatelessWidget {
                 IconButton(
                   icon: const Icon(Icons.edit_outlined,
                       size: 17, color: AppTheme.neutralColor),
-                  onPressed: onEdit,
+                  onPressed: widget.onEdit,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline,
                       size: 17, color: AppTheme.lossColor),
-                  onPressed: onDelete,
+                  onPressed: widget.onDelete,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
                 ),
               ],
             ),
           ),
+          // Snapshot history panel
+          if (_historyExpanded && _expandedLegId != null) ...[
+            const Divider(height: 1, color: AppTheme.borderColor),
+            _SnapshotPanel(legId: _expandedLegId!),
+          ],
           const Divider(height: 1, color: AppTheme.borderColor),
           // Edge by model
           Padding(
@@ -234,33 +309,27 @@ class _PositionCard extends StatelessWidget {
             ),
           ),
           // Interpretation
-          if (ep.hasLiveData) ...[
-            const Divider(height: 1, color: AppTheme.borderColor),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
-              child: Text(
-                ep.interpretation,
-                style: const TextStyle(
-                  color: AppTheme.neutralColor,
-                  fontSize: 11,
-                  fontStyle: FontStyle.italic,
-                  height: 1.5,
-                ),
-              ),
-            ),
-          ] else ...[
-            const Divider(height: 1, color: AppTheme.borderColor),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(14, 8, 14, 10),
-              child: Text(
-                'Live Greeks unavailable — check Schwab connection',
-                style: TextStyle(
-                    color: Colors.white38,
-                    fontSize: 11,
-                    fontStyle: FontStyle.italic),
-              ),
-            ),
-          ],
+          const Divider(height: 1, color: AppTheme.borderColor),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+            child: ep.hasLiveData
+                ? Text(
+                    ep.interpretation,
+                    style: const TextStyle(
+                      color: AppTheme.neutralColor,
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                      height: 1.5,
+                    ),
+                  )
+                : const Text(
+                    'Live Greeks unavailable — check Schwab connection',
+                    style: TextStyle(
+                        color: Colors.white38,
+                        fontSize: 11,
+                        fontStyle: FontStyle.italic),
+                  ),
+          ),
         ],
       ),
     );
@@ -282,16 +351,165 @@ class _PositionCard extends StatelessWidget {
               fontWeight: FontWeight.w700),
         ),
       );
+}
 
-  Widget _legChip(String label) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration: BoxDecoration(
-          color: AppTheme.elevatedColor,
-          borderRadius: BorderRadius.circular(5),
+// ── Leg chip with status badge ────────────────────────────────────────────────
+
+class _LegChip extends StatelessWidget {
+  final PositionLeg leg;
+  final VoidCallback? onClose;
+  final bool isExpanded;
+
+  const _LegChip({
+    required this.leg,
+    required this.onClose,
+    required this.isExpanded,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isClosed = leg.status == LegStatus.closed;
+    final statusColor = isClosed ? AppTheme.lossColor : AppTheme.profitColor;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: isExpanded
+            ? statusColor.withValues(alpha: 0.12)
+            : AppTheme.elevatedColor,
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(
+          color: isExpanded ? statusColor : AppTheme.borderColor,
         ),
-        child: Text(label,
-            style: const TextStyle(color: Colors.white60, fontSize: 11)),
-      );
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            margin: const EdgeInsets.only(right: 5),
+            decoration: BoxDecoration(
+              color: statusColor,
+              shape: BoxShape.circle,
+            ),
+          ),
+          Text(leg.label,
+              style: const TextStyle(color: Colors.white60, fontSize: 11)),
+          if (onClose != null) ...[
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: onClose,
+              child: const Icon(Icons.close,
+                  size: 11, color: AppTheme.neutralColor),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ── Snapshot history panel ────────────────────────────────────────────────────
+
+class _SnapshotPanel extends ConsumerWidget {
+  final String legId;
+  const _SnapshotPanel({required this.legId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final snapshotsAsync = ref.watch(legSnapshotsProvider(legId));
+    return snapshotsAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+            child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2))),
+      ),
+      error: (e, _) => Padding(
+        padding: const EdgeInsets.all(10),
+        child: Text('Failed to load history: $e',
+            style: const TextStyle(color: AppTheme.lossColor, fontSize: 11)),
+      ),
+      data: (snapshots) {
+        if (snapshots.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+            child: Text('No snapshot history yet.',
+                style:
+                    TextStyle(color: Colors.white38, fontSize: 11)),
+          );
+        }
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+          child: DataTable(
+            headingRowHeight: 28,
+            dataRowMinHeight: 28,
+            dataRowMaxHeight: 32,
+            columnSpacing: 14,
+            headingTextStyle: const TextStyle(
+                color: AppTheme.neutralColor,
+                fontSize: 10,
+                fontWeight: FontWeight.w600),
+            dataTextStyle: const TextStyle(
+                color: Colors.white70, fontSize: 10),
+            columns: const [
+              DataColumn(label: Text('Date')),
+              DataColumn(label: Text('Type')),
+              DataColumn(label: Text('Mkt'), numeric: true),
+              DataColumn(label: Text('B-S'), numeric: true),
+              DataColumn(label: Text('SABR'), numeric: true),
+              DataColumn(label: Text('Heston'), numeric: true),
+              DataColumn(label: Text('Best'), numeric: true),
+              DataColumn(label: Text('Δ'), numeric: true),
+              DataColumn(label: Text('Γ'), numeric: true),
+              DataColumn(label: Text('Θ'), numeric: true),
+              DataColumn(label: Text('V'), numeric: true),
+              DataColumn(label: Text('ρ'), numeric: true),
+            ],
+            rows: snapshots.map((s) => _snapshotRow(s)).toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  DataRow _snapshotRow(LegSnapshot s) {
+    Color typeColor;
+    switch (s.snapshotType) {
+      case SnapshotType.entry:
+        typeColor = AppTheme.profitColor;
+      case SnapshotType.exit:
+        typeColor = AppTheme.lossColor;
+      case SnapshotType.eod:
+        typeColor = AppTheme.neutralColor;
+    }
+
+    String fmt(double? v) =>
+        v == null ? '—' : '${v >= 0 ? '+' : ''}${v.toStringAsFixed(2)}';
+    String fmtPrice(double? v) => v == null ? '—' : v.toStringAsFixed(2);
+    final dateStr =
+        '${s.snapshotDate.month.toString().padLeft(2, '0')}/${s.snapshotDate.day.toString().padLeft(2, '0')}';
+
+    return DataRow(cells: [
+      DataCell(Text(dateStr)),
+      DataCell(Text(s.snapshotType.name,
+          style: TextStyle(color: typeColor, fontWeight: FontWeight.w600))),
+      DataCell(Text(fmtPrice(s.marketPrice))),
+      DataCell(Text(fmt(s.bsTheo))),
+      DataCell(Text(fmt(s.sabrTheo))),
+      DataCell(Text(fmt(s.hestonTheo))),
+      DataCell(Text(fmt(s.modelTheo))),
+      DataCell(Text(fmt(s.delta))),
+      DataCell(Text(fmt(s.gamma))),
+      DataCell(Text(fmt(s.theta))),
+      DataCell(Text(fmt(s.vega))),
+      DataCell(Text(fmt(s.rho))),
+    ]);
+  }
 }
 
 // ── Summary card ──────────────────────────────────────────────────────────────
@@ -301,14 +519,19 @@ class _SummaryCard extends StatelessWidget {
 
   const _SummaryCard({required this.positions});
 
+  static double? _sumHeston(List<EnrichedPosition> positions) {
+    final hasAny = positions.any((p) => p.totalEdgeVsHeston != null);
+    if (!hasAny) return null;
+    return positions.fold<double>(0.0, (s, p) => s + (p.totalEdgeVsHeston ?? 0.0));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final totalEdge = positions.fold(0.0, (s, p) => s + p.totalEdge);
-    final totalDelta = positions.fold(0.0, (s, p) => s + p.totalDelta);
-    final totalGamma = positions.fold(0.0, (s, p) => s + p.totalGamma);
-    final totalTheta = positions.fold(0.0, (s, p) => s + p.totalTheta);
-    final totalVega = positions.fold(0.0, (s, p) => s + p.totalVega);
-    final totalRho = positions.fold(0.0, (s, p) => s + p.totalRho);
+    final totalDelta = positions.fold<double>(0.0, (s, p) => s + p.totalDelta);
+    final totalGamma = positions.fold<double>(0.0, (s, p) => s + p.totalGamma);
+    final totalTheta = positions.fold<double>(0.0, (s, p) => s + p.totalTheta);
+    final totalVega  = positions.fold<double>(0.0, (s, p) => s + p.totalVega);
+    final totalRho   = positions.fold<double>(0.0, (s, p) => s + p.totalRho);
 
     return Container(
       decoration: BoxDecoration(
@@ -343,14 +566,44 @@ class _SummaryCard extends StatelessWidget {
             ),
           ),
           const Divider(height: 1, color: AppTheme.borderColor),
+          // Book edge by model
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Edge vs model',
+                    style: TextStyle(
+                        color: AppTheme.neutralColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.4)),
+                const SizedBox(height: 6),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _GreekCell(label: 'Σ B-S',    value: positions.fold<double>(0.0, (s, p) => s + p.totalEdgeVsBs)),
+                      const SizedBox(width: 5),
+                      _GreekCell(label: 'Σ SABR',   value: positions.fold<double>(0.0, (s, p) => s + p.totalEdgeVsSabr)),
+                      const SizedBox(width: 5),
+                      _GreekCell(label: 'Σ Heston', value: _sumHeston(positions)),
+                      const SizedBox(width: 5),
+                      _GreekCell(label: 'Σ Best',   value: positions.fold<double>(0.0, (s, p) => s + p.totalEdgeVsModel)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppTheme.borderColor),
+          // Book Greeks
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  _GreekCell(label: 'Σ Edge', value: totalEdge),
-                  const SizedBox(width: 5),
                   _GreekCell(label: 'Σ Δ', value: totalDelta),
                   const SizedBox(width: 5),
                   _GreekCell(label: 'Σ Γ', value: totalGamma),
