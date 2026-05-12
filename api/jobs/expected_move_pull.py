@@ -41,6 +41,9 @@ _DTE_TARGETS = {
 }
 
 
+_CONCURRENCY = 5
+
+
 async def run_expected_move_pull() -> dict:
     db     = get_supabase()
     today  = date.today().isoformat()
@@ -52,59 +55,64 @@ async def run_expected_move_pull() -> dict:
     # Market-wide table — deduplicate to unique tickers
     unique_tickers = list({r["ticker"] for r in rows})
     results: dict[str, str] = {}
+    sem = asyncio.Semaphore(_CONCURRENCY)
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         async def _process(ticker: str) -> tuple[str, str]:
-            try:
-                (chain, (closes, _)) = await asyncio.gather(
-                    fetch_schwab_chain(client, ticker),
-                    fetch_schwab_closes(client, ticker, days=90),  # 90 trading days for rv_63d
-                )
-                if chain is None:
-                    return ticker, "chain_error"
-
-                spot = float(chain.get("underlyingPrice", 0))
-                if spot <= 0:
-                    return ticker, "zero_spot"
-
-                expirations = parse_expirations(chain)
-                if not expirations:
-                    return ticker, "no_expirations"
-
-                slices_written = 0
-                for period_type, target_dte in _DTE_TARGETS.items():
-                    iv, actual_dte = atm_iv_from_chain(expirations, spot, target_dte)
-                    if iv is None or iv <= 0 or actual_dte is None:
-                        log.warning(
-                            "expected_move_no_iv ticker=%s period=%s target_dte=%d",
-                            ticker, period_type, target_dte,
-                        )
-                        continue
-
-                    result = em_compute(spot=spot, iv=iv, dte=actual_dte)
-                    _upsert(db, ticker, today, spot, period_type, result)
-                    slices_written += 1
-                    log.info(
-                        "em_ok ticker=%s period=%s dte=%d iv=%.3f em=$%.2f (%.2f%%)",
-                        ticker, period_type, actual_dte, iv,
-                        result.em_dollars, result.em_pct,
+            async with sem:
+                try:
+                    (chain, (closes, _)) = await asyncio.gather(
+                        fetch_schwab_chain(client, ticker),
+                        fetch_schwab_closes(client, ticker, days=90),  # 90 trading days for rv_63d
                     )
 
-                # Persist daily RV alongside expected move
-                clean_closes = [c for c in closes if c and c > 0]
-                if len(clean_closes) >= 2:
-                    rv1d  = abs(math.log(clean_closes[-1] / clean_closes[-2])) * math.sqrt(252)
-                    rv5d  = compute_rv(clean_closes[-5:]  if len(clean_closes) >= 5  else clean_closes)
-                    rv21d = compute_rv(clean_closes[-21:] if len(clean_closes) >= 21 else clean_closes)
-                    rv63d = compute_rv(clean_closes[-63:] if len(clean_closes) >= 63 else clean_closes)
-                    _upsert_rv(db, ticker, today, rv1d, rv5d, rv21d, rv63d)
-                    log.info("rv_ok ticker=%s rv1d=%.3f rv5d=%.3f rv21d=%.3f rv63d=%.3f",
-                             ticker, rv1d, rv5d, rv21d, rv63d)
+                    # Write RV regardless of whether the chain succeeded
+                    clean_closes = [c for c in closes if c and c > 0]
+                    if len(clean_closes) >= 2:
+                        rv1d  = abs(math.log(clean_closes[-1] / clean_closes[-2])) * math.sqrt(252)
+                        rv5d  = compute_rv(clean_closes[-5:]  if len(clean_closes) >= 5  else clean_closes)
+                        rv21d = compute_rv(clean_closes[-21:] if len(clean_closes) >= 21 else clean_closes)
+                        rv63d = compute_rv(clean_closes[-63:] if len(clean_closes) >= 63 else clean_closes)
+                        _upsert_rv(db, ticker, today, rv1d, rv5d, rv21d, rv63d)
+                        log.info("rv_ok ticker=%s rv1d=%.3f rv5d=%.3f rv21d=%.3f rv63d=%.3f",
+                                 ticker, rv1d, rv5d, rv21d, rv63d)
+                    else:
+                        log.warning("rv_skip ticker=%s closes=%d", ticker, len(clean_closes))
 
-                return ticker, f"ok:{slices_written}"
-            except Exception as exc:
-                log.error("expected_move_failed ticker=%s error=%r", ticker, exc, exc_info=True)
-                return ticker, f"error:{exc!r}"
+                    if chain is None:
+                        return ticker, "chain_error"
+
+                    spot = float(chain.get("underlyingPrice", 0))
+                    if spot <= 0:
+                        return ticker, "zero_spot"
+
+                    expirations = parse_expirations(chain)
+                    if not expirations:
+                        return ticker, "no_expirations"
+
+                    slices_written = 0
+                    for period_type, target_dte in _DTE_TARGETS.items():
+                        iv, actual_dte = atm_iv_from_chain(expirations, spot, target_dte)
+                        if iv is None or iv <= 0 or actual_dte is None:
+                            log.warning(
+                                "expected_move_no_iv ticker=%s period=%s target_dte=%d",
+                                ticker, period_type, target_dte,
+                            )
+                            continue
+
+                        result = em_compute(spot=spot, iv=iv, dte=actual_dte)
+                        _upsert(db, ticker, today, spot, period_type, result)
+                        slices_written += 1
+                        log.info(
+                            "em_ok ticker=%s period=%s dte=%d iv=%.3f em=$%.2f (%.2f%%)",
+                            ticker, period_type, actual_dte, iv,
+                            result.em_dollars, result.em_pct,
+                        )
+
+                    return ticker, f"ok:{slices_written}"
+                except Exception as exc:
+                    log.error("expected_move_failed ticker=%s error=%r", ticker, exc, exc_info=True)
+                    return ticker, f"error:{exc!r}"
 
         results = dict(await asyncio.gather(*[_process(t) for t in unique_tickers]))
 

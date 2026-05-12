@@ -2,14 +2,17 @@
 // features/calculator/screens/calculator_screen.dart — Trading calculators
 // =============================================================================
 // Widgets defined here:
-//   • CalculatorScreen       — scaffold + 5-tab TabBar
-//   • _PnLEstimator          — tab 1: estimate trade outcome
-//   • _PositionSizer         — tab 2: size a position by risk %
-//   • _BlackScholesTab       — tab 3: BS price + all Greeks via /bs backend
-//   • _SABRTab               — tab 4: SABR implied vol via /sabr backend
-//   • _HestonTab             — tab 5: Heston price via /heston backend
-//   • _ResultRow             — label ↔ colored value row (shared)
-//   • _FormulaPanel          — expandable educational formula section (shared)
+//   • CalculatorScreen         — scaffold + 8-tab TabBar
+//   • _PnLEstimator            — tab 1: estimate trade outcome
+//   • _PositionSizer           — tab 2: size a position by risk %
+//   • _BlackScholesTab         — tab 3: BS price + all Greeks via /bs backend
+//   • _SABRTab                 — tab 4: SABR implied vol via /sabr backend
+//   • _HestonTab               — tab 5: Heston price via /heston backend
+//   • _ForwardPriceTab         — tab 6: forward price F = S·e^{(r−q)T} (local)
+//   • _TheoreticalPriceTab     — tab 7: fair value vs broker mid via /fair-value backend
+//   • _IntrinsicValueTab       — tab 8: intrinsic + time value breakdown (local)
+//   • _ResultRow               — label ↔ colored value row (shared)
+//   • _FormulaPanel            — expandable educational formula section (shared)
 //
 // Route: '/calculator' in router.dart
 //
@@ -36,7 +39,7 @@ class _CalculatorScreenState extends State<CalculatorScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 5, vsync: this);
+    _tabs = TabController(length: 8, vsync: this);
   }
 
   @override
@@ -63,17 +66,23 @@ class _CalculatorScreenState extends State<CalculatorScreen>
             Tab(text: 'Black-Scholes'),
             Tab(text: 'SABR'),
             Tab(text: 'Heston'),
+            Tab(text: 'Forward Price'),
+            Tab(text: 'Theoretical Price'),
+            Tab(text: 'Intrinsic Value'),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabs,
-        children: const [
-          _PnLEstimator(),
-          _PositionSizer(),
-          _BlackScholesTab(),
-          _SABRTab(),
-          _HestonTab(),
+        children: [
+          const _PnLEstimator(),
+          const _PositionSizer(),
+          const _BlackScholesTab(),
+          const _SABRTab(),
+          const _HestonTab(),
+          const _ForwardPriceTab(),
+          const _TheoreticalPriceTab(),
+          const _IntrinsicValueTab(),
         ],
       ),
     );
@@ -835,8 +844,27 @@ class _SABRTabState extends State<_SABRTab> {
           Expanded(child: TextFormField(
             controller: _alphaCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Alpha (α)',
-                helperText: 'ATM vol level ≈ IV'),
+            decoration: InputDecoration(
+              labelText: 'Alpha (α)',
+              helperText: 'ATM vol level ≈ IV',
+              suffixIcon: const _InfoButton(
+                title: 'Estimating Alpha (α)',
+                lines: [
+                  _FormulaLine('α ≈ ATM implied vol for your expiry.\n'
+                      'If the 30-day ATM option shows 22% IV, start with α = 0.22.',
+                      heading: 'Quick estimate'),
+                  _FormulaLine('For β = 0.5 (equity square-root model), a more precise '
+                      'starting point is α ≈ IV_ATM × F^{0.5}. But the ATM approximation '
+                      'is usually close enough to seed calibration.',
+                      heading: 'Precise formula'),
+                  _FormulaLine('SABR calibration fits α, ρ, and ν simultaneously to '
+                      'minimize the IV error across all strikes for a given expiry. '
+                      'α sets the level, ρ tilts the skew, ν controls curvature. '
+                      'Recalibrate each expiry separately — α changes with term.',
+                      heading: 'Calibration'),
+                ],
+              ),
+            ),
           )),
         ]),
         const SizedBox(height: 12),
@@ -1075,8 +1103,29 @@ class _HestonTabState extends State<_HestonTab> {
           Expanded(child: TextFormField(
             controller: _kappaCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Kappa (κ)',
-                helperText: 'Mean reversion speed'),
+            decoration: const InputDecoration(
+              labelText: 'Kappa (κ)',
+              helperText: 'Mean reversion speed',
+              suffixIcon: _InfoButton(
+                title: 'Estimating Kappa (κ)',
+                lines: [
+                  _FormulaLine('κ = mean-reversion speed of variance. '
+                      'Half-life of a vol shock = ln(2) / κ years.\n'
+                      'κ = 2 → ~4-month half-life.  κ = 4 → ~2-month half-life.',
+                      heading: 'What it controls'),
+                  _FormulaLine('1. Collect daily realized variance (σ²) for 1–2 years.\n'
+                      '2. Fit AR(1): σ²_t = a + b·σ²_{t-1}.\n'
+                      '3. κ ≈ −252 · ln(b).\n\n'
+                      'Example: b = 0.992 → κ ≈ −252 · ln(0.992) ≈ 2.0',
+                      heading: 'From historical variance'),
+                  _FormulaLine('κ is most accurately estimated from the vol surface '
+                      'term structure — the shape of ATM IV across maturities encodes '
+                      'how fast vol mean-reverts under the risk-neutral measure. '
+                      'Typical calibrated equity range: 1–5.',
+                      heading: 'From the vol surface'),
+                ],
+              ),
+            ),
           )),
           const SizedBox(width: 12),
           Expanded(child: TextFormField(
@@ -1091,8 +1140,30 @@ class _HestonTabState extends State<_HestonTab> {
           Expanded(child: TextFormField(
             controller: _xiCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Xi (ξ)',
-                helperText: 'Vol-of-vol'),
+            decoration: const InputDecoration(
+              labelText: 'Xi (ξ)',
+              helperText: 'Vol-of-vol',
+              suffixIcon: _InfoButton(
+                title: 'Estimating Vol-of-Vol (ξ)',
+                lines: [
+                  _FormulaLine('ξ measures how much the variance process fluctuates. '
+                      'Higher ξ = fatter vol smile wings. Typical equity range: 0.3–0.8.',
+                      heading: 'What it controls'),
+                  _FormulaLine('1. Collect daily ATM IV for ≥ 1 year.\n'
+                      '2. Compute daily changes: Δσ_i = σ_i − σ_{i-1}.\n'
+                      '3. ξ ≈ std(Δσ) × √252  (annualised vol-of-vol).\n\n'
+                      'Example: daily IV moves avg 0.8% → ξ ≈ 0.008 × √252 ≈ 0.13.\n'
+                      'Note: calibrated ξ is often 2–5× the historical estimate '
+                      'because options embed a vol-of-vol risk premium.',
+                      heading: 'From historical IV moves'),
+                  _FormulaLine('ξ is most reliably extracted by fitting the Heston '
+                      'model to the full vol surface. The wings of the smile '
+                      '(deep OTM strikes) are most sensitive to ξ. '
+                      'VIX options have ξ ≈ 1.5–3 — equity single-stocks are lower.',
+                      heading: 'From the vol surface'),
+                ],
+              ),
+            ),
           )),
           const SizedBox(width: 12),
           Expanded(child: TextFormField(
@@ -1296,6 +1367,820 @@ class _FellerBadge extends StatelessWidget {
           ),
         ),
       ]),
+    );
+  }
+}
+
+// =============================================================================
+// Tab 6 — Forward Price
+// =============================================================================
+class _ForwardPriceTab extends StatefulWidget {
+  const _ForwardPriceTab();
+  @override
+  State<_ForwardPriceTab> createState() => _ForwardPriceTabState();
+}
+
+class _ForwardPriceTabState extends State<_ForwardPriceTab> {
+  final _spotCtrl = TextEditingController(text: '100');
+  final _rCtrl    = TextEditingController(text: '4.33');
+  final _qCtrl    = TextEditingController(text: '0');
+  final _dteCtrl  = TextEditingController(text: '30');
+
+  double? get _spot => double.tryParse(_spotCtrl.text);
+  double? get _r    => double.tryParse(_rCtrl.text);
+  double? get _q    => double.tryParse(_qCtrl.text);
+  double? get _dte  => double.tryParse(_dteCtrl.text);
+
+  double? get _timeYears => _dte != null ? _dte! / 365.0 : null;
+
+  double? get _forward {
+    if (_spot == null || _r == null || _q == null || _timeYears == null) return null;
+    return _spot! * exp((_r! / 100 - _q! / 100) * _timeYears!);
+  }
+
+  double? get _costOfCarry => (_forward != null) ? _forward! - _spot! : null;
+
+  @override
+  void dispose() {
+    _spotCtrl.dispose(); _rCtrl.dispose(); _qCtrl.dispose(); _dteCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fwd = _forward;
+    final coc = _costOfCarry;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'The forward price is the fair delivery price of an asset at expiry, '
+          'used to compute option strike moneyness and put-call parity.',
+          style: TextStyle(color: AppTheme.neutralColor),
+        ),
+        const SizedBox(height: 20),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _spotCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Spot (S)', prefixText: '\$'),
+            onChanged: (_) => setState(() {}),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _dteCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Days (T)', helperText: 'Calendar days'),
+            onChanged: (_) => setState(() {}),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _rCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Risk-free Rate (r)', suffixText: '%', helperText: 'SOFR ~4.33%'),
+            onChanged: (_) => setState(() {}),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _qCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Dividend Yield (q)', suffixText: '%', helperText: '0 for no dividend'),
+            onChanged: (_) => setState(() {}),
+          )),
+        ]),
+        if (fwd != null) ...[
+          const SizedBox(height: 24),
+          Divider(color: AppTheme.borderColor),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.profitColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.profitColor.withValues(alpha: 0.3)),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Forward Price (F)',
+                  style: TextStyle(color: AppTheme.neutralColor, fontWeight: FontWeight.w600)),
+              Text('\$${fwd.toStringAsFixed(4)}',
+                  style: const TextStyle(
+                      color: AppTheme.profitColor, fontWeight: FontWeight.w900, fontSize: 22)),
+            ]),
+          ),
+          const SizedBox(height: 8),
+          if (coc != null)
+            _ResultRow(
+              label: 'Cost of Carry (F − S)',
+              value: '${coc >= 0 ? '+' : ''}\$${coc.toStringAsFixed(4)}',
+              color: coc >= 0 ? AppTheme.profitColor : AppTheme.lossColor,
+            ),
+          if (_timeYears != null && _timeYears! > 0 && coc != null)
+            _ResultRow(
+              label: 'Annualised carry',
+              value: '${((coc / _spot!) * (1 / _timeYears!) * 100).toStringAsFixed(2)}%',
+              color: Colors.white,
+            ),
+          const SizedBox(height: 8),
+          Text(
+            fwd > _spot!
+                ? 'F > S — positive carry: the risk-free return outweighs dividends.'
+                : fwd < _spot!
+                    ? 'F < S — negative carry: dividend yield exceeds the risk-free rate.'
+                    : 'F = S — zero carry: rate equals dividend yield.',
+            style: const TextStyle(color: AppTheme.neutralColor, fontSize: 13),
+          ),
+        ],
+        const SizedBox(height: 24),
+        const _FormulaPanel(
+          title: 'About Forward Price',
+          lines: [
+            _FormulaLine('F = S · e^{(r − q)T}\n\n'
+                'r = risk-free rate, q = continuous dividend yield, '
+                'T = time in years', heading: 'Formula'),
+            _FormulaLine(
+              'The forward price is the spot price grown at the net cost of carry '
+              '(r − q). It is NOT a forecast — it is an arbitrage-free price '
+              'derived from the cost of replicating ownership until expiry.\n\n'
+              'If F > market forward, buy spot and sell futures (cash-and-carry arb).\n'
+              'If F < market forward, sell spot and buy futures (reverse carry arb).',
+              heading: 'Why it matters',
+            ),
+            _FormulaLine(
+              'Put-Call Parity (European options):\n'
+              'C − P = e^{−rT}(F − K)\n\n'
+              'At-the-money forward (ATMF) is where K = F. '
+              'SABR and Heston use F, not S, as the "at-the-money" reference — '
+              'so strike selection relative to F matters more than relative to S.',
+              heading: 'Put-call parity & ATMF',
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// Tab 7 — Theoretical Price (Fair Value)
+// =============================================================================
+class _TheoreticalPriceTab extends StatefulWidget {
+  const _TheoreticalPriceTab();
+  @override
+  State<_TheoreticalPriceTab> createState() => _TheoreticalPriceTabState();
+}
+
+class _TheoreticalPriceTabState extends State<_TheoreticalPriceTab> {
+  final _spotCtrl   = TextEditingController(text: '100');
+  final _strikeCtrl = TextEditingController(text: '100');
+  final _dteCtrl    = TextEditingController(text: '30');
+  final _ivCtrl     = TextEditingController(text: '20');
+  final _midCtrl    = TextEditingController(text: '2.50');
+  final _rCtrl      = TextEditingController(text: '4.33');
+  bool _isCall = true;
+
+  bool _loading = false;
+  Map<String, dynamic>? _result;
+
+  Future<void> _calculate() async {
+    final spot   = double.tryParse(_spotCtrl.text);
+    final strike = double.tryParse(_strikeCtrl.text);
+    final dte    = int.tryParse(_dteCtrl.text);
+    final iv     = double.tryParse(_ivCtrl.text);
+    final mid    = double.tryParse(_midCtrl.text);
+    final r      = double.tryParse(_rCtrl.text);
+    if (spot == null || strike == null || dte == null ||
+        iv == null || mid == null || r == null) { return; }
+    setState(() => _loading = true);
+    try {
+      final res = await PythonApiClient.fairValueCompute(
+        spot: spot,
+        strike: strike,
+        impliedVol: iv / 100,
+        daysToExpiry: dte,
+        isCall: _isCall,
+        brokerMid: mid,
+        r: r / 100,
+      );
+      setState(() => _result = res);
+    } on PythonApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('API error: ${e.message}'),
+              backgroundColor: AppTheme.lossColor),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _spotCtrl.dispose(); _strikeCtrl.dispose(); _dteCtrl.dispose();
+    _ivCtrl.dispose(); _midCtrl.dispose(); _rCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final res = _result;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Compare theoretical model prices against a broker mid quote '
+          'to find edge — how much the market is over- or under-pricing the option.',
+          style: TextStyle(color: AppTheme.neutralColor),
+        ),
+        const SizedBox(height: 20),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _spotCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Spot (S)', prefixText: '\$'),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _strikeCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Strike (K)', prefixText: '\$'),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _dteCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Days to Expiry'),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _ivCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Implied Vol (σ)', suffixText: '%'),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _midCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Broker Mid', prefixText: '\$',
+                helperText: 'Market mid price'),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _rCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Risk-free Rate', suffixText: '%'),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        _OptionTypeToggle(isCall: _isCall, onChanged: (v) => setState(() => _isCall = v)),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _loading ? null : _calculate,
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.profitColor,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 14)),
+            child: _loading
+                ? const SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                : const Text('Calculate Theoretical Price',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ),
+        if (res != null) ...[
+          const SizedBox(height: 24),
+          Divider(color: AppTheme.borderColor),
+          const SizedBox(height: 12),
+          // Edge badge
+          _EdgeBadge(
+            brokerMid: (res['broker_mid'] as num).toDouble(),
+            modelFairValue: (res['model_fair_value'] as num).toDouble(),
+            edgeBps: (res['edge_bps'] as num).toDouble(),
+          ),
+          const SizedBox(height: 16),
+          const Text('Model Prices',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+          const SizedBox(height: 8),
+          _ResultRow(
+            label: 'BS Fair Value',
+            value: '\$${(res['bs_fair_value'] as num).toStringAsFixed(4)}',
+            color: Colors.white,
+          ),
+          _ResultRow(
+            label: 'SABR Fair Value',
+            value: '\$${(res['sabr_fair_value'] as num).toStringAsFixed(4)}',
+            color: Colors.white,
+          ),
+          if (res['heston_fair_value'] != null)
+            _ResultRow(
+              label: 'Heston Fair Value',
+              value: '\$${(res['heston_fair_value'] as num).toStringAsFixed(4)}',
+              color: Colors.white,
+            ),
+          _ResultRow(
+            label: 'Model Fair Value (blended)',
+            value: '\$${(res['model_fair_value'] as num).toStringAsFixed(4)}',
+            color: AppTheme.profitColor,
+          ),
+          const SizedBox(height: 16),
+          const Text('Vol Check',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+          const SizedBox(height: 8),
+          _ResultRow(
+            label: 'Input IV',
+            value: '${((res['implied_vol'] as num) * 100).toStringAsFixed(2)}%',
+            color: Colors.white,
+          ),
+          _ResultRow(
+            label: 'SABR Vol (at this strike)',
+            value: '${((res['sabr_vol'] as num) * 100).toStringAsFixed(2)}%',
+            color: Colors.white,
+          ),
+          if (res['computed_iv'] != null)
+            _ResultRow(
+              label: 'Back-solved IV (from mid)',
+              value: '${((res['computed_iv'] as num) * 100).toStringAsFixed(2)}%',
+              color: Colors.white,
+            ),
+          if (res['iv_note'] != null && (res['iv_note'] as String).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(res['iv_note'] as String,
+                  style: const TextStyle(color: AppTheme.neutralColor, fontSize: 13)),
+            ),
+        ],
+        const SizedBox(height: 24),
+        const _FormulaPanel(
+          title: 'About Theoretical / Fair Value',
+          lines: [
+            _FormulaLine(
+              'Model Fair Value = weighted average of BS, SABR, and (when available) '
+              'Heston prices. Edge = Broker Mid − Model Fair Value.\n\n'
+              'Positive edge (bps > 0): market is pricing the option above theoretical — '
+              'you are selling at a premium, or paying up to buy.\n'
+              'Negative edge (bps < 0): market prices below theoretical — '
+              'potential mispricing in your favour as a buyer.',
+              heading: 'Edge (basis points)',
+            ),
+            _FormulaLine(
+              'BS is a single-vol model — it uses your input IV flat across all strikes. '
+              'SABR adjusts for the vol smile at this specific strike. '
+              'Heston incorporates stochastic vol dynamics from the calibrated surface. '
+              'The blended model price reflects all three, weighted by availability.',
+              heading: 'Why three models?',
+            ),
+            _FormulaLine(
+              'Back-solved IV is the implied volatility derived from the broker mid '
+              'price via Newton-Raphson inversion of the BS formula. '
+              'Comparing it to your input IV reveals how the market is pricing '
+              'this option relative to your vol assumption.',
+              heading: 'Back-solved IV',
+            ),
+            _FormulaLine(
+              'Edge alone does not mean a trade is good. '
+              'Also consider: bid-ask spread (is edge > half spread?), '
+              'liquidity risk, directional risk, and whether your IV input '
+              'reflects the true market IV.',
+              heading: 'Caveats',
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+}
+
+class _EdgeBadge extends StatelessWidget {
+  final double brokerMid;
+  final double modelFairValue;
+  final double edgeBps;
+  const _EdgeBadge(
+      {required this.brokerMid,
+      required this.modelFairValue,
+      required this.edgeBps});
+
+  @override
+  Widget build(BuildContext context) {
+    final positive = edgeBps >= 0;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: positive
+            ? AppTheme.profitColor.withValues(alpha: 0.08)
+            : AppTheme.lossColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: positive
+              ? AppTheme.profitColor.withValues(alpha: 0.3)
+              : AppTheme.lossColor.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Broker Mid',
+              style: TextStyle(color: AppTheme.neutralColor)),
+          Text('\$${brokerMid.toStringAsFixed(4)}',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        ]),
+        const SizedBox(height: 6),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Model Fair Value',
+              style: TextStyle(color: AppTheme.neutralColor)),
+          Text('\$${modelFairValue.toStringAsFixed(4)}',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        ]),
+        const Divider(height: 20),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Edge',
+              style: TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+          Text(
+            '${positive ? '+' : ''}${edgeBps.toStringAsFixed(1)} bps',
+            style: TextStyle(
+              color: positive ? AppTheme.profitColor : AppTheme.lossColor,
+              fontWeight: FontWeight.w900,
+              fontSize: 22,
+            ),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        Text(
+          positive
+              ? 'Market is above theoretical — selling edge.'
+              : 'Market is below theoretical — buying edge.',
+          style: TextStyle(
+            color: positive ? AppTheme.profitColor : AppTheme.lossColor,
+            fontSize: 12,
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// =============================================================================
+// Tab 8 — Intrinsic Value
+// =============================================================================
+class _IntrinsicValueTab extends StatefulWidget {
+  const _IntrinsicValueTab();
+  @override
+  State<_IntrinsicValueTab> createState() => _IntrinsicValueTabState();
+}
+
+class _IntrinsicValueTabState extends State<_IntrinsicValueTab> {
+  final _spotCtrl    = TextEditingController(text: '105');
+  final _strikeCtrl  = TextEditingController(text: '100');
+  final _premiumCtrl = TextEditingController(text: '6.50');
+  bool _isCall = true;
+
+  double? get _spot    => double.tryParse(_spotCtrl.text);
+  double? get _strike  => double.tryParse(_strikeCtrl.text);
+  double? get _premium => double.tryParse(_premiumCtrl.text);
+
+  double? get _intrinsic {
+    if (_spot == null || _strike == null) return null;
+    return _isCall
+        ? max(0, _spot! - _strike!)
+        : max(0, _strike! - _spot!);
+  }
+
+  double? get _timeValue {
+    if (_intrinsic == null || _premium == null) return null;
+    return max(0, _premium! - _intrinsic!);
+  }
+
+  double? get _timeValuePct {
+    if (_timeValue == null || _premium == null || _premium == 0) return null;
+    return (_timeValue! / _premium!) * 100;
+  }
+
+  String get _moneyness {
+    if (_spot == null || _strike == null) return '—';
+    final diff = _isCall ? _spot! - _strike! : _strike! - _spot!;
+    final pct = diff / _strike! * 100;
+    if (pct.abs() < 1) return 'ATM (within 1%)';
+    if (pct > 0) return 'ITM ${pct.abs().toStringAsFixed(1)}%';
+    return 'OTM ${pct.abs().toStringAsFixed(1)}%';
+  }
+
+  bool get _isItm => _intrinsic != null && _intrinsic! > 0;
+
+  @override
+  void dispose() {
+    _spotCtrl.dispose(); _strikeCtrl.dispose(); _premiumCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final iv = _intrinsic;
+    final tv = _timeValue;
+    final tvPct = _timeValuePct;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Breaks down an option premium into intrinsic value '
+          '(real, immediate worth) and time value (what you pay for optionality).',
+          style: TextStyle(color: AppTheme.neutralColor),
+        ),
+        const SizedBox(height: 20),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _spotCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Spot (S)', prefixText: '\$', helperText: 'Current price'),
+            onChanged: (_) => setState(() {}),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _strikeCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Strike (K)', prefixText: '\$'),
+            onChanged: (_) => setState(() {}),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _premiumCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Option Premium', prefixText: '\$',
+                helperText: 'Market price of option'),
+            onChanged: (_) => setState(() {}),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: _OptionTypeToggle(
+            isCall: _isCall,
+            onChanged: (v) => setState(() => _isCall = v),
+          )),
+        ]),
+        if (iv != null && tv != null) ...[
+          const SizedBox(height: 24),
+          Divider(color: AppTheme.borderColor),
+          const SizedBox(height: 12),
+          // Moneyness badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: _isItm
+                  ? AppTheme.profitColor.withValues(alpha: 0.12)
+                  : AppTheme.neutralColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _isItm
+                    ? AppTheme.profitColor.withValues(alpha: 0.35)
+                    : AppTheme.neutralColor.withValues(alpha: 0.35),
+              ),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Moneyness',
+                  style: TextStyle(color: AppTheme.neutralColor)),
+              Text(_moneyness,
+                  style: TextStyle(
+                      color: _isItm ? AppTheme.profitColor : AppTheme.neutralColor,
+                      fontWeight: FontWeight.w700)),
+            ]),
+          ),
+          const SizedBox(height: 16),
+          // Breakdown bar
+          if (_premium != null && _premium! > 0) ...[
+            _ValueBreakdownBar(
+              intrinsicFraction: iv / _premium!,
+              intrinsicLabel: '\$${iv.toStringAsFixed(2)}',
+              timeLabel: '\$${tv.toStringAsFixed(2)}',
+            ),
+            const SizedBox(height: 16),
+          ],
+          _ResultRow(
+            label: 'Intrinsic Value',
+            value: '\$${iv.toStringAsFixed(4)}',
+            color: _isItm ? AppTheme.profitColor : AppTheme.neutralColor,
+          ),
+          _ResultRow(
+            label: 'Time Value (extrinsic)',
+            value: '\$${tv.toStringAsFixed(4)}',
+            color: Colors.white,
+          ),
+          if (tvPct != null)
+            _ResultRow(
+              label: '% of premium that is time value',
+              value: '${tvPct.toStringAsFixed(1)}%',
+              color: Colors.white,
+            ),
+          if (_premium != null && iv > _premium!)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Premium < intrinsic value — possible data error or wide spread.',
+                style: const TextStyle(color: AppTheme.lossColor, fontSize: 13),
+              ),
+            ),
+        ],
+        const SizedBox(height: 24),
+        const _FormulaPanel(
+          title: 'About Intrinsic & Time Value',
+          lines: [
+            _FormulaLine(
+              'Intrinsic = max(S − K, 0)  for calls\n'
+              'Intrinsic = max(K − S, 0)  for puts\n\n'
+              'Time Value = Premium − Intrinsic Value\n'
+              '(also called extrinsic value)',
+              heading: 'Formula',
+            ),
+            _FormulaLine(
+              'Intrinsic value is the amount an option is in-the-money right now — '
+              'what you could profit by exercising immediately. '
+              'An OTM option has zero intrinsic value.\n\n'
+              'Time value is everything else in the premium: '
+              'the market\'s price for the probability that the option goes deeper ITM '
+              'before expiry. It decays to zero at expiration (theta decay).',
+              heading: 'What each component means',
+            ),
+            _FormulaLine(
+              'Deep ITM options: mostly intrinsic, little time value. '
+              'They move almost 1-for-1 with spot (high delta).\n\n'
+              'ATM options: mostly time value. '
+              'Maximum theta decay and highest sensitivity to IV changes (high vega).\n\n'
+              'Deep OTM options: 100% time value (lottery tickets). '
+              'High leverage but most likely to expire worthless.',
+              heading: 'ITM / ATM / OTM profile',
+            ),
+            _FormulaLine(
+              'When selling options (covered calls, cash-secured puts, spreads), '
+              'you collect time value as premium income. '
+              'The goal is for time value to decay before expiry. '
+              'IV crush after earnings is a rapid collapse in time value.',
+              heading: 'Trading implication',
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+}
+
+class _ValueBreakdownBar extends StatelessWidget {
+  final double intrinsicFraction;
+  final String intrinsicLabel;
+  final String timeLabel;
+  const _ValueBreakdownBar(
+      {required this.intrinsicFraction,
+      required this.intrinsicLabel,
+      required this.timeLabel});
+
+  @override
+  Widget build(BuildContext context) {
+    final frac = intrinsicFraction.clamp(0.0, 1.0);
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              height: 22,
+              child: Row(children: [
+                if (frac > 0)
+                  Expanded(
+                    flex: (frac * 1000).round(),
+                    child: Container(
+                      color: AppTheme.profitColor.withValues(alpha: 0.7),
+                      alignment: Alignment.center,
+                      child: frac > 0.15
+                          ? Text(intrinsicLabel,
+                              style: const TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.w700, color: Colors.black))
+                          : null,
+                    ),
+                  ),
+                Expanded(
+                  flex: ((1 - frac) * 1000).round().clamp(1, 1000),
+                  child: Container(
+                    color: AppTheme.cardColor,
+                    alignment: Alignment.center,
+                    child: (1 - frac) > 0.15
+                        ? Text(timeLabel,
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w700,
+                                color: AppTheme.neutralColor))
+                        : null,
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ]),
+      const SizedBox(height: 6),
+      Row(children: [
+        _LegendDot(color: AppTheme.profitColor.withValues(alpha: 0.7),
+            label: 'Intrinsic'),
+        const SizedBox(width: 16),
+        _LegendDot(color: AppTheme.cardColor, label: 'Time Value'),
+      ]),
+    ]);
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      Container(width: 10, height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+      const SizedBox(width: 6),
+      Text(label, style: const TextStyle(color: AppTheme.neutralColor, fontSize: 12)),
+    ]);
+  }
+}
+
+// Small ⓘ button that opens a dialog explaining how to estimate a parameter.
+class _InfoButton extends StatelessWidget {
+  final String title;
+  final List<_FormulaLine> lines;
+  const _InfoButton({required this.title, required this.lines});
+
+  void _show(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.elevatedColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Text(title,
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: lines
+                .map((l) => Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (l.heading != null)
+                            Text(l.heading!,
+                                style: const TextStyle(
+                                    color: AppTheme.profitColor,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13)),
+                          if (l.heading != null) const SizedBox(height: 4),
+                          Text(l.body,
+                              style: const TextStyle(
+                                  color: AppTheme.neutralColor,
+                                  fontSize: 13,
+                                  height: 1.55)),
+                        ],
+                      ),
+                    ))
+                .toList(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it',
+                style: TextStyle(color: AppTheme.profitColor, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.info_outline_rounded, size: 18),
+      color: AppTheme.neutralColor,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(),
+      visualDensity: VisualDensity.compact,
+      tooltip: 'How to estimate $title',
+      onPressed: () => _show(context),
     );
   }
 }

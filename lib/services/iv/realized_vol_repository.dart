@@ -31,8 +31,7 @@ class RealizedVolRepository {
     }
   }
 
-  /// Fetch full history for a ticker (sorted ascending, oldest first)
-  /// [limit] default 252 (trading days in year) for 52-week history
+  /// Fetch the most recent [limit] snapshots for a ticker, oldest first.
   Future<List<RealizedVolSnapshot>> getHistory(
     String symbol, {
     int limit = 1008,
@@ -42,10 +41,12 @@ class RealizedVolRepository {
           .from('realized_vol_snapshots')
           .select()
           .eq('symbol', symbol)
-          .order('date', ascending: true)
+          .order('date', ascending: false)
           .limit(limit);
 
-      return rows.map((r) => RealizedVolSnapshot.fromJson(r)).toList();
+      return rows.reversed
+          .map((r) => RealizedVolSnapshot.fromJson(r))
+          .toList();
     } catch (e) {
       // Return empty list if table doesn't exist yet (migration not applied)
       return [];
