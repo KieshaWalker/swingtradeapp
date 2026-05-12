@@ -15,8 +15,9 @@ import '../../../../core/theme.dart';
 import '../models/greek_grid_models.dart';
 
 class GreekGridHeatmap extends StatelessWidget {
-  final GreekGridSnapshot?  snapshot;
-  final GreekSelector       selected;
+  final GreekGridSnapshot?    snapshot;
+  final List<GreekGridPoint>  allPoints;
+  final GreekSelector         selected;
   final void Function(StrikeBand, ExpiryBucket)? onCellTap;
 
   static final _bands   = StrikeBand.values;
@@ -25,9 +26,46 @@ class GreekGridHeatmap extends StatelessWidget {
   const GreekGridHeatmap({
     super.key,
     required this.snapshot,
+    required this.allPoints,
     required this.selected,
     this.onCellTap,
   });
+
+  // Average across all StrikeBand columns for a given ExpiryBucket row (all dates)
+  double? _rowAvg(ExpiryBucket bucket) {
+    final vals = _bands
+        .expand((band) => allPoints
+            .where((p) => p.expiryBucket == bucket && p.strikeBand == band)
+            .map((p) => p.greekValue(selected))
+            .whereType<double>())
+        .toList();
+    if (vals.isEmpty) return null;
+    return vals.reduce((a, b) => a + b) / vals.length;
+  }
+
+  // Average across all ExpiryBucket rows for a given StrikeBand column (all dates)
+  double? _colAvg(StrikeBand band) {
+    final vals = _buckets
+        .expand((bucket) => allPoints
+            .where((p) => p.strikeBand == band && p.expiryBucket == bucket)
+            .map((p) => p.greekValue(selected))
+            .whereType<double>())
+        .toList();
+    if (vals.isEmpty) return null;
+    return vals.reduce((a, b) => a + b) / vals.length;
+  }
+
+  // Average of all row avgs (corner cell)
+  double? _overallAvg() {
+    final vals = _buckets
+        .expand((bucket) => _bands.expand((band) => allPoints
+            .where((p) => p.expiryBucket == bucket && p.strikeBand == band)
+            .map((p) => p.greekValue(selected))
+            .whereType<double>()))
+        .toList();
+    if (vals.isEmpty) return null;
+    return vals.reduce((a, b) => a + b) / vals.length;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +92,7 @@ class GreekGridHeatmap extends StatelessWidget {
 
     return Column(
       children: [
-        // ── Column headers (strike bands) ──────────────────────────────────
+        // ── Column headers (strike bands + Avg) ────────────────────────────
         Row(
           children: [
             const SizedBox(width: 64), // row-label gutter
@@ -66,47 +104,96 @@ class GreekGridHeatmap extends StatelessWidget {
                         fontWeight: FontWeight.w600)),
               ),
             )),
+            const SizedBox(
+              width: 52,
+              child: Center(
+                child: Text('Avg',
+                    style: TextStyle(
+                        color: Colors.white38, fontSize: 10,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 4),
         // ── Grid rows (expiry buckets) ──────────────────────────────────────
         Expanded(
           child: Column(
-            children: _buckets.map((bucket) => Expanded(
-              child: Row(
-                children: [
-                  // Row label
-                  SizedBox(
-                    width: 64,
-                    child: Center(
-                      child: Text(bucket.label,
-                          style: const TextStyle(
-                              color: Colors.white54, fontSize: 10)),
-                    ),
-                  ),
-                  // Cells
-                  ..._bands.map((band) {
-                    final point = snapshot?.cell(band, bucket);
-                    final value = point?.greekValue(selected);
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: point != null
-                            ? () => onCellTap?.call(band, bucket)
-                            : null,
-                        child: _GridCell(
-                          value:    value,
-                          lo:       lo,
-                          hi:       hi,
-                          greek:    selected,
-                          count:    point?.contractCount,
-                          isActive: point != null,
-                        ),
+            children: [
+              ..._buckets.map((bucket) => Expanded(
+                child: Row(
+                  children: [
+                    // Row label
+                    SizedBox(
+                      width: 64,
+                      child: Center(
+                        child: Text(bucket.label,
+                            style: const TextStyle(
+                                color: Colors.white54, fontSize: 10)),
                       ),
-                    );
-                  }),
-                ],
+                    ),
+                    // Cells
+                    ..._bands.map((band) {
+                      final point = snapshot?.cell(band, bucket);
+                      final value = point?.greekValue(selected);
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: point != null
+                              ? () => onCellTap?.call(band, bucket)
+                              : null,
+                          child: _GridCell(
+                            value:    value,
+                            lo:       lo,
+                            hi:       hi,
+                            greek:    selected,
+                            count:    point?.contractCount,
+                            isActive: point != null,
+                          ),
+                        ),
+                      );
+                    }),
+                    // Row average
+                    SizedBox(
+                      width: 52,
+                      child: _AvgCell(
+                        value: _rowAvg(bucket),
+                        greek: selected,
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+              // ── Avg row (column averages) ───────────────────────────────
+              Expanded(
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 64,
+                      child: Center(
+                        child: Text('Avg',
+                            style: TextStyle(
+                                color: Colors.white38, fontSize: 10,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                    ..._bands.map((band) => Expanded(
+                      child: _AvgCell(
+                        value: _colAvg(band),
+                        greek: selected,
+                      ),
+                    )),
+                    SizedBox(
+                      width: 52,
+                      child: _AvgCell(
+                        value: _overallAvg(),
+                        greek: selected,
+                        isCorner: true,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            )).toList(),
+            ],
           ),
         ),
       ],
@@ -222,6 +309,69 @@ class _GridCell extends StatelessWidget {
     }
     if (value!.abs() < 0.001) return value!.toStringAsExponential(1);
     return value!.toStringAsFixed(3);
+  }
+}
+
+// ── Average cell ─────────────────────────────────────────────────────────────
+
+class _AvgCell extends StatelessWidget {
+  final double?       value;
+  final GreekSelector greek;
+  final bool          isCorner;
+
+  const _AvgCell({
+    required this.value,
+    required this.greek,
+    this.isCorner = false,
+  });
+
+  String _label() {
+    if (value == null) return '—';
+    if (greek == GreekSelector.iv) {
+      return '${(value! * 100).toStringAsFixed(0)}%';
+    }
+    if (greek == GreekSelector.delta) return value!.toStringAsFixed(2);
+    if (greek == GreekSelector.theta) return value!.toStringAsFixed(3);
+    if (value!.abs() < 0.001) return value!.toStringAsExponential(1);
+    return value!.toStringAsFixed(3);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(1.5),
+      decoration: BoxDecoration(
+        color: isCorner
+            ? const Color(0xFF1a2a2a)
+            : const Color(0xFF1e2a2a),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: const Color(0xFF2e4a4a),
+          width: 0.5,
+        ),
+      ),
+      child: Stack(
+        children: [
+          Center(
+            child: Text(
+              _label(),
+              style: const TextStyle(
+                color:      Colors.white60,
+                fontSize:   10,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const Positioned(
+            right: 3, top: 2,
+            child: Text(
+              'ø',
+              style: TextStyle(color: Colors.white24, fontSize: 7),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

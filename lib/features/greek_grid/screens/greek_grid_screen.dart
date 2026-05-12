@@ -124,8 +124,9 @@ class _GreekGridScreenState extends ConsumerState<GreekGridScreen> {
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                   child: GreekGridHeatmap(
-                    snapshot: snapshot,
-                    selected: _selected,
+                    snapshot:  snapshot,
+                    allPoints: allPoints,
+                    selected:  _selected,
                     onCellTap: _showDetail,
                   ),
                 ),
