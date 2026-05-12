@@ -8,7 +8,10 @@ from __future__ import annotations
 #
 # Reads today's iv_snapshots (written by iv_pull).
 # Fetches price/volume history for SMA and ROC computation.
-# Fetches VIX/VVIX/SPY/RSP for macro regime signals.
+# Fetches VIX (VIXCLS), VIX3M (VXVCLS), and VVIX (VVIXCLS) from FRED.
+# Fetches SPY/RSP from Schwab for breadth proxy.
+# Note: Schwab price history does not support index symbols ($VIX.X, $VVIX.X, $VIX3M.X) —
+#   all VIX-family series must come via the FRED edge function.
 # =============================================================================
 
 import asyncio
@@ -17,6 +20,7 @@ from datetime import date, datetime, timezone
 
 import httpx
 
+from core.config import settings
 from core.supabase_client import get_supabase
 from jobs.common import get_tickers, fetch_schwab_closes
 from services.regime_service import classify_regime, compute_wilder_rsi
@@ -25,12 +29,39 @@ from services.hmm_regime import classify_vix_regime
 log = logging.getLogger(__name__)
 
 
+async def _fetch_fred_series(
+    client: httpx.AsyncClient,
+    series_id: str,
+    limit: int = 70,
+) -> list[float]:
+    """Fetch daily closes for any FRED series, returned oldest→newest."""
+    try:
+        resp = await client.post(
+            f"{settings.edge_function_base}/get-fred-data",
+            json={"series_id": series_id, "limit": str(limit)},
+            headers={
+                "Authorization": f"Bearer {settings.supabase_service_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=30.0,
+        )
+        if resp.status_code != 200:
+            log.warning("fred_%s_failed status=%s", series_id, resp.status_code)
+            return []
+        obs = resp.json().get("observations", [])
+        # FRED returns most-recent-first; filter "." placeholders; reverse to oldest→newest
+        return [float(o["value"]) for o in reversed(obs) if o.get("value") not in (".", None, "")]
+    except Exception as exc:
+        log.warning("fred_%s_error error=%s", series_id, exc)
+        return []
+
+
 async def run_regime_pull() -> dict:
     now = datetime.now(timezone.utc)
     if now.hour >= 21:
         log.info("regime_pull: skipped (after 4 PM ET)")
         return {"status": "after_4pm"}
-    
+
     db = get_supabase()
     today = date.today().isoformat()
     rows = get_tickers(db)
@@ -42,29 +73,26 @@ async def run_regime_pull() -> dict:
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         # Fetch macro index histories in parallel
-        (
-            (vix_closes, _),
-            (vix3m_closes, _),
-            (vvix_closes, _),
-            (spy_closes, _),
-            (rsp_closes, _),
-        ) = await asyncio.gather(
-            fetch_schwab_closes(client, "$VIX.X",   days=65),
-            fetch_schwab_closes(client, "$VIX3M.X", days=5),
-            fetch_schwab_closes(client, "$VVIX.X",  days=15),
-            fetch_schwab_closes(client, "SPY",      days=25),
-            fetch_schwab_closes(client, "RSP",      days=25),
+        # FRED series: VIXCLS=30-day VIX, VXVCLS=93-day VIX3M, VVIXCLS=VVIX (vol-of-vol)
+        vix_closes, vix3m_closes, vvix_closes, (spy_closes, _), (rsp_closes, _) = (
+            await asyncio.gather(
+                _fetch_fred_series(client, "VIXCLS"),
+                _fetch_fred_series(client, "VXVCLS"),
+                _fetch_fred_series(client, "VVIXCLS"),
+                fetch_schwab_closes(client, "SPY", days=25),
+                fetch_schwab_closes(client, "RSP", days=25),
+            )
         )
 
         # VIX metrics
-        vix_current: float | None = None
-        vix_10ma:    float | None = None
-        vix_dev_pct: float | None = None
-        vix_rsi:     float | None = None
-        hmm_result = None
+        vix_current:              float | None = None
+        vix_10ma:                 float | None = None
+        vix_dev_pct:              float | None = None
+        vix_rsi:                  float | None = None
         vix_term_structure_ratio: float | None = None
-        vvix_current: float | None = None
-        vvix_10ma:    float | None = None
+        vvix_current:             float | None = None
+        vvix_10ma:                float | None = None
+        hmm_result = None
         breadth_proxy: float | None = None
 
         if vix_closes:
@@ -76,13 +104,17 @@ async def run_regime_pull() -> dict:
             vix_rsi    = compute_wilder_rsi(vix_closes)
             hmm_result = classify_vix_regime(vix_closes)
 
-        if vix3m_closes and vix_current is not None and vix3m_closes[-1] > 0:
-            vix_term_structure_ratio = vix_current / vix3m_closes[-1]
+        # VIX term structure: VIX / VIX3M; >1 = backwardation (near-term stress)
+        if vix_current is not None and vix3m_closes:
+            vix3m_current = vix3m_closes[-1]
+            if vix3m_current > 0:
+                vix_term_structure_ratio = vix_current / vix3m_current
 
+        # VVIX: vol-of-vol — spike signals hidden tail risk (Gate 0 in regime_service)
         if vvix_closes:
             vvix_current = vvix_closes[-1]
-            vvix_ma = vvix_closes[-10:] if len(vvix_closes) >= 10 else vvix_closes
-            vvix_10ma = sum(vvix_ma) / len(vvix_ma)
+            ma10_vvix = vvix_closes[-10:] if len(vvix_closes) >= 10 else []
+            vvix_10ma = sum(ma10_vvix) / len(ma10_vvix) if ma10_vvix else None
 
         if len(spy_closes) >= 10 and len(rsp_closes) >= 10:
             spy_rets = [
@@ -107,9 +139,10 @@ async def run_regime_pull() -> dict:
                     breadth_proxy = (ratios[-1] - mean) / std
 
         log.info(
-            "regime_pull: vix=%.2f 10ma=%s ts_ratio=%s vvix=%s breadth_z=%s hmm=%s",
+            "regime_pull: vix=%.2f 10ma=%s dev_pct=%s ts_ratio=%s vvix=%s breadth_z=%s hmm=%s",
             vix_current or 0,
             f"{vix_10ma:.2f}" if vix_10ma else "—",
+            f"{vix_dev_pct:.1f}%" if vix_dev_pct else "—",
             f"{vix_term_structure_ratio:.3f}" if vix_term_structure_ratio else "—",
             f"{vvix_current:.1f}" if vvix_current else "—",
             f"{breadth_proxy:.2f}" if breadth_proxy else "—",
@@ -214,14 +247,15 @@ def _upsert_regime_snapshot(db, today: str, regime) -> None:
             "vol_sma3":                 regime.vol_sma3,
             "vol_sma20":                regime.vol_sma20,
             "delta_gex":                regime.delta_gex,
-            "vix_term_structure_ratio": regime.vix_term_structure_ratio,
-            "vvix_current":             regime.vvix_current,
             "spot_to_vt_pct":           regime.spot_to_vt_pct,
             "breadth_proxy":            regime.breadth_proxy,
             "gex_0dte":                 regime.gex_0dte,
             "gex_0dte_pct":             regime.gex_0dte_pct,
             "price_roc5":               regime.price_roc5,
             "total_gex":                regime.total_gex,
+            "vix_term_structure_ratio": regime.vix_term_structure_ratio,
+            "vvix_current":             regime.vvix_current,
+            "vvix_10ma":                regime.vvix_10ma,
         },
         on_conflict="ticker,obs_date",
     ).execute()

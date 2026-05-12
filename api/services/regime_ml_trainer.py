@@ -16,15 +16,20 @@
 #      Falls back to module-level in-memory cache if Supabase write fails.
 #
 # Feature names (must match regime_ml_service.py scoring features):
-#   spot_to_zgl_pct    — latest ZGL distance
-#   spot_to_zgl_trend  — OLS slope over last 5 obs
-#   ivp                — IV percentile (0–100)
-#   ivp_trend          — OLS slope over last 5 obs
-#   hmm_state_num      — 1=high_vol, 0=low_vol, 0.5=unknown
-#   hmm_probability    — posterior P(current HMM state)
-#   sma_aligned_num    — 1=SMA10>SMA50 (bullish), 0=bearish
-#   vix_dev_pct        — (VIX − VIX10MA) / VIX10MA × 100
-#   regime_duration    — consecutive obs in current gamma_regime
+#   spot_to_zgl_pct          — latest ZGL distance
+#   spot_to_zgl_trend        — OLS slope over last 5 obs
+#   ivp                      — IV percentile (0–100)
+#   ivp_trend                — OLS slope over last 5 obs
+#   hmm_state_num            — 1=high_vol, 0=low_vol, 0.5=unknown
+#   hmm_probability          — posterior P(current HMM state)
+#   sma_aligned_num          — 1=SMA10>SMA50 (bullish), 0=bearish
+#   vix_dev_pct              — (VIX − VIX10MA) / VIX10MA × 100
+#   regime_duration          — consecutive obs in current gamma_regime
+#   vix_term_structure_ratio — VIX/VIX3M; >1=backwardation (Gate 1b/6)
+#   spot_to_vt_pct           — distance from Volatility Trigger
+#   breadth_proxy            — RSP/SPY return ratio z-score
+#   gex_0dte_pct             — pct of total GEX from 0DTE options
+#   price_roc5               — 5-day price rate-of-change (%)
 # =============================================================================
 
 from __future__ import annotations
@@ -61,6 +66,12 @@ FEATURE_NAMES: list[str] = [
     "sma_aligned_num",
     "vix_dev_pct",
     "regime_duration",
+    # gate-derived features added in ML v2 (14-feature set)
+    "vix_term_structure_ratio",
+    "spot_to_vt_pct",
+    "breadth_proxy",
+    "gex_0dte_pct",
+    "price_roc5",
 ]
 
 LOOKAHEAD: int   = 5    # flip within next N obs = positive label
@@ -132,7 +143,7 @@ def load_latest_model(supabase_client) -> dict | None:
         resp = (
             supabase_client
             .table("regime_ml_models")
-            .select("model_json, model_type, trained_at, auc_roc, n_samples")
+            .select("model_json, model_type, trained_at, auc_roc, n_samples, n_positive, accuracy, precision, recall")
             .order("trained_at", desc=True)
             .limit(1)
             .execute()
@@ -227,6 +238,11 @@ def _extract_features_at(history: list[dict], i: int) -> list[float] | None:
     sma10     = _sf(row, "sma10")
     sma50     = _sf(row, "sma50")
     vix_dev   = _sf(row, "vix_dev_pct")
+    ts_ratio  = _sf(row, "vix_term_structure_ratio")
+    vt_pct    = _sf(row, "spot_to_vt_pct")
+    breadth   = _sf(row, "breadth_proxy")
+    dte0_pct  = _sf(row, "gex_0dte_pct")
+    roc5      = _sf(row, "price_roc5")
 
     # OLS trends over last 5 obs (inclusive)
     start = max(0, i - 4)
@@ -258,9 +274,15 @@ def _extract_features_at(history: list[dict], i: int) -> list[float] | None:
         sma_num,
         vix_dev   if vix_dev   is not None else 0.0,
         float(duration),
+        # gate-derived features (v2; neutral imputation when absent)
+        ts_ratio  if ts_ratio  is not None else 1.0,   # 1.0 = contango neutral
+        vt_pct    if vt_pct    is not None else 0.0,
+        breadth   if breadth   is not None else 0.0,
+        dte0_pct  if dte0_pct  is not None else 20.0,  # 20% = typical low-0DTE baseline
+        roc5      if roc5      is not None else 0.0,
     ]
 
-    # Reject sample if more than half features are missing/imputed
+    # Reject sample if more than half core features are missing/imputed
     raw_missing = sum([
         zgl is None, zgl_trend is None, ivp is None,
         hmm_state is None, hmm_prob is None, vix_dev is None,
@@ -516,6 +538,13 @@ def make_inference_fn(stored: dict):
     scaler_mean = np.array(mj.get("scaler_mean", []))
     scaler_std  = np.array(mj.get("scaler_std",  []))
     if scaler_mean.size == 0 or scaler_std.size == 0:
+        return None
+    # Reject models trained on a different feature set — prevents shape mismatch at inference.
+    if scaler_mean.size != len(FEATURE_NAMES):
+        log.warning(
+            "make_inference_fn feature_mismatch stored=%d current=%d — model retired, retrain needed",
+            scaler_mean.size, len(FEATURE_NAMES),
+        )
         return None
 
     mtype = mj.get("model_type", stored.get("model_type", "logistic"))

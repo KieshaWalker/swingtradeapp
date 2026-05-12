@@ -76,15 +76,20 @@ class RegimeResponse(BaseModel):
 
 
 class RegimeFeaturesOut(BaseModel):
-    spot_to_zgl_pct:       float | None
-    spot_to_zgl_trend:     float | None
-    ivp:                   float | None
-    ivp_trend:             float | None
-    hmm_state:             str   | None
-    hmm_probability:       float | None
-    sma_aligned:           bool  | None
-    vix_dev_pct:           float | None
-    regime_duration_days:  int
+    spot_to_zgl_pct:          float | None
+    spot_to_zgl_trend:        float | None
+    ivp:                      float | None
+    ivp_trend:                float | None
+    hmm_state:                str   | None
+    hmm_probability:          float | None
+    sma_aligned:              bool  | None
+    vix_dev_pct:              float | None
+    regime_duration_days:     int
+    vix_term_structure_ratio: float | None = None
+    spot_to_vt_pct:           float | None = None
+    breadth_proxy:            float | None = None
+    gex_0dte_pct:             float | None = None
+    price_roc5:               float | None = None
 
 
 class TickerRegimeOut(BaseModel):
@@ -172,6 +177,11 @@ def ml_analyze() -> MlAnalyzeResponse:
                 sma_aligned=t.features.sma_aligned,
                 vix_dev_pct=t.features.vix_dev_pct,
                 regime_duration_days=t.features.regime_duration_days,
+                vix_term_structure_ratio=t.features.vix_term_structure_ratio,
+                spot_to_vt_pct=t.features.spot_to_vt_pct,
+                breadth_proxy=t.features.breadth_proxy,
+                gex_0dte_pct=t.features.gex_0dte_pct,
+                price_roc5=t.features.price_roc5,
             ),
             strategy_bias=t.strategy_bias,
             signals=t.signals,
@@ -231,7 +241,7 @@ def train_model(req: TrainRequest) -> TrainResponse:
         )
     else:
         msg = (
-            f"Insufficient training data — need ≥80 labeled samples, "
+            f"Insufficient training data — need ≥200 labeled samples, "
             f"got {result.n_samples}. Accumulate more regime history and retry."
                             )
 

@@ -21,27 +21,32 @@
 #   • breadth_proxy                    RSP/SPY breadth z-score
 #
 # Decision table (priority order):
-#   0. VVIX spike + suppressed VIX  → override premium_sell to straddle_only
+#   0. VVIX spike (>15% above 10-day MA) → overrides any premium_sell to straddle_only
 #   1. HMM high-vol                 → straddle_only (regardless of gamma)
 #      1a. VIX RSI > 70 in high-vol → premium_sell (mean-reversion imminent)
-#      1b. Backwardation reinforce  → straddle_only confirmed
+#          UNLESS VVIX spike → straddle_only
+#      1b. Backwardation (VIX/VIX3M > 1) → reinforces straddle_only (additive signal)
 #   2. Near gamma flip (≤1.5%)      → directional or unclear (side + SMA)
-#      2a. Transition corridor      → directional_bearish / unclear (VT < spot < ZGL)
+#      2a. Transition corridor (VT < spot < ZGL) → additive signal; directional_bearish elevated
 #   3. classicShortGamma signal     → straddle_only
 #   4. regimeShift signal           → straddle_only (stealth danger zone)
-#   5. eventOverPosGamma signal     → premium_sell (backwardation adds warning)
-#   6. stableGamma signal           → premium_sell (backwardation downgrades to unclear)
+#   5. eventOverPosGamma signal     → premium_sell; VVIX spike → straddle_only
+#   6. stableGamma signal           → premium_sell; backwardation → unclear; VVIX → straddle_only
 #   7. negative gamma + SMA bear    → directional_bearish
-#   8. negative gamma + SMA bull    → unclear (conflict); ROC5 tiebreaker
+#   8. negative gamma + SMA bull    → ROC5 tiebreaker:
+#        ROC5 > +1% → directional_bullish; ROC5 < -1% → directional_bearish; else unclear
 #   9. positive gamma + SMA bull    → directional_bullish
-#  10. positive gamma + SMA bear    → unclear (conflict); ROC5 tiebreaker
+#  10. positive gamma + SMA bear    → ROC5 tiebreaker:
+#        ROC5 < -1% → directional_bearish; ROC5 > +1% → unclear (bounce noted); else unclear
 #  11. deltaGex transition signal   → additive bullish signal
 #  12. fallback                     → unclear
 #
-# Additive contextual signals (never override bias alone):
-#   • 0DTE-dominated GEX warning
-#   • Breadth divergence
-#   • Asset-class scope guard
+# Additive contextual signals (appended unconditionally; never override bias alone):
+#   • Scope guard: low absolute GEX (<$100M) — signals less reliable
+#   • Volume surge/light: SMA3 vs SMA20 participation
+#   • 0DTE GEX domination (>30%/>50%) — intraday gamma resets
+#   • Breadth divergence: RSP/SPY z-score ±1.5σ
+#   • DeltaGex transition (GEX recovering toward flip)
 # =============================================================================
 
 from __future__ import annotations
@@ -50,7 +55,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from .hmm_regime import HmmRegimeResult, HmmVolState
-from core.constants import MIN_MEANINGFUL_TOTAL_GEX_USD
+
+_MIN_TOTAL_GEX_USD = 100_000_000  # $100M — scope guard threshold
 
 
 class StrategyBias(str, Enum):
@@ -144,11 +150,28 @@ def classify_regime(
     hmm_state = hmm_result.state.value if hmm_result else None
     hmm_prob  = hmm_result.state_probability if hmm_result else None
 
-    # ── Volume signal (appended unconditionally for context) ─────────────────
-    _append_volume_signal(signals, vol_sma3, vol_sma20)
+    # ── Gate 0 flag: VVIX spike while VIX is calm → hidden tail risk ─────────
+    # Computed early; checked at every premium_sell return to override it.
+    vvix_spike_warning = (
+        vvix_current is not None and vvix_10ma is not None
+        and vvix_10ma > 0
+        and vvix_current > vvix_10ma * 1.15
+    )
 
-    # ── DeltaGex transition signal (additive — appended early for context) ───
+    # ── Additive contextual signals (unconditional — never override bias) ────
+    _append_scope_guard_signal(signals, total_gex)
+    _append_volume_signal(signals, vol_sma3, vol_sma20)
+    _append_0dte_signal(signals, gex_0dte_pct)
+    _append_breadth_signal(signals, breadth_proxy)
     _append_delta_gex_signal(signals, delta_gex, gamma_regime)
+
+    if vvix_spike_warning:
+        _vvix_pct = (vvix_current - vvix_10ma) / vvix_10ma * 100  # type: ignore[operator]
+        signals.append(
+            f"VVIX spike: {vvix_current:.1f} is {_vvix_pct:.0f}% above 10-day MA "
+            f"({vvix_10ma:.1f}) — vol-of-vol spiking ahead of VIX; "
+            "hidden tail risk building; overrides any premium_sell to straddle_only"
+        )
 
     # ── Gate 1: HMM vol state → Risk-on / Risk-off regime ────────────────────
     # Risk-off (high-vol): high volatility, low returns, high cross-asset
@@ -180,6 +203,16 @@ def classify_regime(
                     f"VIX +{vix_dev_pct:.1f}% above 10-day MA — "
                     "spike confirmed; near-term mean-reversion high-probability"
                 )
+            if vvix_spike_warning:
+                signals.append(
+                    "VVIX spike overrides mean-reversion fade — "
+                    "vol-of-vol still elevated; wait for VVIX to confirm before selling premium"
+                )
+                return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                             sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                             spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                             vol_sma3, vol_sma20, delta_gex,
+                             StrategyBias.straddle_only, signals, **_ctx)
             return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                          sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                          spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
@@ -196,6 +229,13 @@ def classify_regime(
             signals.append(
                 "Risk-off vol expanding — straddle; "
                 "monitor VIX RSI for mean-reversion entry"
+            )
+
+        # ── Gate 1b: backwardation reinforces straddle conviction ────────────
+        if vix_term_structure_ratio is not None and vix_term_structure_ratio > 1.0:
+            signals.append(
+                f"VIX term structure: backwardation ({vix_term_structure_ratio:.3f}) — "
+                "near-term stress priced above long-term; straddle_only confirmed"
             )
 
         return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
@@ -224,6 +264,13 @@ def classify_regime(
                 f"Near gamma flip: spot {abs(spot_to_zgl_pct):.2f}% BELOW ZGL — "  # type: ignore[arg-type]
                 "crossed into negative gamma; dealers now amplify moves in both directions"
             )
+            # ── Gate 2a: VT–ZGL transition corridor ──────────────────────────
+            if spot_to_vt_pct is not None and spot_to_vt_pct > 0:
+                signals.append(
+                    f"Transition corridor: spot {spot_to_vt_pct:.2f}% above Volatility Trigger "
+                    f"but {abs(spot_to_zgl_pct):.2f}% below ZGL — "  # type: ignore[arg-type]
+                    "in VT–ZGL zone; dealer hedging asymmetric; directional_bearish pressure elevated"
+                )
             if sma_crossed is False:
                 signals.append(
                     f"SMA10 ({_fmt(sma10)}) ≤ SMA50 ({_fmt(sma50)}) confirms bearish trend — "
@@ -319,6 +366,12 @@ def classify_regime(
             "post-event with positive gamma cushion; IV mean-revert expected → "
             "premium selling or defined-risk bullish plays"
         )
+        if vvix_spike_warning:
+            return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                         sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                         spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                         vol_sma3, vol_sma20, delta_gex,
+                         StrategyBias.straddle_only, signals, **_ctx)
         return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
@@ -332,6 +385,23 @@ def classify_regime(
             "Dealers stabilising; iron condors and credit spreads thrive → "
             "premium selling"
         )
+        # Gate 1b extension: backwardation narrows the premium window
+        if vix_term_structure_ratio is not None and vix_term_structure_ratio > 1.0:
+            signals.append(
+                f"VIX backwardation ({vix_term_structure_ratio:.3f}) — "
+                "near-term vol priced above long-term; stable-gamma window narrowing → unclear"
+            )
+            return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                         sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                         spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                         vol_sma3, vol_sma20, delta_gex,
+                         StrategyBias.unclear, signals, **_ctx)
+        if vvix_spike_warning:
+            return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                         sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                         spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                         vol_sma3, vol_sma20, delta_gex,
+                         StrategyBias.straddle_only, signals, **_ctx)
         return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                      sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                      spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
@@ -366,6 +436,30 @@ def classify_regime(
                 f"SMA conflict: SMA10 ({_fmt(sma10)}) > SMA50 ({_fmt(sma50)}) "
                 "signals bullish momentum — gamma vs price trend conflict"
             )
+            # ROC5 tiebreaker: strong 5-day momentum resolves the conflict
+            if price_roc5 is not None:
+                if price_roc5 > 1.0:
+                    signals.append(
+                        f"ROC5 +{price_roc5:.1f}% — 5-day momentum confirms bullish; "
+                        "resolves gamma/SMA conflict → directional_bullish"
+                    )
+                    return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                                 sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                                 spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                                 vol_sma3, vol_sma20, delta_gex,
+                                 StrategyBias.directional_bullish, signals, **_ctx)
+                elif price_roc5 < -1.0:
+                    signals.append(
+                        f"ROC5 {price_roc5:.1f}% — 5-day momentum turning bearish; "
+                        "overrides bullish SMA → directional_bearish"
+                    )
+                    return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                                 sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                                 spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                                 vol_sma3, vol_sma20, delta_gex,
+                                 StrategyBias.directional_bearish, signals, **_ctx)
+                else:
+                    signals.append(f"ROC5 {price_roc5:+.1f}% — momentum inconclusive; conflict unresolved")
             return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                          sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                          spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
@@ -406,6 +500,25 @@ def classify_regime(
                 f"SMA conflict: SMA10 ({_fmt(sma10)}) ≤ SMA50 ({_fmt(sma50)}) "
                 "signals bearish momentum — gamma vs price trend conflict"
             )
+            # ROC5 tiebreaker
+            if price_roc5 is not None:
+                if price_roc5 < -1.0:
+                    signals.append(
+                        f"ROC5 {price_roc5:.1f}% — 5-day momentum confirms bearish; "
+                        "resolves gamma/SMA conflict → directional_bearish"
+                    )
+                    return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
+                                 sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
+                                 spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
+                                 vol_sma3, vol_sma20, delta_gex,
+                                 StrategyBias.directional_bearish, signals, **_ctx)
+                elif price_roc5 > 1.0:
+                    signals.append(
+                        f"ROC5 +{price_roc5:.1f}% — near-term bounce in positive gamma; "
+                        "SMA bearish context remains"
+                    )
+                else:
+                    signals.append(f"ROC5 {price_roc5:+.1f}% — momentum inconclusive; conflict unresolved")
             return _make(ticker, gamma_regime, iv_gex_signal, sma10, sma50,
                          sma_crossed, vix_current, vix_10ma, vix_dev_pct, vix_rsi,
                          spot_to_zgl_pct, iv_percentile, hmm_state, hmm_prob,
@@ -441,6 +554,54 @@ def classify_regime(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _append_scope_guard_signal(
+    signals: list[str],
+    total_gex: float | None,
+) -> None:
+    if total_gex is not None and abs(total_gex) < _MIN_TOTAL_GEX_USD:
+        abs_m = abs(total_gex) / 1_000_000
+        signals.append(
+            f"Scope guard: low absolute GEX (${abs_m:.0f}M < $100M threshold) — "
+            "gamma signals calibrated for large-cap/index; use with caution on this ticker"
+        )
+
+
+def _append_0dte_signal(
+    signals: list[str],
+    gex_0dte_pct: float | None,
+) -> None:
+    if gex_0dte_pct is None:
+        return
+    if gex_0dte_pct > 50:
+        signals.append(
+            f"0DTE dominance: {gex_0dte_pct:.0f}% of total GEX from same-day expiry — "
+            "gamma resets at close; structural support is intraday only"
+        )
+    elif gex_0dte_pct > 30:
+        signals.append(
+            f"0DTE elevated: {gex_0dte_pct:.0f}% of total GEX from same-day expiry — "
+            "near-term hedging pressure; watch for sharp intraday reversals"
+        )
+
+
+def _append_breadth_signal(
+    signals: list[str],
+    breadth_proxy: float | None,
+) -> None:
+    if breadth_proxy is None:
+        return
+    if breadth_proxy < -1.5:
+        signals.append(
+            f"Breadth divergence: RSP/SPY z-score {breadth_proxy:.1f} — "
+            "equal-weight underperforming; narrow rally, mean-reversion risk elevated"
+        )
+    elif breadth_proxy > 1.5:
+        signals.append(
+            f"Breadth confirmation: RSP/SPY z-score {breadth_proxy:.1f} — "
+            "broad participation; rally has structural backing"
+        )
+
 
 def _append_volume_signal(
     signals: list[str],

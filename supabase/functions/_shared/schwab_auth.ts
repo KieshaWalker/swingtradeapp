@@ -8,7 +8,7 @@
 // =============================================================================
 
 const SCHWAB_TOKEN_URL = 'https://api.schwabapi.com/v1/oauth/token'
-const REFRESH_BUFFER_MS = 30 * 60 * 1000 // refresh 30 min before expiry
+const REFRESH_BUFFER_MS = 5 * 60 * 1000 // refresh 5 min before expiry
 
 export async function getValidToken(
   supabaseUrl: string,

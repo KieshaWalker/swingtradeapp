@@ -48,6 +48,12 @@ class RegimeMlFeatures {
   final bool?   smaAligned;
   final double? vixDevPct;
   final int     regimeDurationDays;
+  // gate-derived features (ML v2 — 14-feature set)
+  final double? vixTermStructureRatio;  // VIX/VIX3M; >1 = backwardation
+  final double? spotToVtPct;            // distance from Volatility Trigger
+  final double? breadthProxy;           // RSP/SPY return ratio z-score
+  final double? gex0DtePct;             // pct of total GEX from 0DTE options
+  final double? priceRoc5;              // 5-day price rate-of-change (%)
 
   const RegimeMlFeatures({
     this.spotToZglPct,
@@ -59,19 +65,40 @@ class RegimeMlFeatures {
     this.smaAligned,
     this.vixDevPct,
     required this.regimeDurationDays,
+    this.vixTermStructureRatio,
+    this.spotToVtPct,
+    this.breadthProxy,
+    this.gex0DtePct,
+    this.priceRoc5,
   });
 
   factory RegimeMlFeatures.fromJson(Map<String, dynamic> j) => RegimeMlFeatures(
-    spotToZglPct:       (j['spot_to_zgl_pct']  as num?)?.toDouble(),
-    spotToZglTrend:     (j['spot_to_zgl_trend'] as num?)?.toDouble(),
-    ivp:                (j['ivp']               as num?)?.toDouble(),
-    ivpTrend:           (j['ivp_trend']         as num?)?.toDouble(),
-    hmmState:           j['hmm_state']          as String?,
-    hmmProbability:     (j['hmm_probability']   as num?)?.toDouble(),
-    smaAligned:         j['sma_aligned']        as bool?,
-    vixDevPct:          (j['vix_dev_pct']       as num?)?.toDouble(),
-    regimeDurationDays: (j['regime_duration_days'] as num?)?.toInt() ?? 0,
+    spotToZglPct:            (j['spot_to_zgl_pct']          as num?)?.toDouble(),
+    spotToZglTrend:          (j['spot_to_zgl_trend']         as num?)?.toDouble(),
+    ivp:                     (j['ivp']                       as num?)?.toDouble(),
+    ivpTrend:                (j['ivp_trend']                 as num?)?.toDouble(),
+    hmmState:                j['hmm_state']                  as String?,
+    hmmProbability:          (j['hmm_probability']           as num?)?.toDouble(),
+    smaAligned:              j['sma_aligned']                as bool?,
+    vixDevPct:               (j['vix_dev_pct']               as num?)?.toDouble(),
+    regimeDurationDays:      (j['regime_duration_days']      as num?)?.toInt() ?? 0,
+    vixTermStructureRatio:   (j['vix_term_structure_ratio']  as num?)?.toDouble(),
+    spotToVtPct:             (j['spot_to_vt_pct']            as num?)?.toDouble(),
+    breadthProxy:            (j['breadth_proxy']             as num?)?.toDouble(),
+    gex0DtePct:              (j['gex_0dte_pct']              as num?)?.toDouble(),
+    priceRoc5:               (j['price_roc5']                as num?)?.toDouble(),
   );
+
+  /// True when VIX term structure is in backwardation (near-term stress premium).
+  bool get isBackwardation =>
+      vixTermStructureRatio != null && vixTermStructureRatio! > 1.0;
+
+  /// True when 0DTE options dominate GEX (≥50%) — structural gamma resets daily.
+  bool get has0DteDominance => gex0DtePct != null && gex0DtePct! >= 50.0;
+
+  /// True when breadth shows notable divergence (z-score beyond ±1.5).
+  bool get hasBreadthDivergence =>
+      breadthProxy != null && breadthProxy!.abs() >= 1.5;
 }
 
 class TickerRegimeResult {

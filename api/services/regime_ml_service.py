@@ -13,7 +13,7 @@
 # 4 output buckets (same regardless of scoring method):
 #   stable_positive   : current=pos AND ml_score ≥  0.15
 #   trending_positive : current=neg AND ml_score >  0.10  (recovering)
-#   trending_negative : current=pos AND ml_score < -0.10  (at risk)
+#   trending_negative : current=pos AND ml_score <  0.15  (at risk — not strongly stable)
 #   stable_negative   : current=neg AND ml_score ≤  0.10
 # =============================================================================
 
@@ -91,12 +91,18 @@ def load_trained_model(supabase_client) -> bool:
 # ---------------------------------------------------------------------------
 # Hand-tuned fallback weights (used when no trained model exists)
 # ---------------------------------------------------------------------------
-_W_ZGL_LEVEL   = 0.25
-_W_ZGL_TREND   = 0.20
-_W_SMA         = 0.20
-_W_HMM         = 0.15
-_W_IVP_TREND   = 0.10
-_W_VIX_STRESS  = 0.10
+_W_ZGL_LEVEL   = 0.22
+_W_ZGL_TREND   = 0.17
+_W_SMA         = 0.17
+_W_HMM         = 0.13
+_W_IVP_TREND   = 0.08
+_W_VIX_STRESS  = 0.08
+# new feature weights (proportional; total_w normalises automatically)
+_W_TS_RATIO    = 0.06   # VIX term structure ratio
+_W_VT_DIST     = 0.04   # distance from Volatility Trigger
+_W_BREADTH     = 0.05   # RSP/SPY breadth z-score
+_W_0DTE        = 0.04   # 0DTE GEX pct (high = unstable)
+_W_ROC5        = 0.06   # 5-day price rate-of-change
 
 _STABLE_THRESHOLD           = 0.15
 _TRENDING_THRESHOLD         = 0.10
@@ -105,15 +111,21 @@ _REGIME_DURATION_ALERT_DAYS = 15
 
 @dataclass
 class RegimeFeatures:
-    spot_to_zgl_pct:  float | None  # latest value
-    spot_to_zgl_trend: float | None  # linear slope over last 5 obs (% pts/day)
-    ivp:              float | None
-    ivp_trend:        float | None  # slope over last 5 obs
-    hmm_state:        str   | None  # "low_vol" | "high_vol"
-    hmm_probability:  float | None
-    sma_aligned:      bool  | None  # True = SMA10 > SMA50
-    vix_dev_pct:      float | None
-    regime_duration_days: int       # consecutive days in current regime
+    spot_to_zgl_pct:          float | None  # latest value
+    spot_to_zgl_trend:        float | None  # linear slope over last 5 obs (% pts/day)
+    ivp:                      float | None
+    ivp_trend:                float | None  # slope over last 5 obs
+    hmm_state:                str   | None  # "low_vol" | "high_vol"
+    hmm_probability:          float | None
+    sma_aligned:              bool  | None  # True = SMA10 > SMA50
+    vix_dev_pct:              float | None
+    regime_duration_days:     int           # consecutive days in current regime
+    # gate-derived features (added with 14-feature ML expansion)
+    vix_term_structure_ratio: float | None  # VIX/VIX3M; >1 = backwardation
+    spot_to_vt_pct:           float | None  # distance from Volatility Trigger
+    breadth_proxy:            float | None  # RSP/SPY return ratio z-score
+    gex_0dte_pct:             float | None  # pct of total GEX from 0DTE options
+    price_roc5:               float | None  # 5-day price rate-of-change (%)
 
 
 @dataclass
@@ -128,7 +140,7 @@ class TickerRegimeResult:
     strategy_bias:     str
     signals:           list[str]
     last_updated:      str | None
-    scoring_method:    str     # "supervised_lr" | "supervised_xgb" | "heuristic"
+    scoring_method:    str     # "supervised_logistic" | "supervised_xgboost" | "heuristic"
 
 
 @dataclass
@@ -322,14 +334,22 @@ def _score_ticker(
 def _extract_features(history: list[dict], current_regime: str) -> RegimeFeatures:
     latest = history[-1]
 
-    spot_to_zgl_pct  = _safe_float(latest, "spot_to_zgl_pct")
-    ivp              = _safe_float(latest, "iv_percentile")
-    hmm_state        = latest.get("hmm_state")
-    hmm_prob         = _safe_float(latest, "hmm_probability")
-    sma10            = _safe_float(latest, "sma10")
-    sma50            = _safe_float(latest, "sma50")
-    vix_dev_pct      = _safe_float(latest, "vix_dev_pct")
-    sma_aligned      = (sma10 is not None and sma50 is not None and sma10 > sma50) or None
+    spot_to_zgl_pct          = _safe_float(latest, "spot_to_zgl_pct")
+    ivp                      = _safe_float(latest, "iv_percentile")
+    hmm_state                = latest.get("hmm_state")
+    hmm_prob                 = _safe_float(latest, "hmm_probability")
+    sma10                    = _safe_float(latest, "sma10")
+    sma50                    = _safe_float(latest, "sma50")
+    vix_dev_pct              = _safe_float(latest, "vix_dev_pct")
+    vix_term_structure_ratio = _safe_float(latest, "vix_term_structure_ratio")
+    spot_to_vt_pct           = _safe_float(latest, "spot_to_vt_pct")
+    breadth_proxy            = _safe_float(latest, "breadth_proxy")
+    gex_0dte_pct             = _safe_float(latest, "gex_0dte_pct")
+    price_roc5               = _safe_float(latest, "price_roc5")
+    if sma10 is not None and sma50 is not None:
+        sma_aligned: bool | None = sma10 > sma50
+    else:
+        sma_aligned = None
 
     # Trend slopes (linear regression over last 5 obs)
     zgl_values = [_safe_float(r, "spot_to_zgl_pct") for r in history[-5:]]
@@ -355,6 +375,11 @@ def _extract_features(history: list[dict], current_regime: str) -> RegimeFeature
         sma_aligned=sma_aligned,
         vix_dev_pct=vix_dev_pct,
         regime_duration_days=duration,
+        vix_term_structure_ratio=vix_term_structure_ratio,
+        spot_to_vt_pct=spot_to_vt_pct,
+        breadth_proxy=breadth_proxy,
+        gex_0dte_pct=gex_0dte_pct,
+        price_roc5=price_roc5,
     )
 
 
@@ -404,6 +429,26 @@ def _compute_score(f: RegimeFeatures, current_regime: str) -> float:
     if f.vix_dev_pct is not None:
         components["vix_stress"] = _clamp(-f.vix_dev_pct / 15.0, -1, 1)
 
+    # 7. VIX term structure — backwardation (>1) is bearish for stable gamma
+    if f.vix_term_structure_ratio is not None:
+        components["ts_ratio"] = _clamp((1.0 - f.vix_term_structure_ratio) * 5.0, -1, 1)
+
+    # 8. VT distance — spot above VT is structurally more stable (bullish)
+    if f.spot_to_vt_pct is not None:
+        components["vt_dist"] = _clamp(f.spot_to_vt_pct / 5.0, -1, 1)
+
+    # 9. Breadth proxy — positive breadth confirms positive-gamma environment
+    if f.breadth_proxy is not None:
+        components["breadth"] = _clamp(f.breadth_proxy / 2.0, -1, 1)
+
+    # 10. 0DTE GEX pct — high 0DTE share = unstable structural gamma (bearish)
+    if f.gex_0dte_pct is not None:
+        components["dte0_pct"] = _clamp(-(f.gex_0dte_pct - 50.0) / 25.0, -1, 1)
+
+    # 11. Price ROC5 — recent momentum supports directional conviction
+    if f.price_roc5 is not None:
+        components["roc5"] = _clamp(f.price_roc5 / 3.0, -1, 1)
+
     if not components:
         return 0.0
 
@@ -414,6 +459,11 @@ def _compute_score(f: RegimeFeatures, current_regime: str) -> float:
         "hmm":        _W_HMM,
         "ivp_trend":  _W_IVP_TREND,
         "vix_stress": _W_VIX_STRESS,
+        "ts_ratio":   _W_TS_RATIO,
+        "vt_dist":    _W_VT_DIST,
+        "breadth":    _W_BREADTH,
+        "dte0_pct":   _W_0DTE,
+        "roc5":       _W_ROC5,
     }
 
     total_w = sum(weights[k] for k in components)
@@ -456,9 +506,14 @@ def _confidence(f: RegimeFeatures, n_obs: int) -> float:
         f.sma_aligned is not None,
         f.ivp is not None,
         f.vix_dev_pct is not None,
+        f.vix_term_structure_ratio is not None,
+        f.spot_to_vt_pct is not None,
+        f.breadth_proxy is not None,
+        f.gex_0dte_pct is not None,
+        f.price_roc5 is not None,
     ])
     data_conf    = min(n_obs / 20.0, 1.0)
-    feature_conf = feature_count / 6.0
+    feature_conf = feature_count / 11.0
     return round((data_conf * 0.5 + feature_conf * 0.5), 2)
 
 
@@ -560,6 +615,11 @@ def _unknown_result(ticker: str) -> TickerRegimeResult:
             sma_aligned=None,
             vix_dev_pct=None,
             regime_duration_days=0,
+            vix_term_structure_ratio=None,
+            spot_to_vt_pct=None,
+            breadth_proxy=None,
+            gex_0dte_pct=None,
+            price_roc5=None,
         ),
         scoring_method="heuristic",
         strategy_bias="unclear",
