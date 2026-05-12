@@ -292,6 +292,13 @@ class _TickerInsightCard extends ConsumerWidget {
       ));
     }
 
+    if (snap.ivPercentile != null) {
+      chips.add(_chip(
+        'IVP ${snap.ivPercentile!.toStringAsFixed(0)}%',
+        _ivRatingColor(snap.ivRating),
+      ));
+    }
+
     if (snap.gammaRegime != null) {
       final isPos = snap.gammaRegime == GammaRegime.positive;
       chips.add(_chip(

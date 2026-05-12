@@ -491,10 +491,10 @@ extension GammaSlopeX on GammaSlope {
 
 /// Single-snapshot IV / GEX combined regime classification
 enum IvGexSignal {
-  classicShortGamma,   // negative GEX + elevated IV → inverse correlation active
-  regimeShift,         // negative GEX + suppressed IV → correlation breaking; hidden risk
-  eventOverPosGamma,   // positive GEX + IV elevated → post-event, dealers long gamma
-  stableGamma,         // positive GEX + suppressed IV → ideal premium-selling environment
+  classicShortGamma,   // negative GEX + IVR ≥ 67 (top-third elevated) → inverse correlation active
+  regimeShift,         // negative GEX + IVR < 67 (suppressed) → correlation breaking; hidden risk
+  eventOverPosGamma,   // positive GEX + IVR ≥ 67 (top-third elevated) → post-event, dealers long gamma
+  stableGamma,         // positive GEX + IVR < 67 (suppressed) → ideal premium-selling environment
   unknown,
 }
 

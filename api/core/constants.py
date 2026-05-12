@@ -73,7 +73,7 @@ IV_ZERO_GAMMA_NEAR_PCT: float = 0.10  # ±10% for zero-gamma fallback
 IV_PUT_WALL_BAND_PCT: float = 0.05    # ±5% for put wall density
 IV_MIN_HISTORY_IVR: int = 10     # Minimum history days for IVR/IVP
 IV_MIN_HISTORY_SKEW: int = 5     # Minimum history days for skew z-score
-IV_GEX_ELEVATED_PCT: float = 50.0  # IVP >= 50 → "elevated"
+IV_GEX_ELEVATED_PCT: float = 67.0  # IVR >= 67 → "elevated" (top third of 52w range; matches "vol expansion" language)
 IV_DEEP_LONG_GEX: float = 1000.0   # totalGex >= $1B → Deep Long Gamma (Gm=1.2)
 
 # ── Risk-Neutral Density (Breeden-Litzenberger) ────────────────────────────

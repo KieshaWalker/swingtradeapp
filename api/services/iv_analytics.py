@@ -320,7 +320,7 @@ def analyse(
     if total_gex is not None:
         gamma_regime = GammaRegime.positive if total_gex >= 0 else GammaRegime.negative
     if total_vex is not None:
-        vol_spike_env = iv_rank is not None and iv_rank <= 50
+        vol_spike_env = iv_rank is not None and iv_rank < 50
         if vol_spike_env:
             # Low IV: dealers are short vanna; a vol spike forces delta adjustments
             # in the opposite direction — negative VEX becomes bullish
@@ -356,7 +356,7 @@ def analyse(
             delta_gex = total_gex - float(with_gex[-1]["total_gex"])
 
     gamma_slope = _compute_gamma_slope(gex_strikes, spot)
-    iv_gex_signal = _compute_iv_gex_signal(gamma_regime, iv_percentile)
+    iv_gex_signal = _compute_iv_gex_signal(gamma_regime, iv_rank)
     put_wall_density = _compute_put_wall_density(gex_strikes, spot)
     rnd_slices = compute_rnd_surface(expirations=expirations, spot=spot, r=r)
 
@@ -646,12 +646,12 @@ def _compute_gamma_slope(gex_strikes: list[GexStrike], spot: float) -> GammaSlop
 
 # ── IV / GEX Signal ───────────────────────────────────────────────────────────
 
-def _compute_iv_gex_signal(gamma_regime: GammaRegime, iv_percentile: float | None) -> IvGexSignal:
+def _compute_iv_gex_signal(gamma_regime: GammaRegime, iv_rank: float | None) -> IvGexSignal:
     if gamma_regime == GammaRegime.unknown:
         return IvGexSignal.unknown
-    if iv_percentile is None:
+    if iv_rank is None:
         return IvGexSignal.unknown
-    iv_elevated = iv_percentile >= IV_GEX_ELEVATED_PCT
+    iv_elevated = iv_rank >= IV_GEX_ELEVATED_PCT
     if gamma_regime == GammaRegime.negative:
         return IvGexSignal.classic_short_gamma if iv_elevated else IvGexSignal.regime_shift
     return IvGexSignal.event_over_pos_gamma if iv_elevated else IvGexSignal.stable_gamma
