@@ -143,6 +143,7 @@ async def run_position_eod_snapshot() -> dict:
                         "snapshot_type": "eod",
                         "underlying_price": spot if spot > 0 else None,
                         "market_price": mark,
+                        "implied_vol": iv,
                         "delta": delta,
                         "gamma": gamma,
                         "theta": theta,

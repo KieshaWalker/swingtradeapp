@@ -189,6 +189,9 @@ class PositionsNotifier extends StateNotifier<List<Position>> {
         theta: contract?.theta,
         vega: contract?.vega,
         rho: contract?.rho,
+        impliedVol: contract != null
+            ? contract.impliedVolatility / 100.0
+            : null,
       );
     }));
 

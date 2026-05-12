@@ -25,6 +25,7 @@ class LegSnapshot {
   final double? theta;
   final double? vega;
   final double? rho;
+  final double? impliedVol;
   final DateTime createdAt;
 
   LegSnapshot({
@@ -43,6 +44,7 @@ class LegSnapshot {
     this.theta,
     this.vega,
     this.rho,
+    this.impliedVol,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -62,6 +64,7 @@ class LegSnapshot {
         theta: (row['theta'] as num?)?.toDouble(),
         vega: (row['vega'] as num?)?.toDouble(),
         rho: (row['rho'] as num?)?.toDouble(),
+        impliedVol: (row['implied_vol'] as num?)?.toDouble(),
         createdAt: DateTime.parse(row['created_at'] as String),
       );
 
@@ -81,6 +84,7 @@ class LegSnapshot {
         if (theta != null) 'theta': theta,
         if (vega != null) 'vega': vega,
         if (rho != null) 'rho': rho,
+        if (impliedVol != null) 'implied_vol': impliedVol,
       };
 }
 

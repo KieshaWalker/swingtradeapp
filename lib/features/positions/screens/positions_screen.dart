@@ -460,6 +460,7 @@ class _SnapshotPanel extends ConsumerWidget {
               DataColumn(label: Text('Date')),
               DataColumn(label: Text('Type')),
               DataColumn(label: Text('Mkt'), numeric: true),
+              DataColumn(label: Text('IV'), numeric: true),
               DataColumn(label: Text('B-S'), numeric: true),
               DataColumn(label: Text('SABR'), numeric: true),
               DataColumn(label: Text('Heston'), numeric: true),
@@ -494,11 +495,14 @@ class _SnapshotPanel extends ConsumerWidget {
     final dateStr =
         '${s.snapshotDate.month.toString().padLeft(2, '0')}/${s.snapshotDate.day.toString().padLeft(2, '0')}';
 
+    String fmtPct(double? v) => v == null ? '—' : '${(v * 100).toStringAsFixed(1)}%';
+
     return DataRow(cells: [
       DataCell(Text(dateStr)),
       DataCell(Text(s.snapshotType.name,
           style: TextStyle(color: typeColor, fontWeight: FontWeight.w600))),
       DataCell(Text(fmtPrice(s.marketPrice))),
+      DataCell(Text(fmtPct(s.impliedVol))),
       DataCell(Text(fmt(s.bsTheo))),
       DataCell(Text(fmt(s.sabrTheo))),
       DataCell(Text(fmt(s.hestonTheo))),
