@@ -176,12 +176,12 @@ final routerProvider = Provider<GoRouter>((ref) {
               initialEntry: state.extra as JournalEntry?,
             ),
           ),
-          GoRoute(
+        ],
+      ),
+      GoRoute(
         path: '/calculator',
         pageBuilder: (context, state) =>
             const NoTransitionPage(child: _AppShell(child: CalculatorScreen())),
-      )
-        ],
       ),
       GoRoute(
         path: '/economy',
