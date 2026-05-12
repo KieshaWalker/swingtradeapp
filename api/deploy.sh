@@ -204,21 +204,14 @@ upsert_job vol-period-monthly \
   --attempt-deadline=600s \
   --description="Monthly vol period snapshot (1st of month 10 PM UTC)"
 
-# Weekly — Regime ML model retraining
-upsert_job regime-train \
-  "${COMMON_FLAGS[@]}" \
-  --schedule="0 0 * * 0" \
-  --uri="${SERVICE_URL}/jobs/regime-train" \
-  --attempt-deadline=1800s \
-  --description="Retrain regime ML model on 180 days of history (Sundays midnight UTC)"
-
 echo ""
 echo "Done. Resources in project ${PROJECT_ID}:"
 echo "  Cloud Run:  ${SERVICE_URL}"
 echo "  Scheduler:  vol-surface-pull, sabr-pull, heston-pull, heston-pull-2, iv-pull,"
 echo "              greek-grid-pull, greek-snapshots-pull, regime-pull,"
 echo "              expected-move-pull, position-eod-snapshot,"
-echo "              vol-period-weekly, vol-period-monthly, regime-train"
+echo "              vol-period-weekly, vol-period-monthly"
+echo "  Note: regime ML retrains automatically at the end of every regime-pull run."
 echo ""
 echo "Manual triggers:"
 echo "  gcloud scheduler jobs run <job-name> --location=${REGION} --project=${PROJECT_ID}"

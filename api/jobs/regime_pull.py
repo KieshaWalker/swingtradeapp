@@ -221,7 +221,35 @@ async def run_regime_pull() -> dict:
 
         results = dict(await asyncio.gather(*[_process(r) for r in rows]))
 
+    # Attempt ML retrain after snapshots are written — non-blocking.
+    # Starts working from MIN_SAMPLES_EARLY (60 rows); upgrades to full
+    # walk-forward CV automatically once MIN_SAMPLES_FULL (200 rows) is met.
+    _attempt_ml_retrain(db)
+
     return {"status": "complete", "tickers": results, "date": today}
+
+
+def _attempt_ml_retrain(db) -> None:
+    try:
+        from services.regime_ml_trainer import train_and_store
+        from services.regime_ml_service import load_trained_model
+        result = train_and_store(db)
+        if result.sufficient_data:
+            load_trained_model(db)
+            log.info(
+                "regime_ml auto_retrained model=%s mode=%s n=%d auc=%.3f",
+                result.model_type,
+                result.model_json.get("training_mode", "?"),
+                result.n_samples,
+                result.auc_roc,
+            )
+        else:
+            log.info(
+                "regime_ml auto_retrain skipped n=%d min_needed=60",
+                result.n_samples,
+            )
+    except Exception as exc:
+        log.warning("regime_ml auto_retrain_failed error=%s", exc)
 
 
 def _upsert_regime_snapshot(db, today: str, regime) -> None:

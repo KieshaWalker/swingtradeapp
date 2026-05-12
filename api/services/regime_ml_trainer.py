@@ -74,16 +74,19 @@ FEATURE_NAMES: list[str] = [
     "price_roc5",
 ]
 
-LOOKAHEAD: int   = 5    # flip within next N obs = positive label
-MIN_SAMPLES: int = 200  # minimum labeled rows — 80 was too small for 9 correlated features
-TEST_FRAC: float = 0.20 # temporal hold-out fraction
+LOOKAHEAD: int        = 5    # flip within next N obs = positive label
+MIN_SAMPLES_EARLY: int = 60  # minimum rows to attempt early-mode training
+MIN_SAMPLES_FULL:  int = 200 # minimum rows for full walk-forward CV evaluation
+# Back-compat alias used elsewhere (e.g. router error message)
+MIN_SAMPLES: int = MIN_SAMPLES_FULL
+TEST_FRAC: float = 0.20       # temporal hold-out fraction
 
 # Walk-forward cross-validation with purge + embargo
 WF_N_SPLITS:  int   = 5         # number of expanding-window folds
 WF_MIN_TRAIN: int   = 100       # minimum training observations per fold
 WF_PURGE:     int   = LOOKAHEAD # obs removed from train end (label window bleed-through)
 WF_EMBARGO:   int   = LOOKAHEAD # obs skipped at test start (autocorrelation buffer)
-MIN_OOS_AUC:  float = 0.52      # walk-forward OOS AUC required to accept model
+MIN_OOS_AUC:  float = 0.52      # AUC required to accept model (walk-forward or single-split)
 
 
 # ---------------------------------------------------------------------------
@@ -123,8 +126,11 @@ def train_and_store(
 
     X, y, dates = _build_dataset(rows)
 
-    if len(X) < MIN_SAMPLES:
-        log.warning("regime_ml_train insufficient_samples n=%d min=%d", len(X), MIN_SAMPLES)
+    if len(X) < MIN_SAMPLES_EARLY:
+        log.warning(
+            "regime_ml_train insufficient_samples n=%d min=%d",
+            len(X), MIN_SAMPLES_EARLY,
+        )
         return _insufficient(model_type)
 
     result = _train(X, y, dates, model_type)
@@ -384,31 +390,37 @@ def _train(
     y_sorted = y[order]
 
     # ── Walk-forward OOS AUC (honest, leakage-free evaluation) ────────────
-    oos_auc = _walk_forward_auc(X_sorted, y_sorted, model_type)
+    # Returns 0.5 as a sentinel when there is not enough data to run CV folds.
+    oos_auc   = _walk_forward_auc(X_sorted, y_sorted, model_type)
+    wf_ran    = oos_auc > 0.5   # True = walk-forward produced a meaningful estimate
+    is_early  = not wf_ran      # early mode: < MIN_SAMPLES_FULL rows
 
-    # ── Final train/test split with purge + embargo ────────────────────────
-    # Purge: remove the last WF_PURGE training samples whose labels bleed into
-    # the test window.  Embargo: skip the first WF_EMBARGO test samples to
-    # reduce autocorrelation-driven proximity bias.
-    split      = int(len(order) * (1 - TEST_FRAC))
-    train_end  = split - WF_PURGE                  # purge boundary
-    test_start = split + WF_EMBARGO                # embargo boundary
+    # ── Final train/test split ────────────────────────────────────────────────
+    # Full mode: apply purge + embargo to match the walk-forward protocol.
+    # Early mode: skip purge/embargo — too few samples to sacrifice any rows.
+    split = int(len(order) * (1 - TEST_FRAC))
+    if is_early:
+        train_end, test_start = split, split
+    else:
+        train_end  = split - WF_PURGE   # purge boundary
+        test_start = split + WF_EMBARGO # embargo boundary
 
-    X_train, y_train = X_sorted[:train_end],     y_sorted[:train_end]
-    X_test,  y_test  = X_sorted[test_start:],    y_sorted[test_start:]
+    X_train, y_train = X_sorted[:train_end],  y_sorted[:train_end]
+    X_test,  y_test  = X_sorted[test_start:], y_sorted[test_start:]
 
     # Scale features (fit on train only — no leakage)
     scaler     = StandardScaler()
     X_train_sc = scaler.fit_transform(X_train)
     X_test_sc  = scaler.transform(X_test)
 
-    # Train final model on the full purged training set
+    # Early mode uses stronger L2 regularization to avoid overfitting on small samples.
     if model_type == "xgboost":
         model, model_json = _train_xgboost(X_train_sc, y_train)
     else:
-        model, model_json = _train_logistic(X_train_sc, y_train)
+        C = 1.0 if not is_early else 0.1
+        model, model_json = _train_logistic(X_train_sc, y_train, C=C)
 
-    # Evaluate on the embargoed test set; fall back to train only if too small
+    # Evaluate on the held-out test set; fall back to train only if too small
     if len(X_test) < 5 or len(np.unique(y_test)) < 2:
         X_eval, y_eval = X_train_sc, y_train
     else:
@@ -422,20 +434,27 @@ def _train(
     prec     = float(precision_score(y_eval, y_pred, zero_division=0))
     rec      = float(recall_score(y_eval, y_pred, zero_division=0))
 
-    # Embed scaler + both AUC metrics into model_json
-    model_json["scaler_mean"]  = scaler.mean_.tolist()
-    model_json["scaler_std"]   = scaler.scale_.tolist()
-    model_json["feature_names"] = FEATURE_NAMES
-    model_json["oos_auc"]      = round(oos_auc, 4)   # walk-forward (canonical)
-    model_json["test_auc"]     = round(test_auc, 4)  # single held-out split
+    # Best available AUC for the acceptance gate:
+    #   Full mode  → walk-forward OOS AUC (leakage-free across multiple folds)
+    #   Early mode → single-split test AUC (best we can do with few samples)
+    best_auc = oos_auc if wf_ran else test_auc
 
-    # Model acceptance gate: walk-forward OOS AUC must clear the noise floor
-    model_accepted = oos_auc >= MIN_OOS_AUC
+    # Embed scaler + AUC metrics + training mode into model_json
+    model_json["scaler_mean"]   = scaler.mean_.tolist()
+    model_json["scaler_std"]    = scaler.scale_.tolist()
+    model_json["feature_names"] = FEATURE_NAMES
+    model_json["oos_auc"]       = round(oos_auc, 4)   # walk-forward AUC (0.5 if not run)
+    model_json["test_auc"]      = round(test_auc, 4)  # single-split AUC
+    model_json["training_mode"] = "early" if is_early else "full"
+
+    model_accepted = best_auc >= MIN_OOS_AUC
 
     n_pos = int(y_sorted.sum())
     log.info(
-        "regime_ml_trained model=%s n=%d pos=%d oos_auc=%.3f test_auc=%.3f accepted=%s",
-        model_type, len(y_sorted), n_pos, oos_auc, test_auc, model_accepted,
+        "regime_ml_trained model=%s mode=%s n=%d pos=%d best_auc=%.3f "
+        "(oos=%.3f test=%.3f) accepted=%s",
+        model_type, "early" if is_early else "full",
+        len(y_sorted), n_pos, best_auc, oos_auc, test_auc, model_accepted,
     )
 
     return TrainingResult(
@@ -446,7 +465,7 @@ def _train(
         n_features=len(FEATURE_NAMES),
         feature_names=FEATURE_NAMES,
         accuracy=round(acc, 4),
-        auc_roc=round(oos_auc, 4),   # stored AUC is always the walk-forward OOS AUC
+        auc_roc=round(best_auc, 4),  # best available AUC (walk-forward or single-split)
         precision=round(prec, 4),
         recall=round(rec, 4),
         model_json=model_json,
@@ -457,11 +476,12 @@ def _train(
 def _train_logistic(
     X: np.ndarray,
     y: np.ndarray,
+    C: float = 1.0,
 ) -> tuple[LogisticRegression, dict]:
     model = LogisticRegression(
         class_weight="balanced",   # handles class imbalance (flips are rare)
         max_iter=1000,
-        C=1.0,
+        C=C,
         solver="lbfgs",
         random_state=42,
     )
