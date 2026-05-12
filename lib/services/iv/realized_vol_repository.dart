@@ -35,7 +35,7 @@ class RealizedVolRepository {
   /// [limit] default 252 (trading days in year) for 52-week history
   Future<List<RealizedVolSnapshot>> getHistory(
     String symbol, {
-    int limit = 252,
+    int limit = 1008,
   }) async {
     try {
       final rows = await _db

@@ -130,11 +130,18 @@ def calibrate_slice(
 
     best_alpha, best_rho, best_nu = result.x
 
-    # Compute RMSE
+    # Compute RMSE — mirror the objective's 1e4 penalty for invalid points
     sse = 0.0
     for K, iv_mkt in clean:
-        iv_model = sabr_iv(F=F, K=K, T=T, alpha=best_alpha, beta=beta, rho=best_rho, nu=best_nu)
-        diff = (iv_model - iv_mkt) if iv_model > 0 else 1.0  # large penalty for invalid fit
+        try:
+            iv_model = sabr_iv(F=F, K=K, T=T, alpha=best_alpha, beta=beta, rho=best_rho, nu=best_nu)
+        except (ValueError, ZeroDivisionError):
+            sse += 1e4
+            continue
+        if iv_model <= 0 or math.isnan(iv_model):
+            sse += 1e4
+            continue
+        diff = iv_model - iv_mkt
         sse += diff * diff
     rmse = math.sqrt(sse / len(clean))
 

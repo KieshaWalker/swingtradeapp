@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import httpx
 from supabase import Client, create_client
 from .config import settings
 
@@ -21,4 +22,15 @@ def get_supabase() -> Client:
     global _client
     if _client is None:
         _client = create_client(settings.supabase_url, settings.supabase_service_key)
+        # postgrest hardcodes http2=True, which causes "Server disconnected" errors
+        # when Supabase's load balancer closes idle HTTP/2 connections. Replace the
+        # session with HTTP/1.1 so stale connections are retried transparently.
+        old = _client.postgrest.session
+        _client.postgrest.session = httpx.Client(
+            base_url=str(old.base_url),
+            headers=dict(old.headers),
+            timeout=old.timeout,
+            follow_redirects=True,
+            http2=False,
+        )
     return _client
