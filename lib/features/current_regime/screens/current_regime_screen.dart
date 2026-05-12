@@ -464,19 +464,74 @@ class _MetricBadge extends StatelessWidget {
 class _FeatureWeightLegend extends StatelessWidget {
   final MlModelMetadata meta;
 
-  // (label, heuristic weight, description)
+  // (label, heuristic weight, short description, full insight)
   static const _features = [
-    ('ZGL Level',        0.22, 'Spot distance above/below zero-gamma level'),
-    ('ZGL Trend',        0.17, 'Momentum of ZGL distance over 5 observations'),
-    ('SMA Cross',        0.17, 'SMA10 vs SMA50 — price trend alignment'),
-    ('HMM State',        0.13, 'Hidden Markov vol regime + posterior probability'),
-    ('IVP Trend',        0.08, 'IV percentile direction (rising = vol building)'),
-    ('VIX Stress',       0.08, 'VIX deviation from 10-day MA'),
-    ('Term Structure',   0.06, 'VIX/VIX3M ratio — backwardation signals stress'),
-    ('ROC5',             0.06, '5-day price rate-of-change (momentum)'),
-    ('Breadth',          0.05, 'RSP/SPY return z-score — market participation'),
-    ('VT Distance',      0.04, 'Distance from Volatility Trigger level'),
-    ('0DTE Pct',         0.04, '0DTE share of total GEX — intraday instability'),
+    (
+      'ZGL Level',
+      0.22,
+      'Spot distance above/below zero-gamma level',
+      'Zero-Gamma Level (ZGL) is the spot price at which dealer net gamma flips sign.\n\nAbove ZGL → dealers are long gamma and act as shock absorbers: they buy dips and sell rips, suppressing realized vol.\n\nBelow ZGL → dealers are short gamma and must hedge by amplifying moves, both up and down.\n\nThis is the highest-weight feature because regime identity is almost entirely determined by which side of the ZGL spot sits on.',
+    ),
+    (
+      'ZGL Trend',
+      0.17,
+      'Momentum of ZGL distance over 5 observations',
+      'Tracks the directional change in spot\'s distance from the ZGL across the last 5 data points.\n\nA falling ZGL distance (spot converging on ZGL from above) is an early warning that the positive-gamma cushion is eroding — the regime may flip before the level is actually breached.\n\nA rising ZGL distance (spot pulling away from ZGL) confirms regime stability.',
+    ),
+    (
+      'SMA Cross',
+      0.17,
+      'SMA10 vs SMA50 — price trend alignment',
+      'Compares the 10-day simple moving average to the 50-day SMA to measure trend alignment with the gamma regime.\n\nBullish cross (SMA10 > SMA50) in positive gamma = high-conviction uptrend with vol suppression — ideal for premium selling.\n\nBearish cross in negative gamma = momentum sell-off with vol amplification — avoid naked short premium.\n\nMisalignment (e.g., bullish cross but negative gamma) signals elevated reversal risk.',
+    ),
+    (
+      'HMM State',
+      0.13,
+      'Hidden Markov vol regime + posterior probability',
+      'A Hidden Markov Model trained on vol-surface and price data classifies the market into latent states (e.g., low-vol trending, stressed, mean-reverting) that are not directly observable.\n\nThe posterior probability is the model\'s confidence in its current state assignment — high confidence reinforces the gamma regime signal; low confidence (near 0.5) suggests a transitional, less predictable environment.\n\nHMM state often leads realized vol by 1–3 sessions.',
+    ),
+    (
+      'IVP Trend',
+      0.08,
+      'IV percentile direction (rising = vol building)',
+      'IV Percentile (IVP) measures where current implied vol sits within its 1-year range (0 = cheapest, 100 = most expensive).\n\nThe trend (direction over recent sessions) matters as much as the absolute level:\n• Rising IVP → market pricing in forward uncertainty; realized vol expansion often follows.\n• Falling IVP → complacency building; premium selling conditions improving but tail risk accumulating.\n\nHigh IVP + negative gamma is the most dangerous combination for short-premium positions.',
+    ),
+    (
+      'VIX Stress',
+      0.08,
+      'VIX deviation from 10-day MA',
+      'Measures how far VIX has spiked above (or fallen below) its 10-day moving average, normalized as a z-score.\n\nA large positive deviation signals fear-driven vol demand — often coincides with spot crossing below the ZGL or a macro shock.\n\nA negative deviation (VIX below its MA) signals calm, range-bound conditions suitable for mean-reversion and premium-selling strategies.\n\nUsed here as a rate-of-change stress indicator rather than an absolute VIX level.',
+    ),
+    (
+      'Term Structure',
+      0.06,
+      'VIX/VIX3M ratio — backwardation signals stress',
+      'The VIX / VIX3M ratio describes the shape of the vol term structure.\n\nContango (ratio < 1): near-term vol is cheaper than 3-month vol — normal, calm market. Carry favors short vol.\n\nBackwardation (ratio > 1): near-term vol exceeds 3-month vol — acute stress; the market fears the next 30 days more than the next 90. Historically associated with dealer gamma flips, liquidity crises, and fast-market conditions.\n\nA rising ratio is a leading stress indicator even before VIX itself spikes.',
+    ),
+    (
+      'ROC5',
+      0.06,
+      '5-day price rate-of-change (momentum)',
+      '5-day price Rate-of-Change (ROC5) captures short-term momentum as a percentage move over the last 5 sessions.\n\nIn positive gamma: strong positive ROC5 confirms trend; negative ROC5 is a buyable dip (dealers absorb selling).\n\nIn negative gamma: negative ROC5 risks becoming a momentum sell-off (dealers amplify the move); positive ROC5 can be a short-covering squeeze.\n\nROC5 is most useful as a confirmation signal layered on top of ZGL Level and ZGL Trend.',
+    ),
+    (
+      'Breadth',
+      0.05,
+      'RSP/SPY return z-score — market participation',
+      'Compares RSP (equal-weight S&P 500) returns to SPY (cap-weight S&P 500) returns, expressed as a z-score.\n\nPositive z-score (RSP outperforming SPY): broad market participation — the rally or selloff involves most stocks, increasing regime conviction.\n\nNegative z-score (SPY outperforming RSP): narrow market driven by mega-cap concentration — underlying deterioration often precedes broader correction.\n\nBreadth divergence from the gamma regime is a useful early warning of regime transition.',
+    ),
+    (
+      'VT Distance',
+      0.04,
+      'Distance from Volatility Trigger level',
+      'The Volatility Trigger (VT) is the spot level at which dealer put-hedging activity becomes dominant over call-hedging.\n\nSpot well above VT → dealers remain net-long gamma from call writing; realized vol stays suppressed.\n\nSpot approaching or below VT → protective put hedging dominates; dealers must sell futures as spot falls, increasing realized vol and path dependency.\n\nVT Distance complements ZGL Level by capturing the put-side of the dealer book separately from the net gamma flip.',
+    ),
+    (
+      '0DTE Pct',
+      0.04,
+      '0DTE share of total GEX — intraday instability',
+      '0DTE (zero days-to-expiration) options have near-infinite gamma at-the-money, meaning dealers must delta-hedge them in real time as spot moves.\n\nA high 0DTE share of total Gamma Exposure (GEX) amplifies intraday vol bursts around key strikes, especially during the last hour of the session.\n\nThis feature is most relevant on high-volume 0DTE days (Mon/Wed/Fri for SPX). Elevated 0DTE Pct + negative gamma is the most volatile combination for intraday traders.',
+    ),
   ];
 
   const _FeatureWeightLegend({required this.meta});
@@ -510,8 +565,24 @@ class _FeatureWeightLegend extends StatelessWidget {
             children: [
               SizedBox(
                 width: 100,
-                child: Text(f.$1,
-                  style: const TextStyle(color: Colors.white, fontSize: 12)),
+                child: Tooltip(
+                  message: f.$4,
+                  preferBelow: false,
+                  textStyle: const TextStyle(color: Colors.white, fontSize: 11),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E2535),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  child: Text(f.$1,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      decoration: TextDecoration.underline,
+                      decorationStyle: TextDecorationStyle.dotted,
+                      decorationColor: Colors.white38,
+                    )),
+                ),
               ),
               Expanded(
                 child: ClipRRect(
