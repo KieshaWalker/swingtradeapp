@@ -12,6 +12,7 @@
 //   /bs/greeks               -> api/routers/black_scholes.py
 //   /sabr/iv                 -> api/routers/sabr.py
 //   /sabr/calibrate          -> api/routers/sabr.py
+//   /heston/price            -> api/routers/heston.py
 //   /fair-value/compute      -> api/routers/fair_value.py
 //   /iv/analytics            -> api/routers/iv_analytics.py
 //   /iv/snapshot             -> api/routers/iv_analytics.py
@@ -174,9 +175,9 @@ class PythonApiClient {
         'beta': beta,
         'rho': rho,
         'nu': nu,
-        'f': f,
-        'k': k,
-        't': t,
+        'F': f,        // Pydantic field name is uppercase F
+        'strike': k,   // Pydantic field name is 'strike', not 'k'
+        'T': t,        // Pydantic field name is uppercase T
       });
 
   /// Returns {slices: [...], error: null}
@@ -194,6 +195,34 @@ class PythonApiClient {
         'r': ?r,
         'ticker': ?ticker,
         'obs_date': ?obsDate,
+      });
+
+  // ── Heston ────────────────────────────────────────────────────────────────
+
+  /// Returns {price, forward, initial_vol, long_run_vol, feller_satisfied}
+  static Future<Map<String, dynamic>> hestonPrice({
+    required double spot,
+    required double strike,
+    required int daysToExpiry,
+    required double r,
+    required bool isCall,
+    required double kappa,
+    required double theta,
+    required double xi,
+    required double rho,
+    required double v0,
+  }) =>
+      _post('/heston/price', {
+        'spot': spot,
+        'strike': strike,
+        'days_to_expiry': daysToExpiry,
+        'r': r,
+        'is_call': isCall,
+        'kappa': kappa,
+        'theta': theta,
+        'xi': xi,
+        'rho': rho,
+        'v0': v0,
       });
 
   // ── Fair Value ─────────────────────────────────────────────────────────────
