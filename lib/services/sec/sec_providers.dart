@@ -22,6 +22,7 @@
 //     query: formType:"8-K"  sorted by filedAt desc
 //     → ResearchScreen    _RecentEventsTab      (market-wide 8-K event feed)
 // =============================================================================
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'sec_models.dart';
 import 'sec_service.dart';
@@ -30,7 +31,10 @@ final secServiceProvider = Provider<SecService>((_) => SecService());
 
 /// Recent filings for a specific ticker (used on trade detail)
 final secFilingsForTickerProvider =
-    FutureProvider.family<List<SecFiling>, String>((ref, ticker) {
+    FutureProvider.family<List<SecFiling>, String>((ref, ticker) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return ref.watch(secServiceProvider).getFilingsForTicker(ticker);
 });
 

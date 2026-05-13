@@ -87,6 +87,9 @@ final moversProvider =
 
 final schwabFundamentalsProvider =
     FutureProvider.family<SchwabFundamentals?, String>((ref, symbol) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   try {
     return await ref.watch(schwabServiceProvider).getFundamentals(symbol);
   } on SchwabReauthRequiredException {
@@ -102,6 +105,9 @@ final schwabFundamentalsProvider =
 final schwabEarningsDateProvider =
     FutureProvider.family<EarningsDate?, String>((ref, symbol) async {
   if (symbol.isEmpty) return null;
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   try {
     return await ref.watch(schwabServiceProvider).getEarningsDate(symbol);
   } on SchwabReauthRequiredException {
