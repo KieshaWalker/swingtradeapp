@@ -39,17 +39,25 @@ export async function getValidToken(
 
   // Need a refresh
   const basic = btoa(`${clientId}:${clientSecret}`)
-  const resp  = await fetch(SCHWAB_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${basic}`,
-      'Content-Type':  'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({
-      grant_type:    'refresh_token',
-      refresh_token: row.refresh_token,
-    }),
-  })
+  const tokenAc = new AbortController()
+  const tokenTimer = setTimeout(() => tokenAc.abort(), 15_000)
+  let resp: Response
+  try {
+    resp = await fetch(SCHWAB_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${basic}`,
+        'Content-Type':  'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type:    'refresh_token',
+        refresh_token: row.refresh_token,
+      }),
+      signal: tokenAc.signal,
+    })
+  } finally {
+    clearTimeout(tokenTimer)
+  }
 
   if (!resp.ok) {
     const text = await resp.text()

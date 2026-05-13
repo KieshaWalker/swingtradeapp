@@ -14,6 +14,7 @@
 //   • snapshot history storage
 //   • economic indicator snapshots
 // =============================================================================
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'fred_models.dart';
@@ -31,98 +32,204 @@ FredStorageService get _storage =>
 /// Fetch a FRED series (500 observations) — for charts and macro score.
 final fredSeriesProvider =
     FutureProvider.family<FredSeries, String>((ref, seriesId) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return _fredService.getSeries(seriesId, limit: 500);
 });
 
 /// Fetch a small FRED series slice (15 observations) — for snapshot latest value.
 final fredSnapshotProvider =
     FutureProvider.family<FredSeries, String>((ref, seriesId) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return _fredService.getSeries(seriesId, limit: 15);
 });
 
 // ── Existing chart / macro-score providers (limit 500) ───────────────────────
 
-final fredVixProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.vix, limit: 500));
+final fredVixProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.vix, limit: 500);
+});
 
-final fredGoldProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.gold, limit: 500));
+final fredGoldProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.gold, limit: 500);
+});
 
-final fredSilverProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.silver, limit: 500));
+final fredSilverProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.silver, limit: 500);
+});
 
-final fredHyOasProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.hyOas, limit: 500));
+final fredHyOasProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.hyOas, limit: 500);
+});
 
-final fredIgOasProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.igOas, limit: 500));
+final fredIgOasProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.igOas, limit: 500);
+});
 
-final fredSpreadProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.spread2s10s, limit: 500));
+final fredSpreadProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.spread2s10s, limit: 500);
+});
 
-final fredFedFundsProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.fedFunds, limit: 500));
+final fredFedFundsProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.fedFunds, limit: 500);
+});
 
 // ── New snapshot providers (limit 500 so history is stored to Supabase) ──────
 
 // Interest rates
-final fredMortgageRateProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.mortgageRate30y, limit: 500));
+final fredMortgageRateProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.mortgageRate30y, limit: 500);
+});
 
-final fredTreasury1yProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.treasury1y, limit: 500));
+final fredTreasury1yProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.treasury1y, limit: 500);
+});
 
-final fredTreasury2yProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.treasury2y, limit: 500));
+final fredTreasury2yProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.treasury2y, limit: 500);
+});
 
-final fredTreasury5yProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.treasury5y, limit: 500));
+final fredTreasury5yProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.treasury5y, limit: 500);
+});
 
-final fredTreasury10yProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.treasury10y, limit: 500));
+final fredTreasury10yProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.treasury10y, limit: 500);
+});
 
-final fredTreasury20yProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.treasury20y, limit: 500));
+final fredTreasury20yProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.treasury20y, limit: 500);
+});
 
-final fredTreasury30yProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.treasury30y, limit: 500));
+final fredTreasury30yProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.treasury30y, limit: 500);
+});
 
 // Commodities
-final fredCrudeOilProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.crudeOilWti, limit: 500));
+final fredCrudeOilProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.crudeOilWti, limit: 500);
+});
 
-final fredNatGasProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.natGasHenryHub, limit: 500));
+final fredNatGasProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.natGasHenryHub, limit: 500);
+});
 
 // Labor market
-final fredUnemploymentRateProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.unemploymentRate, limit: 500));
+final fredUnemploymentRateProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.unemploymentRate, limit: 500);
+});
 
-final fredNonfarmPayrollsProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.nonfarmPayrolls, limit: 500));
+final fredNonfarmPayrollsProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.nonfarmPayrolls, limit: 500);
+});
 
-final fredInitialClaimsProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.initialClaims, limit: 500));
+final fredInitialClaimsProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.initialClaims, limit: 500);
+});
 
-final fredConsumerSentimentProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.consumerSentiment, limit: 500));
+final fredConsumerSentimentProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.consumerSentiment, limit: 500);
+});
 
 // Economy
-final fredCpiProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.cpiAllItems, limit: 500));
+final fredCpiProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.cpiAllItems, limit: 500);
+});
 
-final fredRealGdpProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.realGdp, limit: 500));
+final fredRealGdpProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.realGdp, limit: 500);
+});
 
-final fredRetailSalesProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.retailSales, limit: 500));
+final fredRetailSalesProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.retailSales, limit: 500);
+});
 
-final fredRecessionProbProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.recessionProb, limit: 500));
+final fredRecessionProbProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.recessionProb, limit: 500);
+});
 
 // Housing
-final fredHousingStartsProvider = FutureProvider<FredSeries>(
-    (ref) => _fredService.getSeries(FredSeriesIds.housingStarts, limit: 500));
+final fredHousingStartsProvider = FutureProvider<FredSeries>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
+  return _fredService.getSeries(FredSeriesIds.housingStarts, limit: 500);
+});
 
 // ── Save helpers ──────────────────────────────────────────────────────────────
 

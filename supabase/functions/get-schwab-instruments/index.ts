@@ -4,6 +4,7 @@
 // Returns array of { symbol, description, exchange, assetType }
 // =============================================================================
 import { getValidToken } from '../_shared/schwab_auth.ts'
+import { jsonResponse } from '../_shared/compress.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -16,7 +17,7 @@ Deno.serve(async (req) => {
 
   try {
     const { query } = await req.json() as { query: string }
-    if (!query || query.trim().length === 0) return _ok([])
+    if (!query || query.trim().length === 0) return _ok([], req)
 
     const supabaseUrl    = Deno.env.get('SUPABASE_URL')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -46,7 +47,7 @@ Deno.serve(async (req) => {
       exchange: i.exchange ?? '',
     }))
 
-    return _ok(results)
+    return _ok(results, req)
   } catch (err) {
     const msg    = err instanceof Error ? err.message : String(err)
     const status = msg.startsWith('SCHWAB_REAUTH_REQUIRED') ? 401 : 400
@@ -54,11 +55,8 @@ Deno.serve(async (req) => {
   }
 })
 
-function _ok(data: unknown): Response {
-  return new Response(JSON.stringify(data), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    status:  200,
-  })
+function _ok(data: unknown, req: Request): Response {
+  return jsonResponse(req, data, corsHeaders)
 }
 
 function _error(message: string, status: number): Response {

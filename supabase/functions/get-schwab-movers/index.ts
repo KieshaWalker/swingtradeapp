@@ -10,6 +10,7 @@
 // Returns: { movers: SchwabMover[] }
 // =============================================================================
 import { getValidToken } from '../_shared/schwab_auth.ts'
+import { jsonResponse } from '../_shared/compress.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -42,13 +43,18 @@ Deno.serve(async (req) => {
       frequency: String(frequency),
     })
 
-    const url  = `https://api.schwabapi.com/marketdata/v1/movers/${encodeURIComponent(symbolId)}?${params}`
-    const resp = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept':        'application/json',
-      },
-    })
+    const url = `https://api.schwabapi.com/marketdata/v1/movers/${encodeURIComponent(symbolId)}?${params}`
+    const ac  = new AbortController()
+    const timer = setTimeout(() => ac.abort(), 15_000)
+    let resp: Response
+    try {
+      resp = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
+        signal: ac.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
 
     const text = await resp.text()
     if (!resp.ok) return _error(`Schwab API error ${resp.status}: ${text}`, resp.status)
@@ -66,10 +72,7 @@ Deno.serve(async (req) => {
       totalVolume: m['totalVolume'],
     }))
 
-    return new Response(JSON.stringify({ movers }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status:  200,
-    })
+    return jsonResponse(req, { movers }, corsHeaders)
   } catch (err) {
     const msg    = err instanceof Error ? err.message : String(err)
     const status = msg.startsWith('SCHWAB_REAUTH_REQUIRED') ? 401 : 400

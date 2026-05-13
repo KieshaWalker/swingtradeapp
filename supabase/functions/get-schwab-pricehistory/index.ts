@@ -7,6 +7,7 @@
 // Returns: { closes: number[], volumes: number[], dates: string[] }  oldest → newest
 // =============================================================================
 import { getValidToken } from '../_shared/schwab_auth.ts'
+import { jsonResponse } from '../_shared/compress.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -67,10 +68,7 @@ Deno.serve(async (req) => {
     const volumes = trimmed.map(c => c.volume ?? 0)
     const dates   = trimmed.map(c => new Date(c.datetime).toISOString().slice(0, 10))
 
-    return new Response(JSON.stringify({ closes, volumes, dates }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status:  200,
-    })
+    return jsonResponse(req, { closes, volumes, dates }, corsHeaders)
   } catch (err) {
     const msg    = err instanceof Error ? err.message : String(err)
     const status = msg.startsWith('SCHWAB_REAUTH_REQUIRED') ? 401 : 400

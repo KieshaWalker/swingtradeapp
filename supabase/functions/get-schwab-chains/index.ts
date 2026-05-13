@@ -9,6 +9,7 @@
 // Returns the full Schwab chain JSON including greeks per contract
 // =============================================================================
 import { getValidToken } from '../_shared/schwab_auth.ts'
+import { jsonResponse } from '../_shared/compress.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin':  '*',
@@ -48,12 +49,17 @@ Deno.serve(async (req) => {
     if (expirationDate) params.set('expirationDate', expirationDate)
 
     const url  = `https://api.schwabapi.com/marketdata/v1/chains?${params}`
-    const resp = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept':        'application/json',
-      },
-    })
+    const ac   = new AbortController()
+    const timer = setTimeout(() => ac.abort(), 25_000)
+    let resp: Response
+    try {
+      resp = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
+        signal: ac.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
 
     const text = await resp.text()
     if (!resp.ok) return _error(`Schwab API error ${resp.status}: ${text}`, resp.status)
@@ -64,10 +70,7 @@ Deno.serve(async (req) => {
     const chain    = JSON.parse(text)
     const slimmed  = slimChain(chain)
 
-    return new Response(JSON.stringify(slimmed), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status:  200,
-    })
+    return jsonResponse(req, slimmed, corsHeaders)
   } catch (err) {
     const msg    = err instanceof Error ? err.message : String(err)
     const status = msg.startsWith('SCHWAB_REAUTH_REQUIRED') ? 401 : 400

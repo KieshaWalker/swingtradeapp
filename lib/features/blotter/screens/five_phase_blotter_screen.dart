@@ -40,7 +40,6 @@ import '../widgets/phase_panels/formula_phase_panel.dart';
 import '../widgets/phase_panels/blotter_phase_panel.dart';
 import '../widgets/phase_panels/vol_surface_phase_panel.dart';
 import '../widgets/phase_panels/greek_grid_phase_panel.dart';
-import '../widgets/phase_panels/kalshi_phase_panel.dart';
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -73,7 +72,6 @@ class _FivePhaseBlotterScreenState
   PhaseResult _p3 = PhaseResult.none;
   PhaseResult _p4 = PhaseResult.none;
   PhaseResult _p5 = PhaseResult.none;
-  PhaseResult _p6 = PhaseResult.none;
 
   // ── Blotter Phase 3 pricing output (for commit) ──────────────────────────────
   FairValueResult? _latestFairValue;
@@ -86,7 +84,6 @@ class _FivePhaseBlotterScreenState
   bool _exp3 = false;
   bool _exp4 = false;
   bool _exp5 = false;
-  bool _exp6 = false;
 
   // ── Derived form values ──────────────────────────────────────────────────────
   String   get _ticker    => _tickerCtrl.text.trim().toUpperCase();
@@ -106,10 +103,10 @@ class _FivePhaseBlotterScreenState
 
   // ── Overall gate logic ───────────────────────────────────────────────────────
   bool get _anyFail =>
-      [_p1, _p2, _p3, _p4, _p5, _p6].any((r) => r.status == PhaseStatus.fail);
+      [_p1, _p2, _p3, _p4, _p5].any((r) => r.status == PhaseStatus.fail);
 
   bool get _allEvaluated =>
-      [_p1, _p2, _p3, _p4, _p5, _p6]
+      [_p1, _p2, _p3, _p4, _p5]
           .every((r) => r.status != PhaseStatus.pending);
 
   bool get _canCommit => _hasFullTrade && _allEvaluated && !_anyFail;
@@ -130,7 +127,6 @@ class _FivePhaseBlotterScreenState
           case 3: _p3 = result; if (autoExpand && result.status != PhaseStatus.pass) _exp3 = true;
           case 4: _p4 = result; if (autoExpand && result.status != PhaseStatus.pass) _exp4 = true;
           case 5: _p5 = result; if (autoExpand && result.status != PhaseStatus.pass) _exp5 = true;
-          case 6: _p6 = result; if (autoExpand && result.status != PhaseStatus.pass) _exp6 = true;
         }
       });
     });
@@ -180,7 +176,6 @@ class _FivePhaseBlotterScreenState
         _p3 = PhaseResult.none;
         _p4 = PhaseResult.none;
         _p5 = PhaseResult.none;
-        _p6 = PhaseResult.none;
       });
     }
   }
@@ -192,7 +187,6 @@ class _FivePhaseBlotterScreenState
       _p3 = PhaseResult.none;
       _p4 = PhaseResult.none;
       _p5 = PhaseResult.none;
-      _p6 = PhaseResult.none;
     });
   }
 
@@ -358,13 +352,13 @@ class _FivePhaseBlotterScreenState
         actions: const [AppMenuButton()],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(70),
-          child: PhaseStepper(results: [_p1, _p2, _p3, _p4, _p5, _p6]),
+          child: PhaseStepper(results: [_p1, _p2, _p3, _p4, _p5]),
         ),
       ),
 
       bottomNavigationBar: _hasFullTrade
           ? _ActionBar(
-              results:    [_p1, _p2, _p3, _p4, _p5, _p6],
+              results:    [_p1, _p2, _p3, _p4, _p5],
               canCommit:  _canCommit,
               committing: _committing,
               onCommit:   _commitTrade,
@@ -514,20 +508,6 @@ class _FivePhaseBlotterScreenState
                   ),
                 ),
 
-                // ── Phase 6 — Kalshi ───────────────────────────────────────────
-                _PhaseTile(
-                  phaseNum:  6,
-                  title:     'Kalshi Gate',
-                  result:    _p6,
-                  expanded:  _exp6,
-                  onChanged: (v) => setState(() => _exp6 = v),
-                  child: KalshiPhasePanel(
-                    ticker:     _ticker,
-                    expiryDate: _expiry!,
-                    isCall:     _contractType == ContractType.call,
-                    onResult:   (r) => _notifyResult(6, r, autoExpand: true),
-                  ),
-                ),
               ], // end if _hasFullTrade spread
             ], // end ListView children
           ), // end ListView

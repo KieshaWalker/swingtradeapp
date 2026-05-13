@@ -1,3 +1,5 @@
+import { jsonResponse } from '../_shared/compress.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -55,10 +57,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    return new Response(JSON.stringify(data), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    })
+    return jsonResponse(req, data, corsHeaders)
   } catch (error) {
     console.error(`get-fred-data error: ${error.message}`)
     return new Response(JSON.stringify({ error: error.message }), {

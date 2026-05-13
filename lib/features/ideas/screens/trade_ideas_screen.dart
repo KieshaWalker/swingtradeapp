@@ -25,7 +25,6 @@ import '../../blotter/widgets/phase_panels/economic_phase_panel.dart';
 import '../../blotter/widgets/phase_panels/formula_phase_panel.dart';
 import '../../blotter/widgets/phase_panels/blotter_phase_panel.dart';
 import '../../blotter/widgets/phase_panels/vol_surface_phase_panel.dart';
-import '../../blotter/widgets/phase_panels/kalshi_phase_panel.dart';
 import '../models/trade_idea.dart';
 import '../providers/trade_ideas_notifier.dart';
 
@@ -416,13 +415,6 @@ class _PhaseEvaluator extends StatelessWidget {
           onResult:     (r) => onResult(4, r),
         ),
 
-        // Phase 5 — Kalshi gate
-        KalshiPhasePanel(
-          ticker:     idea.ticker,
-          expiryDate: idea.expiryDate,
-          isCall:     idea.isCall,
-          onResult:   (r) => onResult(5, r),
-        ),
       ],
     );
   }

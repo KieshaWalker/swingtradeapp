@@ -3,7 +3,9 @@
 // =============================================================================
 // Riverpod FutureProviders for BLS, BEA, EIA, and Census services.
 // Each provider fetches only the most recent data needed for the dashboard.
+// ref.keepAlive() + Timer prevents re-fetching on every screen navigation.
 // =============================================================================
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/bls/bls_models.dart';
 import '../../../services/bls/bls_service.dart';
@@ -22,6 +24,9 @@ import '../../../services/schwab/schwab_service.dart';
 // ── Economy Pulse (Schwab quotes) ─────────────────────────────────────────────
 
 final economyPulseProvider = FutureProvider<EconomyPulseData>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(minutes: 30), link.close);
+  ref.onDispose(timer.cancel);
   try {
     final service = ref.watch(schwabServiceProvider);
     final quotes  = await service.getEconomyQuotes();
@@ -53,6 +58,9 @@ final economyPulseProvider = FutureProvider<EconomyPulseData>((ref) async {
 // ── BLS ───────────────────────────────────────────────────────────────────────
 
 final blsEmploymentProvider = FutureProvider<BlsResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BlsService().fetchSeries(
     [
       BlsSeriesIds.totalNonfarmPayrolls,
@@ -66,6 +74,9 @@ final blsEmploymentProvider = FutureProvider<BlsResponse>((ref) async {
 });
 
 final blsCpiProvider = FutureProvider<BlsResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BlsService().fetchSeries(
     [
       BlsSeriesIds.cpiAllItemsSA,
@@ -79,6 +90,9 @@ final blsCpiProvider = FutureProvider<BlsResponse>((ref) async {
 });
 
 final blsPpiProvider = FutureProvider<BlsResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BlsService().fetchSeries(
     [
       BlsSeriesIds.ppiFinalDemand,
@@ -91,6 +105,9 @@ final blsPpiProvider = FutureProvider<BlsResponse>((ref) async {
 });
 
 final blsJoltsProvider = FutureProvider<BlsResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BlsService().fetchSeries(
     [
       BlsSeriesIds.jobOpenings,
@@ -107,87 +124,147 @@ final blsJoltsProvider = FutureProvider<BlsResponse>((ref) async {
 // ── BEA ───────────────────────────────────────────────────────────────────────
 
 final beaGdpProvider = FutureProvider<BeaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BeaService().gdpPercentChange(years: 3);
 });
 
 final beaRealGdpProvider = FutureProvider<BeaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BeaService().realGdp(years: 3);
 });
 
 final beaPceProvider = FutureProvider<BeaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BeaService().personalConsumptionExpenditures(years: 2);
 });
 
 final beaCorePceProvider = FutureProvider<BeaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BeaService().corePcePriceIndex(years: 2);
 });
 
 final beaPersonalIncomeProvider = FutureProvider<BeaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BeaService().personalIncome(years: 2);
 });
 
 final beaCorporateProfitsProvider = FutureProvider<BeaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BeaService().corporateProfitsAfterTax(years: 3);
 });
 
 final beaNetExportsProvider = FutureProvider<BeaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return BeaService().netExports(years: 3);
 });
 
 // ── EIA ───────────────────────────────────────────────────────────────────────
 
 final eiaGasolinePricesProvider = FutureProvider<EiaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return EiaService().retailGasolinePricesWeekly();
 });
 
 /// Full gasoline price history 1990–present (up to 5 000 weekly points).
 final eiaGasolinePriceHistoryProvider = FutureProvider<EiaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return EiaService().gasolinePriceFullHistory();
 });
 
 final eiaCrudeStocksProvider = FutureProvider<EiaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return EiaService().crudeOilStocksCommercialWeekly();
 });
 
 final eiaCrudeProdProvider = FutureProvider<EiaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return EiaService().crudeOilProductionWeekly();
 });
 
 final eiaNatGasStorageProvider = FutureProvider<EiaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return EiaService().natGasStorageWeekly();
 });
 
 final eiaRefineryUtilProvider = FutureProvider<EiaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return EiaService().refineryUtilizationWeekly();
 });
 
 final eiaSprProvider = FutureProvider<EiaResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return EiaService().strategicPetroleumReserveWeekly();
 });
 
 // ── Census ────────────────────────────────────────────────────────────────────
 
 final censusRetailSalesProvider = FutureProvider<CensusResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return CensusService().advanceRetailSales(from: _yearMonth(13));
 });
 
 final censusMotorVehiclesProvider = FutureProvider<CensusResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return CensusService().retailSalesMotorVehicles(from: _yearMonth(13));
 });
 
 final censusNonStoreProvider = FutureProvider<CensusResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return CensusService().retailSalesNonStore(from: _yearMonth(13));
 });
 
 final censusConstructionSpendingProvider = FutureProvider<CensusResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return CensusService().constructionSpending(fromYear: _yearForEits(2));
 });
 
 final censusManufacturingOrdersProvider = FutureProvider<CensusResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return CensusService().manufacturersNewOrders(fromYear: _yearForEits(2));
 });
 
 final censusWholesaleSalesProvider = FutureProvider<CensusResponse>((ref) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 4), link.close);
+  ref.onDispose(timer.cancel);
   return CensusService().wholesaleTradeSales(fromYear: _yearForEits(2));
 });
 

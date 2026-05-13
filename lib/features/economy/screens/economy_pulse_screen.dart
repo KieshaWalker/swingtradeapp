@@ -33,8 +33,6 @@ import '../widgets/bea_tab.dart';
 import '../widgets/eia_tab.dart';
 import '../widgets/census_tab.dart';
 import '../widgets/fred_tab.dart';
-import '../widgets/kalshi_tab.dart';
-import '../../../services/kalshi/kalshi_providers.dart';
 
 class EconomyPulseScreen extends ConsumerStatefulWidget {
   const EconomyPulseScreen({super.key});
@@ -288,7 +286,6 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
                 ref.invalidate(fredRetailSalesProvider);
                 ref.invalidate(fredRecessionProbProvider);
                 ref.invalidate(fredHousingStartsProvider);
-                ref.invalidate(kalshiMacroEventsProvider);
                 ref.invalidate(moversProvider);
               },
             ),
@@ -305,7 +302,6 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
               Tab(text: 'EIA'),
               Tab(text: 'Census'),
               Tab(text: 'FRED'),
-              Tab(text: 'Kalshi'),
             ],
           ),
         ),
@@ -340,7 +336,6 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
             const EiaTab(),
             const CensusTab(),
             const FredTab(),
-            const KalshiTab(),
           ],
         ),
       ),

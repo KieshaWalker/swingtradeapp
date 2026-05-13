@@ -1,6 +1,7 @@
 // =============================================================================
 // services/schwab/schwab_providers.dart
 // =============================================================================
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'schwab_models.dart';
 import 'schwab_reauth_provider.dart';
@@ -47,6 +48,9 @@ final tickerSearchProvider =
 final schwabOptionsChainProvider =
     FutureProvider.family<SchwabOptionsChain?, OptionsChainParams>(
         (ref, params) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(minutes: 15), link.close);
+  ref.onDispose(timer.cancel);
   try {
     return await ref.watch(schwabServiceProvider).getOptionsChain(
           params.symbol,

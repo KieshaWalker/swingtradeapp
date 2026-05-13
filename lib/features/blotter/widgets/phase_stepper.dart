@@ -17,21 +17,21 @@ import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../models/phase_result.dart';
 
-const _labels = ['Economic', 'Formula', 'Blotter', 'Vol Surface', 'Greek Grid', 'Kalshi'];
+const _labels = ['Economic', 'Formula', 'Blotter', 'Vol Surface', 'Greek Grid'];
 
 class PhaseStepper extends StatelessWidget {
-  final List<PhaseResult> results; // must be exactly 6 elements
+  final List<PhaseResult> results; // must be exactly 5 elements
 
   const PhaseStepper({super.key, required this.results})
-      : assert(results.length == 6);
+      : assert(results.length == 5);
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
-        children: List.generate(6, (i) {
-          final isLast = i == 5;
+        children: List.generate(5, (i) {
+          final isLast = i == 4;
           return Expanded(
             child: Row(
               children: [

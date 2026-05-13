@@ -17,9 +17,12 @@ class SchwabService {
 
   FunctionsClient get _fn => Supabase.instance.client.functions;
 
-  Future<FunctionResponse> _invoke(String name, {Object? body}) =>
-      _fn.invoke(name, body: body)
-         .timeout(const Duration(seconds: 15));
+  Future<FunctionResponse> _invoke(
+    String name, {
+    Object? body,
+    Duration timeout = const Duration(seconds: 15),
+  }) =>
+      _fn.invoke(name, body: body).timeout(timeout);
 
   // ── Quotes ──────────────────────────────────────────────────────────────────
 
@@ -67,15 +70,18 @@ class SchwabService {
           'strikeCount': strikeCount,
           'expirationDate': expirationDate,
         },
+        timeout: const Duration(seconds: 35),
       );
-      if (res.status != 200) return null;
+      if (res.status != 200) {
+        final err = (res.data as Map<String, dynamic>?)?['error'] ?? 'HTTP ${res.status}';
+        throw Exception('Schwab chain error: $err');
+      }
       final data = res.data as Map<String, dynamic>;
-      if (data.containsKey('error')) return null;
+      if (data.containsKey('error')) throw Exception('Schwab chain error: ${data['error']}');
       return SchwabOptionsChain.fromJson(data);
     } catch (e) {
       if (e is FunctionException && e.status == 401) throw const SchwabReauthRequiredException();
-      debugPrint('SchwabService.getOptionsChain error: $e');
-      return null;
+      rethrow;
     }
   }
 

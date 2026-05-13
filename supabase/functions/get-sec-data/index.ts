@@ -1,3 +1,5 @@
+import { jsonResponse } from '../_shared/compress.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -22,10 +24,7 @@ Deno.serve(async (req) => {
         const response = await fetch(url)
         const data = await response.json()
 
-        return new Response(JSON.stringify(data), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
-        })
+        return jsonResponse(req, data, corsHeaders)
     } catch (error) {
         return new Response(JSON.stringify({ error: error.message }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
