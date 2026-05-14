@@ -25,7 +25,7 @@ const id = setTimeout(() => controller.abort(), 15000); // 15s timeout
     for (const [k, v] of Object.entries(params as Record<string, string>)) {
       parts.push(`${k}=${v}`)
     }
-    if (requiresKey && apiKey) {
+    if (apiKey) {
       parts.push(`key=${apiKey}`)
     }
 

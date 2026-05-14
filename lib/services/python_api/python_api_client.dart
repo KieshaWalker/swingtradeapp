@@ -32,11 +32,7 @@
 // update the calling widget/provider to use the new response shape.
 // =============================================================================
 // Configure the base URL at build time:
-//   flutter run --dart-define=PYTHON_API_URL=https://swing-options-api-xxx.run.app
-//
-// Falls back to http://localhost:8000 for local dev.
-// On connection error, callers should catch PythonApiException and fall back
-// to local Dart math during the transition period.
+//   flutter run --dart-define=PYTHON_API_URL=https://swing-options-api-wx52beaw5q-uc.a.run.app
 // =============================================================================
 
 import 'dart:async';
@@ -55,7 +51,7 @@ class PythonApiException implements Exception {
 class PythonApiClient {
   static const String _base = String.fromEnvironment(
     'PYTHON_API_URL',
-    defaultValue: 'http://localhost:8000',
+    defaultValue: 'https://swing-options-api-wx52beaw5q-uc.a.run.app',
   );
 
   static final http.Client _http = http.Client();
@@ -121,29 +117,6 @@ class PythonApiClient {
     } catch (_) {
       return false;
     }
-  }
-
-  static Future<Map<String, dynamic>> _get(String path) async {
-    final uri = Uri.parse('$_base$path');
-    final response = await _http
-        .get(uri)
-        .timeout(const Duration(seconds: 10),
-            onTimeout: () =>
-                throw PythonApiException('Request timed out', statusCode: 408));
-    if (response.statusCode != 200) {
-      throw PythonApiException(response.body, statusCode: response.statusCode);
-    }
-    return jsonDecode(response.body) as Map<String, dynamic>;
-  }
-
-  // ── Rates ──────────────────────────────────────────────────────────────────
-
-  /// Returns the live 30-day SOFR average from the backend cache (decimal → pct).
-  static Future<double> getSofr() async {
-    final data = await _get('/jobs/sofr');
-    final rates = data['rates'] as Map<String, dynamic>;
-    final sofr = rates['30-day SOFR avg'] as Map<String, dynamic>;
-    return (sofr['rate_pct'] as num).toDouble();
   }
 
   // ── Black-Scholes ──────────────────────────────────────────────────────────

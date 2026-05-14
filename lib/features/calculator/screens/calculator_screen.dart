@@ -23,6 +23,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
+import '../../../services/fred/fred_service.dart';
 import '../../../services/python_api/python_api_client.dart';
 
 class CalculatorScreen extends StatefulWidget {
@@ -41,8 +42,10 @@ class _CalculatorScreenState extends State<CalculatorScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 9, vsync: this);
-    PythonApiClient.getSofr().then((rate) {
-      if (mounted) setState(() => _liveRate = rate);
+    FredService().getSeries('SOFR30DAYAVG', limit: 1).then((series) {
+      if (mounted && series.observations.isNotEmpty) {
+        setState(() => _liveRate = series.observations.first.value);
+      }
     }).catchError((_) {});
   }
 
