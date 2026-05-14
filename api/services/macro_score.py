@@ -52,7 +52,7 @@ _EQUAL_WEIGHTS: dict[str, float] = {
     "gold_copper":  12.5,
 }
 
-_calibrated_weights: dict[str, float] | None = None
+_calibrated_weights:Optional[dict[str, float]] = None
 
 
 # ── Models ────────────────────────────────────────────────────────────────────

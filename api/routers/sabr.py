@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import math
+from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -27,7 +30,7 @@ class SabrIvResponse(BaseModel):
 
 class SabrCalibrateRequest(BaseModel):
     ticker: str
-    obs_date: str | None = None
+    obs_date: Optional[str] = None
     spot_price: float = Field(..., gt=0)
     points: list[dict]  # [{strike, dte, callIv?, putIv?}]
     r: float = DEFAULT_R

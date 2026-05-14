@@ -52,7 +52,7 @@ class OptionScore:
 def score(
     contract: dict,
     underlying_price: float,
-    iv_analysis: dict | None = None,
+    iv_analysis:Optional[dict] = None,
 ) -> OptionScore:
     """Score a single option contract 0-100.
 

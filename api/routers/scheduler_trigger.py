@@ -114,6 +114,13 @@ async def greek_snapshots_pull_trigger(request: Request):
     return result
 
 
+@router.get("/sofr")
+def sofr_rate():
+    """Return the current cached risk-free rates — used by the Flutter calculator."""
+    from services.rate_service import get_rates_info
+    return get_rates_info()
+
+
 @router.post("/sofr-pull")
 async def sofr_pull_trigger(request: Request):
     """Job 0 — Fetch live SOFR rate from FRED → update in-process cache.

@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import Optional
 # =============================================================================
 # services/regime_service.py
 # =============================================================================
@@ -49,8 +52,6 @@
 #   • DeltaGex transition (GEX recovering toward flip)
 # =============================================================================
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -72,59 +73,59 @@ class CurrentRegime:
     ticker:             str
     gamma_regime:       str           # "positive" | "negative" | "unknown"
     iv_gex_signal:      str           # classicShortGamma | stableGamma | ...
-    sma10:              float | None
-    sma50:              float | None
-    sma_crossed:        bool  | None  # True = SMA10 > SMA50 (bullish), None = no data
-    vix_current:        float | None
-    vix_10ma:           float | None
-    vix_dev_pct:        float | None  # (VIX − VIX10MA) / VIX10MA × 100
-    vix_rsi:            float | None  # Wilder RSI(14)
-    spot_to_zgl_pct:    float | None  # (spot − ZGL) / spot × 100
-    iv_percentile:      float | None  # IVP 0–100
-    hmm_state:          str   | None  # "low_vol" | "high_vol" | None
-    hmm_probability:    float | None  # posterior probability of current HMM state
-    vol_sma3:                   float | None
-    vol_sma20:                  float | None
-    delta_gex:                  float | None
+    sma10:Optional[float]
+    sma50:Optional[float]
+    sma_crossed:Optional[bool]  # True = SMA10 > SMA50 (bullish), None = no data
+    vix_current:Optional[float]
+    vix_10ma:Optional[float]
+    vix_dev_pct:Optional[float]  # (VIX − VIX10MA) / VIX10MA × 100
+    vix_rsi:Optional[float]  # Wilder RSI(14)
+    spot_to_zgl_pct:Optional[float]  # (spot − ZGL) / spot × 100
+    iv_percentile:Optional[float]  # IVP 0–100
+    hmm_state:Optional[str]  # "low_vol" | "high_vol"Optional[]
+    hmm_probability:Optional[float]  # posterior probability of current HMM state
+    vol_sma3:Optional[float]
+    vol_sma20:Optional[float]
+    delta_gex:Optional[float]
     strategy_bias:              StrategyBias
     signals:                    list[str] = field(default_factory=list)
     # Institutional-grade context fields
-    vix_term_structure_ratio:   float | None = None
-    vvix_current:               float | None = None
-    vvix_10ma:                  float | None = None
-    spot_to_vt_pct:             float | None = None
-    breadth_proxy:              float | None = None
-    price_roc5:                 float | None = None
-    total_gex:                  float | None = None
-    gex_0dte:                   float | None = None
-    gex_0dte_pct:               float | None = None
+    vix_term_structure_ratio:Optional[float] = None
+    vvix_current:Optional[float] = None
+    vvix_10ma:Optional[float] = None
+    spot_to_vt_pct:Optional[float] = None
+    breadth_proxy:Optional[float] = None
+    price_roc5:Optional[float] = None
+    total_gex:Optional[float] = None
+    gex_0dte:Optional[float] = None
+    gex_0dte_pct:Optional[float] = None
 
 
 def classify_regime(
     ticker:              str,
     gamma_regime:        str,
     iv_gex_signal:       str,
-    spot_to_zgl_pct:     float | None,
-    iv_percentile:       float | None,
-    sma10:               float | None,
-    sma50:               float | None,
-    vix_current:         float | None,
-    vix_10ma:            float | None,
-    vix_dev_pct:         float | None,
-    vix_rsi:             float | None,
-    hmm_result:                  HmmRegimeResult | None = None,
-    vol_sma3:                    float | None = None,
-    vol_sma20:                   float | None = None,
-    delta_gex:                   float | None = None,
-    vix_term_structure_ratio:    float | None = None,
-    vvix_current:                float | None = None,
-    vvix_10ma:                   float | None = None,
-    spot_to_vt_pct:              float | None = None,
-    breadth_proxy:               float | None = None,
-    price_roc5:                  float | None = None,
-    total_gex:                   float | None = None,
-    gex_0dte:                    float | None = None,
-    gex_0dte_pct:                float | None = None,
+    spot_to_zgl_pct:Optional[float],
+    iv_percentile:Optional[float],
+    sma10:Optional[float],
+    sma50:Optional[float],
+    vix_current:Optional[float],
+    vix_10ma:Optional[float],
+    vix_dev_pct:Optional[float],
+    vix_rsi:Optional[float],
+    hmm_result:Optional[HmmRegimeResult] = None,
+    vol_sma3:Optional[float] = None,
+    vol_sma20:Optional[float] = None,
+    delta_gex:Optional[float] = None,
+    vix_term_structure_ratio:Optional[float] = None,
+    vvix_current:Optional[float] = None,
+    vvix_10ma:Optional[float] = None,
+    spot_to_vt_pct:Optional[float] = None,
+    breadth_proxy:Optional[float] = None,
+    price_roc5:Optional[float] = None,
+    total_gex:Optional[float] = None,
+    gex_0dte:Optional[float] = None,
+    gex_0dte_pct:Optional[float] = None,
 ) -> CurrentRegime:
     """Classify the current market regime and return a StrategyBias."""
     signals: list[str] = []
@@ -143,7 +144,7 @@ def classify_regime(
 
     # ── SMA cross: distinguish bearish (False) from no data (None) ───────────
     if sma10 is not None and sma50 is not None:
-        sma_crossed: bool | None = sma10 > sma50
+        sma_crossed:Optional[bool] = sma10 > sma50
     else:
         sma_crossed = None
 
@@ -557,7 +558,7 @@ def classify_regime(
 
 def _append_scope_guard_signal(
     signals: list[str],
-    total_gex: float | None,
+    total_gex:Optional[float],
 ) -> None:
     if total_gex is not None and abs(total_gex) < _MIN_TOTAL_GEX_USD:
         abs_m = abs(total_gex) / 1_000_000
@@ -569,7 +570,7 @@ def _append_scope_guard_signal(
 
 def _append_0dte_signal(
     signals: list[str],
-    gex_0dte_pct: float | None,
+    gex_0dte_pct:Optional[float],
 ) -> None:
     if gex_0dte_pct is None:
         return
@@ -587,7 +588,7 @@ def _append_0dte_signal(
 
 def _append_breadth_signal(
     signals: list[str],
-    breadth_proxy: float | None,
+    breadth_proxy:Optional[float],
 ) -> None:
     if breadth_proxy is None:
         return
@@ -605,8 +606,8 @@ def _append_breadth_signal(
 
 def _append_volume_signal(
     signals: list[str],
-    vol_sma3: float | None,
-    vol_sma20: float | None,
+    vol_sma3:Optional[float],
+    vol_sma20:Optional[float],
 ) -> None:
     """Append a volume context signal. Called unconditionally."""
     if vol_sma3 is not None and vol_sma20 is not None and vol_sma20 > 0:
@@ -627,7 +628,7 @@ def _append_volume_signal(
 
 def _append_delta_gex_signal(
     signals: list[str],
-    delta_gex: float | None,
+    delta_gex:Optional[float],
     gamma_regime: str,
 ) -> None:
     """
@@ -714,11 +715,11 @@ def _make(
     )
 
 
-def _fmt(v: float | None) -> str:
+def _fmt(v:Optional[float]) -> str:
     return f"{v:.2f}" if v is not None else "—"
 
 
-def compute_wilder_rsi(closes: list[float], period: int = 14) -> float | None:
+def compute_wilder_rsi(closes: list[float], period: int = 14) ->Optional[float]:
     """Wilder smoothed RSI (same formula as Dart _computeVixRsi)."""
     if len(closes) < period + 1:
         return None

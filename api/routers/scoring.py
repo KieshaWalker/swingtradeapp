@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
@@ -12,13 +13,13 @@ router = APIRouter()
 class ScoreRequest(BaseModel):
     contract: dict        # Schwab option contract dict (IV in percent)
     underlying_price: float = Field(..., gt=0)
-    iv_analysis: dict | None = None
+    iv_analysis:Optional[dict] = None
 
 
 class RankRequest(BaseModel):
     chain: dict
     underlying_price: float = Field(..., gt=0)
-    iv_analysis: dict | None = None
+    iv_analysis:Optional[dict] = None
     top_n: int = 10
 
 

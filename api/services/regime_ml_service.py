@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import numpy as np
 
@@ -36,8 +36,8 @@ log = logging.getLogger(__name__)
 # Populated by load_trained_model() on API startup or after /regime/train.
 # Shape: callable(features: list[float]) -> (flip_prob: float, score: float)
 # or None when no trained model is available.
-_inference_fn: Callable[[list[float]], tuple[float, float]] | None = None
-_model_meta:   dict | None = None   # stored row metadata (auc_roc, trained_at, …)
+_inference_fn:Optional[Callable[[list[float]], tuple[float, float]]] = None
+_model_meta:Optional[dict] = None   # stored row metadata (auc_roc, trained_at, …)
 
 
 def load_trained_model(supabase_client) -> bool:
@@ -111,21 +111,21 @@ _REGIME_DURATION_ALERT_DAYS = 15
 
 @dataclass
 class RegimeFeatures:
-    spot_to_zgl_pct:          float | None  # latest value
-    spot_to_zgl_trend:        float | None  # linear slope over last 5 obs (% pts/day)
-    ivp:                      float | None
-    ivp_trend:                float | None  # slope over last 5 obs
-    hmm_state:                str   | None  # "low_vol" | "high_vol"
-    hmm_probability:          float | None
-    sma_aligned:              bool  | None  # True = SMA10 > SMA50
-    vix_dev_pct:              float | None
+    spot_to_zgl_pct:Optional[float]  # latest value
+    spot_to_zgl_trend:Optional[float]  # linear slope over last 5 obs (% pts/day)
+    ivp:Optional[float]
+    ivp_trend:Optional[float]  # slope over last 5 obs
+    hmm_state:Optional[str]  # "low_vol" | "high_vol"
+    hmm_probability:Optional[float]
+    sma_aligned:Optional[bool]  # True = SMA10 > SMA50
+    vix_dev_pct:Optional[float]
     regime_duration_days:     int           # consecutive days in current regime
     # gate-derived features (added with 14-feature ML expansion)
-    vix_term_structure_ratio: float | None  # VIX/VIX3M; >1 = backwardation
-    spot_to_vt_pct:           float | None  # distance from Volatility Trigger
-    breadth_proxy:            float | None  # RSP/SPY return ratio z-score
-    gex_0dte_pct:             float | None  # pct of total GEX from 0DTE options
-    price_roc5:               float | None  # 5-day price rate-of-change (%)
+    vix_term_structure_ratio:Optional[float]  # VIX/VIX3M; >1 = backwardation
+    spot_to_vt_pct:Optional[float]  # distance from Volatility Trigger
+    breadth_proxy:Optional[float]  # RSP/SPY return ratio z-score
+    gex_0dte_pct:Optional[float]  # pct of total GEX from 0DTE options
+    price_roc5:Optional[float]  # 5-day price rate-of-change (%)
 
 
 @dataclass
@@ -139,15 +139,15 @@ class TickerRegimeResult:
     features:          RegimeFeatures
     strategy_bias:     str
     signals:           list[str]
-    last_updated:      str | None
+    last_updated:Optional[str]
     scoring_method:    str     # "supervised_logistic" | "supervised_xgboost" | "heuristic"
 
 
 @dataclass
 class ModelMetadata:
     available:    bool
-    model_type:   str | None  # "logistic" | "xgboost"
-    trained_at:   str | None
+    model_type:Optional[str]  # "logistic" | "xgboost"
+    trained_at:Optional[str]
     n_samples:    int
     n_positive:   int
     auc_roc:      float
@@ -158,12 +158,12 @@ class ModelMetadata:
 
 @dataclass
 class MarketContext:
-    spy_regime:        dict[str, Any] | None
-    vix_state:         str | None
-    vix_current:       float | None
-    vix_dev_pct:       float | None
-    vix_hmm_prob:      float | None   # HMM posterior probability for current state
-    vix_rsi:           float | None   # Wilder RSI(14) on VIX closes
+    spy_regime:Optional[dict[str, Any]]
+    vix_state:Optional[str]
+    vix_current:Optional[float]
+    vix_dev_pct:Optional[float]
+    vix_hmm_prob:Optional[float]   # HMM posterior probability for current state
+    vix_rsi:Optional[float]   # Wilder RSI(14) on VIX closes
 
 
 @dataclass
@@ -195,8 +195,8 @@ def analyze_all_tickers(supabase_client) -> MlAnalysisResult:
         by_ticker[t].sort(key=lambda r: r.get("obs_date", ""))
 
     results: list[TickerRegimeResult] = []
-    spy_row:  dict | None = None
-    any_row:  dict | None = None   # fallback for VIX fields when SPY not watched
+    spy_row:Optional[dict] = None
+    any_row:Optional[dict] = None   # fallback for VIX fields when SPY not watched
 
     for ticker, history in by_ticker.items():
         result = _score_ticker(ticker, history, _inference_fn)
@@ -268,7 +268,7 @@ def _fetch_snapshots(supabase_client) -> list[dict]:
 def _score_ticker(
     ticker: str,
     history: list[dict],
-    inference_fn: Callable | None,
+    inference_fn:Optional[Callable],
 ) -> TickerRegimeResult:
     if not history:
         return _unknown_result(ticker)
@@ -347,7 +347,7 @@ def _extract_features(history: list[dict], current_regime: str) -> RegimeFeature
     gex_0dte_pct             = _safe_float(latest, "gex_0dte_pct")
     price_roc5               = _safe_float(latest, "price_roc5")
     if sma10 is not None and sma50 is not None:
-        sma_aligned: bool | None = sma10 > sma50
+        sma_aligned:Optional[bool] = sma10 > sma50
     else:
         sma_aligned = None
 
@@ -564,8 +564,8 @@ def _ml_signals(
 # ---------------------------------------------------------------------------
 
 def _build_market_context(
-    spy_row: dict | None,
-    vix_row: dict | None = None,
+    spy_row:Optional[dict],
+    vix_row:Optional[dict] = None,
 ) -> MarketContext:
     # VIX fields are market-wide — stored identically on every ticker row.
     # Prefer SPY for them; fall back to any available ticker when SPY isn't watched.
@@ -584,7 +584,7 @@ def _build_market_context(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _safe_float(d: dict, key: str) -> float | None:
+def _safe_float(d: dict, key: str) ->Optional[float]:
     v = d.get(key)
     try:
         return float(v) if v is not None else None

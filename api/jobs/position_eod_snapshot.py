@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # jobs/position_eod_snapshot.py
@@ -80,8 +81,8 @@ async def run_position_eod_snapshot() -> dict:
 
             for leg in ticker_legs:
                 try:
-                    expiry: str | None = leg.get("expiry")
-                    strike: float | None = leg.get("strike")
+                    expiry:Optional[str] = leg.get("expiry")
+                    strike:Optional[float] = leg.get("strike")
                     leg_type: str = leg["type"]  # 'call' or 'put'
 
                     if expiry is None or strike is None:
@@ -115,7 +116,7 @@ async def run_position_eod_snapshot() -> dict:
                     rho = _fany(contract, "rho")
 
                     # Call fair-value API for model prices
-                    fv: dict | None = None
+                    fv:Optional[dict] = None
                     if iv and dte > 0 and mark is not None and spot > 0:
                         try:
                             fv_resp = await client.post(

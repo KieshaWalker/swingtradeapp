@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # services/iv_analytics.py
@@ -157,53 +158,53 @@ class SecondOrderStrike:
 class SkewPoint:
     strike: float
     moneyness: float  # (strike - spot) / spot * 100
-    call_iv: float | None
-    put_iv: float | None
+    call_iv:Optional[float]
+    put_iv:Optional[float]
 
 
 @dataclass
 class IvAnalysisResult:
     ticker: str
     current_iv: float
-    iv52w_high: float | None
-    iv52w_low: float | None
-    iv_rank: float | None
-    iv_percentile: float | None
+    iv52w_high:Optional[float]
+    iv52w_low:Optional[float]
+    iv_rank:Optional[float]
+    iv_percentile:Optional[float]
     rating: IvRating
     history_days: int
-    skew: float | None
-    skew_avg_52w: float | None
-    skew_z_score: float | None
+    skew:Optional[float]
+    skew_avg_52w:Optional[float]
+    skew_z_score:Optional[float]
     skew_curve: list[SkewPoint]
     gex_strikes: list[GexStrike]
-    total_gex: float | None
-    max_gex_strike: float | None
-    put_call_ratio: float | None
+    total_gex:Optional[float]
+    max_gex_strike:Optional[float]
+    put_call_ratio:Optional[float]
     second_order: list[SecondOrderStrike]
-    total_vex: float | None
-    total_cex: float | None
-    total_volga: float | None
-    max_vex_strike: float | None
+    total_vex:Optional[float]
+    total_cex:Optional[float]
+    total_volga:Optional[float]
+    max_vex_strike:Optional[float]
     gamma_regime: GammaRegime
     vanna_regime: VannaRegime
-    zero_gamma_level: float | None
-    spot_to_zero_gamma_pct: float | None
-    delta_gex: float | None
+    zero_gamma_level:Optional[float]
+    spot_to_zero_gamma_pct:Optional[float]
+    delta_gex:Optional[float]
     gamma_slope: GammaSlope
     iv_gex_signal: IvGexSignal
-    put_wall_density: float | None
+    put_wall_density:Optional[float]
     # ── New institutional-grade fields ──────────────────────────────────────────
-    gex_0dte: float | None          # GEX contributed solely by same-day expiries ($M)
-    gex_0dte_pct: float | None      # gex_0dte / |total_gex| × 100
-    volatility_trigger: float | None  # lowest significant positive-GEX support above ZGL
-    spot_to_vt_pct: float | None    # (spot − VT) / spot × 100; <0 = in transition corridor
+    gex_0dte:Optional[float]          # GEX contributed solely by same-day expiries ($M)
+    gex_0dte_pct:Optional[float]      # gex_0dte / |total_gex| × 100
+    volatility_trigger:Optional[float]  # lowest significant positive-GEX support above ZGL
+    spot_to_vt_pct:Optional[float]    # (spot − VT) / spot × 100; <0 = in transition corridor
     rnd: list[RndSlice]             # Breeden-Litzenberger density per DTE; empty if SABR fails
     # ── Vol-of-vol (SABR ν rank) ────────────────────────────────────────────────
-    vvol_nu: float | None           # current SABR ν for ~30 DTE slice
-    vvol_rank: float | None         # 0–100, mirrors IVR formula on ν series
-    vvol_percentile: float | None   # % of prior days with ν below today
-    vvol_rating: str | None         # cheap / fair / elevated / extreme
-    vvol_trend: str | None          # rising / falling / flat
+    vvol_nu:Optional[float]           # current SABR ν for ~30 DTE slice
+    vvol_rank:Optional[float]         # 0–100, mirrors IVR formula on ν series
+    vvol_percentile:Optional[float]   # % of prior days with ν below today
+    vvol_rating:Optional[str]         # cheap / fair / elevated / extreme
+    vvol_trend:Optional[str]          # rising / falling / flat
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -211,7 +212,7 @@ class IvAnalysisResult:
 def analyse(
     chain: dict,          # Schwab options chain JSON (from Edge Function)
     history: list[dict],  # iv_snapshots rows, sorted ascending by date
-    risk_free_rate: float | None = None,
+    risk_free_rate:Optional[float] = None,
 ) -> IvAnalysisResult:
     """Compute all IV analytics from a Schwab chain and historical snapshots.
 
@@ -238,10 +239,10 @@ def analyse(
     atm_iv = chain_vol if chain_vol > 0 else _compute_atm_iv_from_chain(expirations, spot)
 
     # ── IVR & IVP ──────────────────────────────────────────────────────────────
-    iv_rank: float | None = None
-    iv_percentile: float | None = None
-    iv52w_high: float | None = None
-    iv52w_low: float | None = None
+    iv_rank:Optional[float] = None
+    iv_percentile:Optional[float] = None
+    iv52w_high:Optional[float] = None
+    iv52w_low:Optional[float] = None
     rating = IvRating.no_data
 
     if len(history) >= IV_MIN_HISTORY_IVR:
@@ -259,8 +260,8 @@ def analyse(
     skew_curve = _compute_skew_curve(exp, spot) if exp else []
     skew_val = _summarise_skew(skew_curve) if exp else None
 
-    skew_avg_52w: float | None = None
-    skew_z_score: float | None = None
+    skew_avg_52w:Optional[float] = None
+    skew_z_score:Optional[float] = None
     if history:
         skew_history = [float(s["skew"]) for s in history if s.get("skew") is not None]
         if len(skew_history) >= IV_MIN_HISTORY_SKEW:
@@ -272,9 +273,9 @@ def analyse(
 
     # ── GEX ────────────────────────────────────────────────────────────────────
     gex_strikes = _compute_gex(expirations, spot)
-    total_gex: float | None = None
-    max_gex_strike: float | None = None
-    put_call_ratio: float | None = None
+    total_gex:Optional[float] = None
+    max_gex_strike:Optional[float] = None
+    put_call_ratio:Optional[float] = None
 
     if gex_strikes:
         total_gex = sum(g.dealer_gex(spot) for g in gex_strikes)
@@ -292,8 +293,8 @@ def analyse(
 
     gex_strikes_longer = _compute_gex(exp_longer, spot) if exp_longer else []
 
-    gex_0dte: float | None = None
-    gex_0dte_pct: float | None = None
+    gex_0dte:Optional[float] = None
+    gex_0dte_pct:Optional[float] = None
     if exp_0dte:
         gex_strikes_0dte = _compute_gex(exp_0dte, spot)
         if gex_strikes_0dte:
@@ -303,10 +304,10 @@ def analyse(
 
     # ── Second-order Greeks ────────────────────────────────────────────────────
     second_order = _compute_second_order(expirations, spot, r)
-    total_vex: float | None = None
-    total_cex: float | None = None
-    total_volga: float | None = None
-    max_vex_strike: float | None = None
+    total_vex:Optional[float] = None
+    total_cex:Optional[float] = None
+    total_volga:Optional[float] = None
+    max_vex_strike:Optional[float] = None
 
     if second_order:
         total_vex = sum(s.dealer_vex for s in second_order)
@@ -335,21 +336,21 @@ def analyse(
     # swing positioning. Longer-dated GEX gives a cleaner support/resistance picture.
     zgl_source = gex_strikes_longer if gex_strikes_longer else gex_strikes
     zero_gamma_level = _compute_zero_gamma_level(zgl_source, spot)
-    spot_to_zero_gamma_pct: float | None = None
+    spot_to_zero_gamma_pct:Optional[float] = None
     if zero_gamma_level is not None and spot > 0:
         spot_to_zero_gamma_pct = (spot - zero_gamma_level) / spot * 100
 
     # Volatility Trigger — last meaningful positive-GEX support wall above ZGL.
     # The VT/ZGL corridor is the "transition zone" where bearish feedback loops
     # are latent but not yet ignited (SpotGamma methodology).
-    volatility_trigger: float | None = None
-    spot_to_vt_pct: float | None = None
+    volatility_trigger:Optional[float] = None
+    spot_to_vt_pct:Optional[float] = None
     if zero_gamma_level is not None and spot > 0:
         volatility_trigger = _compute_volatility_trigger(zgl_source, spot, zero_gamma_level)
         if volatility_trigger is not None:
             spot_to_vt_pct = (spot - volatility_trigger) / spot * 100
 
-    delta_gex: float | None = None
+    delta_gex:Optional[float] = None
     if total_gex is not None and len(history) >= 2:
         with_gex = [s for s in history if s.get("total_gex") is not None]
         if with_gex:
@@ -363,11 +364,11 @@ def analyse(
     # ── Vol-of-vol rank ────────────────────────────────────────────────────────
     # Pick the ~30 DTE RND slice's SABR ν as today's vol-of-vol reading.
     # Use vvol_nu from prior iv_snapshots rows as the historical ν series.
-    vvol_nu: float | None = None
-    vvol_rank_val: float | None = None
-    vvol_percentile_val: float | None = None
-    vvol_rating_val: str | None = None
-    vvol_trend_val: str | None = None
+    vvol_nu:Optional[float] = None
+    vvol_rank_val:Optional[float] = None
+    vvol_percentile_val:Optional[float] = None
+    vvol_rating_val:Optional[str] = None
+    vvol_trend_val:Optional[str] = None
     if rnd_slices:
         atm_slice = min(rnd_slices, key=lambda s: abs(s.dte - 30))
         nu_current = atm_slice.sabr_nu
@@ -455,7 +456,7 @@ def _compute_atm_iv_from_chain(expirations: list[dict], spot: float) -> float:
 
 # ── Expiration picker ─────────────────────────────────────────────────────────
 
-def _pick_expiration(expirations: list[dict]) -> dict | None:
+def _pick_expiration(expirations: list[dict]) ->Optional[dict]:
     if not expirations:
         return None
     preferred = [e for e in expirations if int(e.get("dte", 0)) >= IV_MIN_DTE_PREF]
@@ -495,7 +496,7 @@ def _compute_skew_curve(exp: dict, spot: float) -> list[SkewPoint]:
     return points
 
 
-def _summarise_skew(curve: list[SkewPoint]) -> float | None:
+def _summarise_skew(curve: list[SkewPoint]) ->Optional[float]:
     # 1. Use filter/list comprehensions with clear boundaries
     # Note: Ensure IV_OTM_MIN_PCT is defined in your scope
     otm_puts = [p.put_iv for p in curve if p.moneyness < -IV_OTM_MIN_PCT * 100 and p.put_iv is not None]
@@ -557,7 +558,7 @@ def _compute_gex(expirations: list[dict], spot: float) -> list[GexStrike]:
 
 # ── Zero Gamma Level ──────────────────────────────────────────────────────────
 
-def _compute_zero_gamma_level(gex_strikes: list[GexStrike], spot: float) -> float | None:
+def _compute_zero_gamma_level(gex_strikes: list[GexStrike], spot: float) ->Optional[float]:
     if not gex_strikes:
         return None
     sorted_strikes = sorted(gex_strikes, key=lambda g: g.strike)
@@ -582,7 +583,7 @@ def _compute_zero_gamma_level(gex_strikes: list[GexStrike], spot: float) -> floa
 
 def _compute_volatility_trigger(
     gex_strikes: list[GexStrike], spot: float, zgl: float
-) -> float | None:
+) ->Optional[float]:
     """Derive the Volatility Trigger — lowest significant positive-GEX support above ZGL.
 
     Scans strikes between ZGL and spot. The VT is the floor of meaningful positive
@@ -646,7 +647,7 @@ def _compute_gamma_slope(gex_strikes: list[GexStrike], spot: float) -> GammaSlop
 
 # ── IV / GEX Signal ───────────────────────────────────────────────────────────
 
-def _compute_iv_gex_signal(gamma_regime: GammaRegime, iv_rank: float | None) -> IvGexSignal:
+def _compute_iv_gex_signal(gamma_regime: GammaRegime, iv_rank:Optional[float]) -> IvGexSignal:
     if gamma_regime == GammaRegime.unknown:
         return IvGexSignal.unknown
     if iv_rank is None:
@@ -659,7 +660,7 @@ def _compute_iv_gex_signal(gamma_regime: GammaRegime, iv_rank: float | None) -> 
 
 # ── Put Wall Density ───────────────────────────────────────────────────────────
 
-def _compute_put_wall_density(gex_strikes: list[GexStrike], spot: float) -> float | None:
+def _compute_put_wall_density(gex_strikes: list[GexStrike], spot: float) ->Optional[float]:
     if not gex_strikes or spot == 0:
         return None
     band = [s for s in gex_strikes if abs(s.strike - spot) / spot < IV_PUT_WALL_BAND_PCT]
@@ -684,7 +685,7 @@ def _second_order_greeks(
     gamma: float,        # from Schwab
     vega: float,         # from Schwab
     r: float,
-    expiry_date: str | None = None,
+    expiry_date:Optional[str] = None,
 ) -> tuple[float, float, float]:
     """Returns (vanna, charm, volga). Matches IvAnalyticsService._secondOrderGreeks()."""
     sigma = sigma_pct / 100

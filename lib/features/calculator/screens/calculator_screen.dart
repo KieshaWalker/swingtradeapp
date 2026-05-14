@@ -35,11 +35,15 @@ class CalculatorScreen extends StatefulWidget {
 class _CalculatorScreenState extends State<CalculatorScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
+  double? _liveRate;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 9, vsync: this);
+    PythonApiClient.getSofr().then((rate) {
+      if (mounted) setState(() => _liveRate = rate);
+    }).catchError((_) {});
   }
 
   @override
@@ -80,13 +84,13 @@ class _CalculatorScreenState extends State<CalculatorScreen>
         children: [
           const _PnLEstimator(),
           const _PositionSizer(),
-          const _BlackScholesTab(),
+          _BlackScholesTab(initialRate: _liveRate),
           const _SABRTab(),
-          const _HestonTab(),
-          const _ForwardPriceTab(),
-          const _TheoreticalPriceTab(),
+          _HestonTab(initialRate: _liveRate),
+          _ForwardPriceTab(initialRate: _liveRate),
+          _TheoreticalPriceTab(initialRate: _liveRate),
           const _IntrinsicValueTab(),
-          const _ImpliedVolTab(),
+          _ImpliedVolTab(initialRate: _liveRate),
         ],
       ),
     );
@@ -512,7 +516,8 @@ class _PositionSizerState extends State<_PositionSizer> {
 // Tab 3 — Black-Scholes
 // =============================================================================
 class _BlackScholesTab extends StatefulWidget {
-  const _BlackScholesTab();
+  const _BlackScholesTab({this.initialRate});
+  final double? initialRate;
 
   @override
   State<_BlackScholesTab> createState() => _BlackScholesTabState();
@@ -528,6 +533,14 @@ class _BlackScholesTabState extends State<_BlackScholesTab> {
 
   bool _loading = false;
   Map<String, dynamic>? _priceResult;
+
+  @override
+  void didUpdateWidget(covariant _BlackScholesTab old) {
+    super.didUpdateWidget(old);
+    if (widget.initialRate != null && old.initialRate == null) {
+      _rCtrl.text = widget.initialRate!.toStringAsFixed(2);
+    }
+  }
   Map<String, dynamic>? _greeksResult;
 
   Future<void> _calculate() async {
@@ -995,7 +1008,8 @@ class _SABRTabState extends State<_SABRTab> {
 // Tab 5 — Heston
 // =============================================================================
 class _HestonTab extends StatefulWidget {
-  const _HestonTab();
+  const _HestonTab({this.initialRate});
+  final double? initialRate;
 
   @override
   State<_HestonTab> createState() => _HestonTabState();
@@ -1012,6 +1026,14 @@ class _HestonTabState extends State<_HestonTab> {
   final _rhoCtrl    = TextEditingController(text: '-0.70');
   final _v0Ctrl     = TextEditingController(text: '0.04');
   bool _isCall = true;
+
+  @override
+  void didUpdateWidget(covariant _HestonTab old) {
+    super.didUpdateWidget(old);
+    if (widget.initialRate != null && old.initialRate == null) {
+      _rCtrl.text = widget.initialRate!.toStringAsFixed(2);
+    }
+  }
 
   bool _loading = false;
   Map<String, dynamic>? _result;
@@ -1385,7 +1407,8 @@ class _FellerBadge extends StatelessWidget {
 // Tab 6 — Forward Price
 // =============================================================================
 class _ForwardPriceTab extends StatefulWidget {
-  const _ForwardPriceTab();
+  const _ForwardPriceTab({this.initialRate});
+  final double? initialRate;
   @override
   State<_ForwardPriceTab> createState() => _ForwardPriceTabState();
 }
@@ -1395,6 +1418,14 @@ class _ForwardPriceTabState extends State<_ForwardPriceTab> {
   final _rCtrl    = TextEditingController(text: '4.33');
   final _qCtrl    = TextEditingController(text: '0');
   final _dteCtrl  = TextEditingController(text: '30');
+
+  @override
+  void didUpdateWidget(covariant _ForwardPriceTab old) {
+    super.didUpdateWidget(old);
+    if (widget.initialRate != null && old.initialRate == null) {
+      _rCtrl.text = widget.initialRate!.toStringAsFixed(2);
+    }
+  }
 
   double? get _spot => double.tryParse(_spotCtrl.text);
   double? get _r    => double.tryParse(_rCtrl.text);
@@ -1539,7 +1570,8 @@ class _ForwardPriceTabState extends State<_ForwardPriceTab> {
 // Tab 7 — Theoretical Price (Fair Value)
 // =============================================================================
 class _TheoreticalPriceTab extends StatefulWidget {
-  const _TheoreticalPriceTab();
+  const _TheoreticalPriceTab({this.initialRate});
+  final double? initialRate;
   @override
   State<_TheoreticalPriceTab> createState() => _TheoreticalPriceTabState();
 }
@@ -1552,6 +1584,14 @@ class _TheoreticalPriceTabState extends State<_TheoreticalPriceTab> {
   final _midCtrl    = TextEditingController(text: '2.50');
   final _rCtrl      = TextEditingController(text: '4.33');
   bool _isCall = true;
+
+  @override
+  void didUpdateWidget(covariant _TheoreticalPriceTab old) {
+    super.didUpdateWidget(old);
+    if (widget.initialRate != null && old.initialRate == null) {
+      _rCtrl.text = widget.initialRate!.toStringAsFixed(2);
+    }
+  }
 
   bool _loading = false;
   Map<String, dynamic>? _result;
@@ -2199,7 +2239,8 @@ class _InfoButton extends StatelessWidget {
 // Tab 9 — Implied Volatility Solver
 // =============================================================================
 class _ImpliedVolTab extends StatefulWidget {
-  const _ImpliedVolTab();
+  const _ImpliedVolTab({this.initialRate});
+  final double? initialRate;
 
   @override
   State<_ImpliedVolTab> createState() => _ImpliedVolTabState();
@@ -2212,6 +2253,14 @@ class _ImpliedVolTabState extends State<_ImpliedVolTab> {
   final _dteCtrl         = TextEditingController(text: '30');
   final _rCtrl           = TextEditingController(text: '4.33');
   bool _isCall = true;
+
+  @override
+  void didUpdateWidget(covariant _ImpliedVolTab old) {
+    super.didUpdateWidget(old);
+    if (widget.initialRate != null && old.initialRate == null) {
+      _rCtrl.text = widget.initialRate!.toStringAsFixed(2);
+    }
+  }
 
   bool _loading = false;
   Map<String, dynamic>? _result;

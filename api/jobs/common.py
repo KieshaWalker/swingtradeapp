@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # jobs/common.py
@@ -39,7 +40,7 @@ def get_tickers(db) -> list[dict]:
 
 async def fetch_schwab_chain(
     client: httpx.AsyncClient, ticker: str, strike_count: int = 40
-) -> dict | None:
+) ->Optional[dict]:
     """Fetch options chain via the Supabase edge function. Returns None on failure."""
     try:
         resp = await client.post(
@@ -80,7 +81,7 @@ async def fetch_schwab_closes(
 
 # ── Scalar field extractors ───────────────────────────────────────────────────
 
-def _fgt0(contract: dict | None, key: str) -> float | None:
+def _fgt0(contract:Optional[dict], key: str) ->Optional[float]:
     if contract is None:
         return None
     v = contract.get(key)
@@ -91,7 +92,7 @@ def _fgt0(contract: dict | None, key: str) -> float | None:
         return None
 
 
-def _fne0(contract: dict | None, key: str) -> float | None:
+def _fne0(contract:Optional[dict], key: str) ->Optional[float]:
     if contract is None:
         return None
     v = contract.get(key)
@@ -102,7 +103,7 @@ def _fne0(contract: dict | None, key: str) -> float | None:
         return None
 
 
-def _fany(contract: dict | None, key: str) -> float | None:
+def _fany(contract:Optional[dict], key: str) ->Optional[float]:
     if contract is None:
         return None
     v = contract.get(key)
@@ -112,7 +113,7 @@ def _fany(contract: dict | None, key: str) -> float | None:
         return None
 
 
-def _igt0(contract: dict | None, key: str) -> int | None:
+def _igt0(contract:Optional[dict], key: str) ->Optional[int]:
     if contract is None:
         return None
     v = contract.get(key)
@@ -123,7 +124,7 @@ def _igt0(contract: dict | None, key: str) -> int | None:
         return None
 
 
-def _pct_to_dec(value) -> float | None:
+def _pct_to_dec(value) ->Optional[float]:
     if value is None:
         return None
     try:
@@ -132,7 +133,7 @@ def _pct_to_dec(value) -> float | None:
         return None
 
 
-def _atm_contract(contracts: list[dict]) -> dict | None:
+def _atm_contract(contracts: list[dict]) ->Optional[dict]:
     if not contracts:
         return None
     with_delta = [c for c in contracts if c.get("delta") and c["delta"] != 0]

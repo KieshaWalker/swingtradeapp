@@ -11,7 +11,7 @@
 # =============================================================================
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 # ── Signal constants ──────────────────────────────────────────────────────────
 
@@ -150,7 +150,7 @@ def interpret_greek_grid(
         (c["strike_band"], c["expiry_bucket"]): c for c in latest_cells
     }
 
-    def cell(band: str, bucket: str) -> dict | None:
+    def cell(band: str, bucket: str) ->Optional[dict]:
         return cell_map.get((band, bucket))
 
     # ── Build per-metric historical series for percentile ranking ─────────────
@@ -254,7 +254,7 @@ def interpret_greek_grid(
                 ))
 
     # 2. Gamma Peak
-    peak_cell: dict | None = None
+    peak_cell:Optional[dict] = None
     peak_gamma = 0.0
     all_bands   = [ATM, OTM, "itm", "deep_itm", "deep_otm"]
     all_buckets = [WEEKLY, NEAR_MONTHLY, MONTHLY, FAR_MONTHLY, QUARTERLY]
@@ -495,7 +495,7 @@ def interpret_greek_grid(
         first_seg = atm_series[:mid]
         last_seg  = atm_series[mid:] or atm_series[-1:]
 
-        def _savg(seg: list[dict], key: str) -> float | None:
+        def _savg(seg: list[dict], key: str) ->Optional[float]:
             vals = [s[key] for s in seg if s.get(key) is not None]
             return sum(vals) / len(vals) if vals else None
 

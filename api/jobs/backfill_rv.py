@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # jobs/backfill_rv.py
@@ -40,7 +41,7 @@ def _epoch_ms(d: date) -> int:
     return int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def _compute_rv(closes: list[float]) -> float | None:
+def _compute_rv(closes: list[float]) ->Optional[float]:
     """Annualized RV from a window of closes using Bessel correction."""
     if len(closes) < 2:
         return None

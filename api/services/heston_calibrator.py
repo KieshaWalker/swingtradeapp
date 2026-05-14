@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # services/heston_calibrator.py
@@ -165,8 +166,8 @@ def calibrate_heston(
     surface_points: list[dict],
     spot: float,
     r: float = DEFAULT_R,
-    atm_iv: float | None = None,
-) -> HestonCalibResult | None:
+    atm_iv:Optional[float] = None,
+) ->Optional[HestonCalibResult]:
     """Fit Heston {κ, θ, ξ, ρ, V₀} to a vol-surface snapshot.
 
     Args:

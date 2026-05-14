@@ -91,7 +91,7 @@ def analyze(
     max_budget: float,
     contracts: int = 1,
     days_to_target: int = 0,
-    iv_analysis: dict | None = None,
+    iv_analysis:Optional[dict] = None,
 ) -> OptionDecisionResult:
     """Full decision analysis for one contract.
 
@@ -270,7 +270,7 @@ def rank_all(
     max_budget: float,
     contracts: int = 1,
     days_to_target: int = 0,
-    iv_analysis: dict | None = None,
+    iv_analysis:Optional[dict] = None,
     top_n: int = 5,
 ) -> list[OptionDecisionResult]:
     """Rank all contracts in a chain and return top N by composite rank.

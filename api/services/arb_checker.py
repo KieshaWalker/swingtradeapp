@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # services/arb_checker.py
@@ -84,7 +85,7 @@ class ArbCheckResult:
         return max((abs(v.convexity_value) for v in self.butterfly_violations), default=0.0)
 
 
-def _otm_iv(point: dict, spot: float) -> float | None:
+def _otm_iv(point: dict, spot: float) ->Optional[float]:
     """OTM convention: call IV for K≥spot, put IV for K<spot."""
     strike = float(point.get("strike") or 0)
     if strike >= spot:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # jobs/regime_pull.py
@@ -85,15 +86,15 @@ async def run_regime_pull() -> dict:
         )
 
         # VIX metrics
-        vix_current:              float | None = None
-        vix_10ma:                 float | None = None
-        vix_dev_pct:              float | None = None
-        vix_rsi:                  float | None = None
-        vix_term_structure_ratio: float | None = None
-        vvix_current:             float | None = None
-        vvix_10ma:                float | None = None
+        vix_current:Optional[float] = None
+        vix_10ma:Optional[float] = None
+        vix_dev_pct:Optional[float] = None
+        vix_rsi:Optional[float] = None
+        vix_term_structure_ratio:Optional[float] = None
+        vvix_current:Optional[float] = None
+        vvix_10ma:Optional[float] = None
         hmm_result = None
-        breadth_proxy: float | None = None
+        breadth_proxy:Optional[float] = None
 
         if vix_closes:
             vix_current = vix_closes[-1]
@@ -178,11 +179,11 @@ async def run_regime_pull() -> dict:
                 clean_c = [c for c in closes  if c and c > 0]
                 clean_v = [v for v in volumes if v and v > 0]
 
-                sma10:     float | None = sum(clean_c[-10:]) / 10  if len(clean_c) >= 10  else None
-                sma50:     float | None = sum(clean_c[-50:]) / 50  if len(clean_c) >= 50  else None
-                vol_sma3:  float | None = sum(clean_v[-3:])  / 3   if len(clean_v) >= 3   else None
-                vol_sma20: float | None = sum(clean_v[-20:]) / 20  if len(clean_v) >= 20  else None
-                price_roc5: float | None = None
+                sma10:Optional[float] = sum(clean_c[-10:]) / 10  if len(clean_c) >= 10  else None
+                sma50:Optional[float] = sum(clean_c[-50:]) / 50  if len(clean_c) >= 50  else None
+                vol_sma3:Optional[float] = sum(clean_v[-3:])  / 3   if len(clean_v) >= 3   else None
+                vol_sma20:Optional[float] = sum(clean_v[-20:]) / 20  if len(clean_v) >= 20  else None
+                price_roc5:Optional[float] = None
                 if len(clean_c) >= 6 and clean_c[-6] > 0:
                     price_roc5 = (clean_c[-1] - clean_c[-6]) / clean_c[-6] * 100
 

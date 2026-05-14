@@ -123,6 +123,29 @@ class PythonApiClient {
     }
   }
 
+  static Future<Map<String, dynamic>> _get(String path) async {
+    final uri = Uri.parse('$_base$path');
+    final response = await _http
+        .get(uri)
+        .timeout(const Duration(seconds: 10),
+            onTimeout: () =>
+                throw PythonApiException('Request timed out', statusCode: 408));
+    if (response.statusCode != 200) {
+      throw PythonApiException(response.body, statusCode: response.statusCode);
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  // ── Rates ──────────────────────────────────────────────────────────────────
+
+  /// Returns the live 30-day SOFR average from the backend cache (decimal → pct).
+  static Future<double> getSofr() async {
+    final data = await _get('/jobs/sofr');
+    final rates = data['rates'] as Map<String, dynamic>;
+    final sofr = rates['30-day SOFR avg'] as Map<String, dynamic>;
+    return (sofr['rate_pct'] as num).toDouble();
+  }
+
   // ── Black-Scholes ──────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> bsPrice({

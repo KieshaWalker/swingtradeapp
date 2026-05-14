@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 import httpx
 from supabase import Client, create_client
@@ -15,7 +16,7 @@ from .config import settings
 #   api/services/*                 -> any Supabase-backed feature implementation
 # =============================================================================
 
-_client: Client | None = None
+_client:Optional[Client] = None
 
 
 def get_supabase() -> Client:

@@ -41,7 +41,7 @@ import logging
 import math
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
@@ -140,7 +140,7 @@ def train_and_store(
     return result
 
 
-def load_latest_model(supabase_client) -> dict | None:
+def load_latest_model(supabase_client) ->Optional[dict]:
     """Load the most recent trained model JSON from Supabase.
 
     Returns the raw model_json dict, or None if unavailable.
@@ -232,7 +232,7 @@ def _build_dataset(
     return np.array(X_rows, dtype=float), np.array(y_rows, dtype=int), date_rows
 
 
-def _extract_features_at(history: list[dict], i: int) -> list[float] | None:
+def _extract_features_at(history: list[dict], i: int) ->Optional[list[float]]:
     """Extract feature vector for history[i]. Returns None if too many NaNs."""
     row = history[i]
 
@@ -624,7 +624,7 @@ def _flip_to_score(flip_prob: float, feats: list[float]) -> float:
     return stability * 2.0 - 1.0
 
 
-def build_feature_vector(history: list[dict]) -> list[float] | None:
+def build_feature_vector(history: list[dict]) ->Optional[list[float]]:
     """Build the feature vector for the most recent snapshot in history.
 
     This is the inference-time equivalent of _extract_features_at() used
@@ -683,7 +683,7 @@ def _persist(supabase_client, result: TrainingResult) -> None:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _sf(d: dict, key: str) -> float | None:
+def _sf(d: dict, key: str) ->Optional[float]:
     v = d.get(key)
     try:
         return float(v) if v is not None else None

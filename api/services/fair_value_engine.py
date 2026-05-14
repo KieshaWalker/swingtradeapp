@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # services/fair_value_engine.py
@@ -41,13 +42,13 @@ class FairValueResult:
     edge_bps: float
     sabr_vol: float
     implied_vol: float          # Schwab-supplied IV (decimal)
-    vanna: float | None = None
-    charm: float | None = None
-    volga: float | None = None
-    heston_fair_value: float | None = None   # set when calibrated HestonParams provided
-    computed_iv: float | None = None         # IV back-solved from broker_mid
-    iv_diff_pct: float | None = None         # (computed_iv - implied_vol) × 100 in vol points
-    iv_note: str | None = None               # human-readable explanation for UI
+    vanna:Optional[float] = None
+    charm:Optional[float] = None
+    volga:Optional[float] = None
+    heston_fair_value:Optional[float] = None   # set when calibrated HestonParams provided
+    computed_iv:Optional[float] = None         # IV back-solved from broker_mid
+    iv_diff_pct:Optional[float] = None         # (computed_iv - implied_vol) × 100 in vol points
+    iv_note:Optional[str] = None               # human-readable explanation for UI
     rate_used: float = 0.0                   # actual risk-free rate used in pricing (decimal)
     rate_tenor: str = ""                     # e.g. "3-month T-bill"
 
@@ -59,10 +60,10 @@ def compute(
     days_to_expiry: int,
     is_call: bool,
     broker_mid: float,
-    r: float | None = None,
-    calibrated_rho: float | None = None,
-    calibrated_nu: float | None = None,
-    heston_params: HestonParams | None = None,
+    r:Optional[float] = None,
+    calibrated_rho:Optional[float] = None,
+    calibrated_nu:Optional[float] = None,
+    heston_params:Optional[HestonParams] = None,
 ) -> FairValueResult:
     """Full BS → SABR → Heston pricing pipeline.
 
@@ -113,7 +114,7 @@ def compute(
     sabr_val = bs_price(F, strike, T, r, sabr_vol_, is_call)
 
     # 3a. Heston price — used as model_fair_value when calibrated params available
-    heston_val: float | None = None
+    heston_val:Optional[float] = None
     if heston_params is not None:
         heston_val = heston_price(F, strike, T, r, heston_params, is_call)
 
@@ -133,9 +134,9 @@ def compute(
     )
 
     # IV comparison: back-solve IV from broker_mid and compare to Schwab's feed value
-    computed_iv: float | None = None
-    iv_diff_pct: float | None = None
-    iv_note: str | None = None
+    computed_iv:Optional[float] = None
+    iv_diff_pct:Optional[float] = None
+    iv_note:Optional[str] = None
     if broker_mid > 0.001:
         computed_iv = bs_implied_vol(
             market_price=broker_mid,

@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from typing import Optional
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -40,7 +41,7 @@ class HmmRegimeResult:
     sufficient_data:  bool
 
 
-def classify_vix_regime(vix_closes: list[float]) -> HmmRegimeResult | None:
+def classify_vix_regime(vix_closes: list[float]) ->Optional[HmmRegimeResult]:
     """Fit a 2-state GaussianHMM on VIX closes and return the current regime.
 
     Returns None if hmmlearn is unavailable or there is insufficient data.

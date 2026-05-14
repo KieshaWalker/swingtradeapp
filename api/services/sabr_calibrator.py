@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # services/sabr_calibrator.py
@@ -66,7 +67,7 @@ def calibrate_slice(
     F: float,
     T: float,
     beta: float = SABR_BETA,
-) -> SabrSlice | None:
+) ->Optional[SabrSlice]:
     """Fit SABR (alpha, rho, nu) to market (strike, IV) quotes for one DTE slice.
 
     Matches SabrCalibrator._calibrateSync() objective and NelderMead settings.
@@ -201,7 +202,7 @@ def calibrate_snapshot(
 
 
 
-def _select_iv(point: dict, F: float) -> float | None:
+def _select_iv(point: dict, F: float) ->Optional[float]:
     """OTM convention: call IV for strike >= F, put IV otherwise.
     Falls back to whichever is available (matches SabrCalibrator._selectIv).
     """

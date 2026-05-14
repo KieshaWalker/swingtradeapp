@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # services/rate_service.py
@@ -92,7 +93,7 @@ def get_rates_info() -> dict:
 
 # ── Refresh ───────────────────────────────────────────────────────────────────
 
-async def _fetch_series(client: httpx.AsyncClient, series_id: str, api_key: str) -> tuple[str, float | None, str]:
+async def _fetch_series(client: httpx.AsyncClient, series_id: str, api_key: str) ->Optional[tuple[str, float], str]:
     """Fetch the most recent valid observation for one FRED series.
 
     Returns (series_id, rate_decimal_or_None, obs_date).

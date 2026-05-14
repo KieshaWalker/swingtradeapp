@@ -20,7 +20,7 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Optional
 
 from services.regime_service import classify_regime, CurrentRegime, StrategyBias
 from services.hmm_regime import classify_vix_regime
@@ -41,55 +41,55 @@ class RegimeRequest(BaseModel):
     ticker:             str
     gamma_regime:       str             # "positive" | "negative" | "unknown"
     iv_gex_signal:      str             # classicShortGamma | stableGamma | ...
-    spot_to_zgl_pct:    float | None = None
-    iv_percentile:      float | None = None
-    sma10:              float | None = None
-    sma50:              float | None = None
-    vix_closes:         list[float] | None = None   # if provided, HMM + RSI computed here
-    vix_current:        float | None = None
-    vix_10ma:           float | None = None
-    vix_dev_pct:        float | None = None
-    vix_rsi:            float | None = None
-    vol_sma3:           float | None = None
-    vol_sma20:          float | None = None
+    spot_to_zgl_pct:Optional[float] = None
+    iv_percentile:Optional[float] = None
+    sma10:Optional[float] = None
+    sma50:Optional[float] = None
+    vix_closes:Optional[list[float]] = None   # if provided, HMM + RSI computed here
+    vix_current:Optional[float] = None
+    vix_10ma:Optional[float] = None
+    vix_dev_pct:Optional[float] = None
+    vix_rsi:Optional[float] = None
+    vol_sma3:Optional[float] = None
+    vol_sma20:Optional[float] = None
 
 
 class RegimeResponse(BaseModel):
     ticker:             str
     gamma_regime:       str
     iv_gex_signal:      str
-    sma10:              float | None
-    sma50:              float | None
-    sma_crossed:        bool  | None
-    vix_current:        float | None
-    vix_10ma:           float | None
-    vix_dev_pct:        float | None
-    vix_rsi:            float | None
-    spot_to_zgl_pct:    float | None
-    iv_percentile:      float | None
-    hmm_state:          str   | None
-    hmm_probability:    float | None
-    vol_sma3:           float | None
-    vol_sma20:          float | None
+    sma10:Optional[float]
+    sma50:Optional[float]
+    sma_crossed:Optional[bool]
+    vix_current:Optional[float]
+    vix_10ma:Optional[float]
+    vix_dev_pct:Optional[float]
+    vix_rsi:Optional[float]
+    spot_to_zgl_pct:Optional[float]
+    iv_percentile:Optional[float]
+    hmm_state:Optional[str]
+    hmm_probability:Optional[float]
+    vol_sma3:Optional[float]
+    vol_sma20:Optional[float]
     strategy_bias:      str
     signals:            list[str]
 
 
 class RegimeFeaturesOut(BaseModel):
-    spot_to_zgl_pct:          float | None
-    spot_to_zgl_trend:        float | None
-    ivp:                      float | None
-    ivp_trend:                float | None
-    hmm_state:                str   | None
-    hmm_probability:          float | None
-    sma_aligned:              bool  | None
-    vix_dev_pct:              float | None
+    spot_to_zgl_pct:Optional[float]
+    spot_to_zgl_trend:Optional[float]
+    ivp:Optional[float]
+    ivp_trend:Optional[float]
+    hmm_state:Optional[str]
+    hmm_probability:Optional[float]
+    sma_aligned:Optional[bool]
+    vix_dev_pct:Optional[float]
     regime_duration_days:     int
-    vix_term_structure_ratio: float | None = None
-    spot_to_vt_pct:           float | None = None
-    breadth_proxy:            float | None = None
-    gex_0dte_pct:             float | None = None
-    price_roc5:               float | None = None
+    vix_term_structure_ratio:Optional[float] = None
+    spot_to_vt_pct:Optional[float] = None
+    breadth_proxy:Optional[float] = None
+    gex_0dte_pct:Optional[float] = None
+    price_roc5:Optional[float] = None
 
 
 class TickerRegimeOut(BaseModel):
@@ -102,23 +102,23 @@ class TickerRegimeOut(BaseModel):
     features:        RegimeFeaturesOut
     strategy_bias:   str
     signals:         list[str]
-    last_updated:    str | None
+    last_updated:Optional[str]
     scoring_method:  str
 
 
 class MarketContextOut(BaseModel):
-    spy_regime:   dict[str, Any] | None
-    vix_state:    str | None
-    vix_current:  float | None
-    vix_dev_pct:  float | None
-    vix_hmm_prob: float | None
-    vix_rsi:      float | None
+    spy_regime:Optional[dict[str, Any]]
+    vix_state:Optional[str]
+    vix_current:Optional[float]
+    vix_dev_pct:Optional[float]
+    vix_hmm_prob:Optional[float]
+    vix_rsi:Optional[float]
 
 
 class ModelMetadataOut(BaseModel):
     available:   bool
-    model_type:  str | None
-    trained_at:  str | None
+    model_type:Optional[str]
+    trained_at:Optional[str]
     n_samples:   int
     n_positive:  int
     auc_roc:     float

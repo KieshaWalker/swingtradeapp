@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # services/realized_vol.py
@@ -36,8 +37,8 @@ class RealizedVolRating(str, Enum):
 class RealizedVolResult:
     rv20d: float
     rv60d: float
-    rv20d_percentile: float | None
-    rv60d_percentile: float | None
+    rv20d_percentile:Optional[float]
+    rv60d_percentile:Optional[float]
     rating: RealizedVolRating
     rv20d_history: list[float] = field(default_factory=list)
     rv60d_history: list[float] = field(default_factory=list)
@@ -94,8 +95,8 @@ def _rate_rv(percentile: float) -> RealizedVolRating:
 
 def compute(
     closes: list[float],
-    history_rv20d: list[float] | None = None,
-    history_rv60d: list[float] | None = None,
+    history_rv20d:Optional[list[float]] = None,
+    history_rv60d:Optional[list[float]] = None,
 ) -> RealizedVolResult:
     """Compute RV and rank it against historical values.
 

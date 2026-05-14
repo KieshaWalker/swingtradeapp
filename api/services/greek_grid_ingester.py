@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # services/greek_grid_ingester.py
@@ -115,17 +116,17 @@ class GridCell:
     strike_band: StrikeBand
     expiry_bucket: ExpiryBucket
     strike: float           # median strike
-    expiry_date: datetime | None
-    delta: float | None
-    gamma: float | None
-    vega: float | None
-    theta: float | None
-    iv: float | None        # decimal (e.g. 0.21)
-    vanna: float | None
-    charm: float | None
-    volga: float | None
-    open_interest: int | None
-    volume: int | None
+    expiry_date:Optional[datetime]
+    delta:Optional[float]
+    gamma:Optional[float]
+    vega:Optional[float]
+    theta:Optional[float]
+    iv:Optional[float]        # decimal (e.g. 0.21)
+    vanna:Optional[float]
+    charm:Optional[float]
+    volga:Optional[float]
+    open_interest:Optional[int]
+    volume:Optional[int]
     contract_count: int
 
 
@@ -142,7 +143,7 @@ class _CellAccumulator:
         self.strikes: list[float] = []
         self.ois: list[int] = []
         self.vols: list[int] = []
-        self.nearest_expiry: datetime | None = None
+        self.nearest_expiry:Optional[datetime] = None
 
     def add(self, contract: dict, expiry: datetime, spot: float, include_delta: bool = True) -> None:
         delta = float(contract.get("delta", 0))
@@ -200,7 +201,7 @@ class _CellAccumulator:
         )
 
 
-def ingest(chain: dict, obs_date: datetime | None = None) -> list[GridCell]:
+def ingest(chain: dict, obs_date:Optional[datetime] = None) -> list[GridCell]:
     """Aggregate a Schwab options chain into grid cells.
 
     Matches GreekGridIngester.ingest() exactly.

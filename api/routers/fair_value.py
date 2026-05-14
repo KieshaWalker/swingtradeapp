@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # routers/fair_value.py
@@ -51,9 +52,9 @@ class FairValueRequest(BaseModel):
     is_call: bool = True
     broker_mid: float = Field(..., ge=0)
     r: float = DEFAULT_R
-    calibrated_rho: float | None = None
-    calibrated_nu: float | None = None
-    ticker: str | None = None   # when provided, Heston params are fetched from DB
+    calibrated_rho:Optional[float] = None
+    calibrated_nu:Optional[float] = None
+    ticker:Optional[str] = None   # when provided, Heston params are fetched from DB
 
 
 class FairValueResponse(BaseModel):
@@ -64,20 +65,20 @@ class FairValueResponse(BaseModel):
     edge_bps: float
     sabr_vol: float
     implied_vol: float
-    vanna: float | None
-    charm: float | None
-    volga: float | None
-    heston_fair_value: float | None = None
-    heston_rmse: float | None = None
-    computed_iv: float | None = None      # IV back-solved from broker_mid
-    iv_diff_pct: float | None = None      # computed_iv - implied_vol in vol points
-    iv_note: str | None = None            # human-readable IV check message
+    vanna:Optional[float]
+    charm:Optional[float]
+    volga:Optional[float]
+    heston_fair_value:Optional[float] = None
+    heston_rmse:Optional[float] = None
+    computed_iv:Optional[float] = None      # IV back-solved from broker_mid
+    iv_diff_pct:Optional[float] = None      # computed_iv - implied_vol in vol points
+    iv_note:Optional[str] = None            # human-readable IV check message
     rate_used: float = 0.0                # risk-free rate used in pricing (decimal)
     rate_tenor: str = ""                  # e.g. "3-month T-bill"
-    term_comparison: dict | None = None   # DTE-matched IV / RV / rate bucket
+    term_comparison:Optional[dict] = None   # DTE-matched IV / RV / rate bucket
 
 
-def _fetch_term_comparison(ticker: str, dte: int, rate_used: float, rate_tenor: str) -> dict | None:
+def _fetch_term_comparison(ticker: str, dte: int, rate_used: float, rate_tenor: str) ->Optional[dict]:
     """Return DTE-matched {term_iv, term_rv, term_rate, vol_premium, period_label} or None."""
     period_type, rv_col, period_label = _dte_bucket(dte)
     db = get_supabase()
@@ -101,8 +102,8 @@ def _fetch_term_comparison(ticker: str, dte: int, rate_used: float, rate_tenor: 
         .execute()
     ).data or []
 
-    term_iv: float | None = (iv_rows[0]["iv"] if iv_rows else None)
-    term_rv: float | None = (float(rv_rows[0][rv_col]) if rv_rows and rv_rows[0].get(rv_col) else None)
+    term_iv:Optional[float] = (iv_rows[0]["iv"] if iv_rows else None)
+    term_rv:Optional[float] = (float(rv_rows[0][rv_col]) if rv_rows and rv_rows[0].get(rv_col) else None)
 
     if term_iv is None and term_rv is None:
         return None
@@ -119,7 +120,7 @@ def _fetch_term_comparison(ticker: str, dte: int, rate_used: float, rate_tenor: 
     }
 
 
-def _fetch_heston_params(ticker: str) -> tuple[HestonParams, float] | None:
+def _fetch_heston_params(ticker: str) ->Optional[tuple[HestonParams, float]]:
     """Return (HestonParams, rmse_iv) from the most recent reliable calibration, or None."""
     db = get_supabase()
     resp = (
@@ -150,8 +151,8 @@ def _fetch_heston_params(ticker: str) -> tuple[HestonParams, float] | None:
 
 @router.post("/compute", response_model=FairValueResponse)
 def fair_value_compute(req: FairValueRequest):
-    heston_params: HestonParams | None = None
-    heston_rmse: float | None = None
+    heston_params:Optional[HestonParams] = None
+    heston_rmse:Optional[float] = None
     if req.ticker:
         fetched = _fetch_heston_params(req.ticker)
         if fetched is not None:

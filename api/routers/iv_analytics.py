@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # routers/iv_analytics.py
@@ -34,12 +35,12 @@ router = APIRouter()
 class IvAnalyticsRequest(BaseModel):
     chain: dict          # Schwab options chain JSON
     history: list[dict] = []
-    risk_free_rate: float | None = None
+    risk_free_rate:Optional[float] = None
 
 
 class IvSnapshotRequest(IvAnalyticsRequest):
     ticker: str
-    obs_date: str | None = None
+    obs_date:Optional[str] = None
 
 
 

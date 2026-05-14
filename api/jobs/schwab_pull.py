@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # jobs/schwab_pull.py
@@ -92,15 +93,15 @@ async def run_schwab_pull() -> dict:
         # All fetched once here and reused across every ticker to avoid redundant
         # API calls via the get-schwab-pricehistory edge function.
         vix_closes: list[float] = []
-        vix_current: float | None = None
-        vix_10ma: float | None = None
-        vix_dev_pct: float | None = None
-        vix_rsi: float | None = None
+        vix_current:Optional[float] = None
+        vix_10ma:Optional[float] = None
+        vix_dev_pct:Optional[float] = None
+        vix_rsi:Optional[float] = None
         hmm_result = None
-        vix_term_structure_ratio: float | None = None   # VIX / VIX3M (<1=contango, >1=backwardation)
-        vvix_current: float | None = None
-        vvix_10ma: float | None = None
-        breadth_proxy: float | None = None              # RSP/SPY 5d return ratio z-score
+        vix_term_structure_ratio:Optional[float] = None   # VIX / VIX3M (<1=contango, >1=backwardation)
+        vvix_current:Optional[float] = None
+        vvix_10ma:Optional[float] = None
+        breadth_proxy:Optional[float] = None              # RSP/SPY 5d return ratio z-score
 
         # Fetch all supplementary index histories in parallel
         (
@@ -271,11 +272,11 @@ async def run_schwab_pull() -> dict:
                     rv = rv_compute(clean_closes)
                     log.info("rv_computed ticker=%s rv20d=%s rv60d=%s", ticker, rv.rv20d, rv.rv60d)
 
-                sma10: float | None = sum(clean_closes[-10:]) / 10 if len(clean_closes) >= 10 else None
-                sma50: float | None = sum(clean_closes[-50:]) / 50 if len(clean_closes) >= 50 else None
-                vol_sma3: float | None  = sum(clean_volumes[-3:])  / 3  if len(clean_volumes) >= 3  else None
-                vol_sma20: float | None = sum(clean_volumes[-20:]) / 20 if len(clean_volumes) >= 20 else None
-                price_roc5: float | None = None
+                sma10:Optional[float] = sum(clean_closes[-10:]) / 10 if len(clean_closes) >= 10 else None
+                sma50:Optional[float] = sum(clean_closes[-50:]) / 50 if len(clean_closes) >= 50 else None
+                vol_sma3:Optional[float]  = sum(clean_volumes[-3:])  / 3  if len(clean_volumes) >= 3  else None
+                vol_sma20:Optional[float] = sum(clean_volumes[-20:]) / 20 if len(clean_volumes) >= 20 else None
+                price_roc5:Optional[float] = None
                 if len(clean_closes) >= 6 and clean_closes[-6] > 0:
                     price_roc5 = (clean_closes[-1] - clean_closes[-6]) / clean_closes[-6] * 100
 
@@ -400,7 +401,7 @@ def _upsert_greek_snapshots(
 
 
 
-def _atm_contract(contracts: list[dict]) -> dict | None:
+def _atm_contract(contracts: list[dict]) ->Optional[dict]:
     """Return the contract with |delta| closest to 0.50, or None if no
     contract carries a valid delta (pre-market, 0DTE, illiquid chain)."""
     if not contracts:
@@ -411,7 +412,7 @@ def _atm_contract(contracts: list[dict]) -> dict | None:
     return min(with_delta, key=lambda c: abs(abs(c["delta"]) - 0.50))
 
 
-def _pct_to_dec(value) -> float | None:
+def _pct_to_dec(value) ->Optional[float]:
     """Schwab delivers IV as a percentage (e.g. 21.4); convert to decimal."""
     if value is None:
         return None
@@ -423,7 +424,7 @@ def _pct_to_dec(value) -> float | None:
 
 # ── Vol surface helpers ───────────────────────────────────────────────────────
 
-def _fgt0(contract: dict | None, key: str) -> float | None:
+def _fgt0(contract:Optional[dict], key: str) ->Optional[float]:
     """Return float field if > 0, else None."""
     if contract is None:
         return None
@@ -435,7 +436,7 @@ def _fgt0(contract: dict | None, key: str) -> float | None:
         return None
 
 
-def _fne0(contract: dict | None, key: str) -> float | None:
+def _fne0(contract:Optional[dict], key: str) ->Optional[float]:
     """Return float field if != 0, else None."""
     if contract is None:
         return None
@@ -447,7 +448,7 @@ def _fne0(contract: dict | None, key: str) -> float | None:
         return None
 
 
-def _fany(contract: dict | None, key: str) -> float | None:
+def _fany(contract:Optional[dict], key: str) ->Optional[float]:
     """Return float field regardless of sign, None if missing."""
     if contract is None:
         return None
@@ -458,7 +459,7 @@ def _fany(contract: dict | None, key: str) -> float | None:
         return None
 
 
-def _igt0(contract: dict | None, key: str) -> int | None:
+def _igt0(contract:Optional[dict], key: str) ->Optional[int]:
     """Return int field if > 0, else None."""
     if contract is None:
         return None

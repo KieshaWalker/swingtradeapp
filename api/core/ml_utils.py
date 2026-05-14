@@ -1,9 +1,10 @@
 from __future__ import annotations
+from typing import Optional
 
 import numpy as np
 
 
-def _slope(values: list[float | None]) -> float | None:
+def _slope(values:Optional[list[float]]) ->Optional[float]:
     """OLS slope of non-None values over their indices."""
     pts = [(i, v) for i, v in enumerate(values) if v is not None]
     if len(pts) < 2:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # core/chain_utils.py
@@ -17,7 +18,7 @@ from __future__ import annotations
 # =============================================================================
 
 
-def _dte_from_key(key: str) -> int | None:
+def _dte_from_key(key: str) ->Optional[int]:
     """Extract DTE from Schwab expDate key format "YYYY-MM-DD:DTE"."""
     try:
         return int(key.split(":")[1])

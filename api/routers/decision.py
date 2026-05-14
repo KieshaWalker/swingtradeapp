@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -14,7 +15,7 @@ class DecisionRequest(BaseModel):
     max_budget: float = Field(..., gt=0)
     contracts: int = 1
     days_to_target: int = 0
-    iv_analysis: dict | None = None
+    iv_analysis:Optional[dict] = None
 
 
 class RankAllRequest(BaseModel):
@@ -24,7 +25,7 @@ class RankAllRequest(BaseModel):
     max_budget: float = Field(..., gt=0)
     contracts: int = 1
     days_to_target: int = 0
-    iv_analysis: dict | None = None
+    iv_analysis:Optional[dict] = None
     top_n: int = 5
 
 

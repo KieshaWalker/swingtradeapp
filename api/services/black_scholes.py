@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 # =============================================================================
 # services/black_scholes.py
@@ -165,7 +166,7 @@ def bs_implied_vol(
     initial_guess: float = 0.25,
     max_iter: int = 100,
     tol: float = 1e-7,
-) -> float | None:
+) ->Optional[float]:
     """Newton-Raphson IV solver: find σ such that bs_price(σ) = market_price.
 
     Returns None when the solver fails to converge or the price is outside
