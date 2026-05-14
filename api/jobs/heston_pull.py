@@ -75,13 +75,6 @@ async def run_heston_pull(batch: int = 1) -> dict:
             if result is None:
                 return ticker, "no_result"
 
-            if not result.is_reliable:
-                log.warning(
-                    "heston_unreliable ticker=%s rmse_iv=%.4f n=%d",
-                    ticker, result.rmse_iv, result.n_points,
-                )
-                return ticker, "unreliable"
-
             _upsert_heston_calibration(db, ticker, today, result, user_id)
             log.info(
                 "heston_ok ticker=%s rmse_iv=%.4f n=%d converged=%s",
