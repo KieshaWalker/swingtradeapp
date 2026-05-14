@@ -13,11 +13,9 @@
 //   Search dialog     Schwab  GET /marketdata/v1/instruments  (tickerSearchProvider)
 //                     — lets you browse any ticker even without trades
 //
-// TODO: Add Kalshi market prices alongside Schwab quote on each card
-//       kalshiMarketProvider(symbol) → GET /markets?ticker={symbol}
-//
 // Tap any card → context.push('/ticker/$symbol') → TickerProfileScreen
 // =============================================================================
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -41,7 +39,7 @@ class TickerDashboardScreen extends ConsumerWidget {
         title: const Text('Tickers'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search),
+            icon: const Icon(Icons.search_rounded),
             tooltip: 'Find ticker',
             onPressed: () => _showSearch(context),
           ),
@@ -52,19 +50,18 @@ class TickerDashboardScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (trades) {
+          // Deduplicate traded symbols preserving insertion order.
           final seen = <String>{};
           final tradeSymbols = trades
               .map((t) => t.ticker.toUpperCase())
               .where((s) => seen.add(s))
               .toList();
 
-          // Watched-only tickers appended after traded symbols, no duplicates
+          // Bug fix: use seen.add() so watched duplicates are also deduplicated.
           final watchedSymbols = watchedAsync.valueOrNull ?? [];
           final symbols = [
             ...tradeSymbols,
-            ...watchedSymbols
-                .map((s) => s.toUpperCase())
-                .where((s) => !seen.contains(s)),
+            ...watchedSymbols.map((s) => s.toUpperCase()).where(seen.add),
           ];
 
           if (symbols.isEmpty) {
@@ -72,25 +69,27 @@ class TickerDashboardScreen extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.candlestick_chart_outlined,
-                    size: 64,
-                    color: AppTheme.neutralColor,
+                    size: 52,
+                    color: AppTheme.neutralColor.withValues(alpha: 0.4),
                   ),
                   const SizedBox(height: 16),
                   const Text(
                     'No tickers yet',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w700),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   const Text(
-                    'Search a ticker to add it to your list.',
-                    style: TextStyle(color: AppTheme.neutralColor),
+                    'Search a ticker to add it to your watchlist.',
+                    style: TextStyle(
+                        color: AppTheme.neutralColor, fontSize: 13),
                   ),
                   const SizedBox(height: 24),
                   FilledButton.icon(
                     onPressed: () => _showSearch(context),
-                    icon: const Icon(Icons.search),
+                    icon: const Icon(Icons.search_rounded, size: 18),
                     label: const Text('Browse a ticker'),
                   ),
                 ],
@@ -98,16 +97,27 @@ class TickerDashboardScreen extends ConsumerWidget {
             );
           }
 
-          return GridView.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              mainAxisSpacing: 4,
-              crossAxisSpacing: 4,
-              childAspectRatio: 2,
-            ),
-            padding: const EdgeInsets.all(12),
-            itemCount: symbols.length,
-            itemBuilder: (_, i) => _TickerCard(symbol: symbols[i]),
+          // Responsive column count: 2 on phones, 3 on medium, 4 on wide.
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final crossAxisCount = constraints.maxWidth < 480
+                  ? 2
+                  : constraints.maxWidth < 800
+                      ? 3
+                      : 4;
+              return GridView.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  // Fixed pixel height guarantees stats row always has room.
+                  mainAxisExtent: 118,
+                ),
+                padding: const EdgeInsets.all(12),
+                itemCount: symbols.length,
+                itemBuilder: (_, i) => _TickerCard(symbol: symbols[i]),
+              );
+            },
           );
         },
       ),
@@ -128,33 +138,31 @@ class _TickerCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final quoteAsync = ref.watch(quoteProvider(symbol));
-    final analytics = ref.watch(tickerAnalyticsProvider(symbol)); //
+    final analytics  = ref.watch(tickerAnalyticsProvider(symbol));
     final tradesAsync = ref.watch(tradesProvider);
 
     final openCount =
         tradesAsync.valueOrNull
-            ?.where(
-              (t) =>
-                  t.ticker.toUpperCase() == symbol && t.status.name == 'open',
-            )
+            ?.where((t) =>
+                t.ticker.toUpperCase() == symbol &&
+                t.status.name == 'open')
             .length ??
         0;
 
     return Card(
       clipBehavior: Clip.hardEdge,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
         onTap: () => context.push('/ticker/$symbol'),
         child: Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Header row: symbol + price ───────────────────────
+              // ── Header row: symbol + live price ─────────────────────────
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Symbol + name
+                  // Left: symbol + open badge + company name
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,34 +172,31 @@ class _TickerCard extends ConsumerWidget {
                             Text(
                               symbol,
                               style: const TextStyle(
-                                fontSize: 20,
+                                fontSize: 14,
                                 fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
                               ),
                             ),
                             if (openCount > 0) ...[
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 5),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 2,
-                                ),
+                                    horizontal: 5, vertical: 1),
                                 decoration: BoxDecoration(
-                                  color: AppTheme.profitColor.withValues(
-                                    alpha: 0.15,
-                                  ),
-                                  borderRadius: BorderRadius.circular(20),
+                                  color: AppTheme.profitColor
+                                      .withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(4),
                                   border: Border.all(
-                                    color: AppTheme.profitColor.withValues(
-                                      alpha: 0.4,
-                                    ),
+                                    color: AppTheme.profitColor
+                                        .withValues(alpha: 0.4),
                                   ),
                                 ),
                                 child: Text(
                                   '$openCount open',
                                   style: const TextStyle(
-                                    fontSize: 11,
+                                    fontSize: 9,
                                     color: AppTheme.profitColor,
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ),
@@ -204,7 +209,7 @@ class _TickerCard extends ConsumerWidget {
                                       q.name,
                                       style: const TextStyle(
                                         color: AppTheme.neutralColor,
-                                        fontSize: 12,
+                                        fontSize: 10,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -215,82 +220,99 @@ class _TickerCard extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  // Live price
+                  // Right: price + change%
                   quoteAsync.when(
                     loading: () => const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 1.5),
                     ),
-                    error: (e, _) => const Text(
+                    error: (_, _) => const Text(
                       '—',
-                      style: TextStyle(color: AppTheme.neutralColor),
+                      style: TextStyle(
+                          color: AppTheme.neutralColor, fontSize: 12),
                     ),
-                    data: (q) => q == null
-                        ? const Text(
-                            '—',
-                            style: TextStyle(color: AppTheme.neutralColor),
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                '\$${q.price.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              Text(
-                                '${q.isPositive ? '+' : ''}${q.changePercent.toStringAsFixed(2)}%',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: q.isPositive
-                                      ? AppTheme.profitColor
-                                      : AppTheme.lossColor,
-                                ),
-                              ),
-                            ],
+                    data: (q) {
+                      if (q == null) {
+                        return const Text(
+                          '—',
+                          style: TextStyle(
+                              color: AppTheme.neutralColor, fontSize: 12),
+                        );
+                      }
+                      final chg = q.changePercent;
+                      // Bug fix: flat (0%) should be neutral, not green.
+                      final pctColor = chg > 0
+                          ? AppTheme.profitColor
+                          : chg < 0
+                              ? AppTheme.lossColor
+                              : AppTheme.neutralColor;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '\$${q.price.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
+                          Text(
+                            '${chg >= 0 ? '+' : ''}${chg.toStringAsFixed(2)}%',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: pctColor,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
 
-              // ── Stats row ────────────────────────────────────────
+              // ── Stats row — pushed to card bottom via Spacer ─────────────
               if (analytics.totalTrades > 0) ...[
-                const SizedBox(height: 8),
+                const Spacer(),
                 Divider(height: 1, color: AppTheme.borderColor),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Row(
                   children: [
-                    _StatChip(
-                      label: 'Trades',
+                    _StatPill(
+                      label: 'TRADES',
                       value: '${analytics.totalTrades}',
                     ),
-                    const SizedBox(width: 8),
-                    _StatChip(
-                      label: 'Win Rate',
-                      value: '${(analytics.winRate * 100).toStringAsFixed(0)}%',
+                    const SizedBox(width: 10),
+                    _StatPill(
+                      label: 'WIN',
+                      value:
+                          '${(analytics.winRate * 100).toStringAsFixed(0)}%',
                       valueColor: analytics.winRate >= 0.5
                           ? AppTheme.profitColor
                           : AppTheme.lossColor,
                     ),
-                    const SizedBox(width: 8),
-                    _StatChip(
-                      label: 'P&L',
-                      value:
-                          '${analytics.totalRealizedPnl >= 0 ? '+' : ''}\$${analytics.totalRealizedPnl.toStringAsFixed(0)}',
-                      valueColor: analytics.totalRealizedPnl >= 0
-                          ? AppTheme.profitColor
-                          : AppTheme.lossColor,
+                    const SizedBox(width: 10),
+                    // Flexible prevents long P&L values from overflowing.
+                    Flexible(
+                      child: _StatPill(
+                        label: 'P&L',
+                        value:
+                            '${analytics.totalRealizedPnl >= 0 ? '+' : ''}\$${analytics.totalRealizedPnl.toStringAsFixed(0)}',
+                        valueColor: analytics.totalRealizedPnl >= 0
+                            ? AppTheme.profitColor
+                            : AppTheme.lossColor,
+                      ),
                     ),
                     if (analytics.playbookSummary != null) ...[
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.auto_awesome,
-                        size: 14,
-                        color: AppTheme.profitColor,
+                      const SizedBox(width: 4),
+                      Tooltip(
+                        message: 'Has playbook analysis',
+                        child: const Icon(
+                          Icons.auto_awesome,
+                          size: 12,
+                          color: AppTheme.profitColor,
+                        ),
                       ),
                     ],
                   ],
@@ -304,38 +326,41 @@ class _TickerCard extends ConsumerWidget {
   }
 }
 
-class _StatChip extends StatelessWidget {
+// ─── Stat label + value column (no box — card boundary is sufficient) ─────────
+
+class _StatPill extends StatelessWidget {
   final String label;
   final String value;
   final Color? valueColor;
 
-  const _StatChip({required this.label, required this.value, this.valueColor});
+  const _StatPill(
+      {required this.label, required this.value, this.valueColor});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: AppTheme.neutralColor, fontSize: 10),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppTheme.neutralColor,
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
           ),
-          Text(
-            value,
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 13,
-              color: valueColor ?? Colors.white,
-            ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 12,
+            color: valueColor ?? Colors.white,
           ),
-        ],
-      ),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
     );
   }
 }
@@ -353,11 +378,21 @@ class _TickerSearchDialog extends ConsumerStatefulWidget {
 class _TickerSearchDialogState extends ConsumerState<_TickerSearchDialog> {
   final _ctrl = TextEditingController();
   String _query = '';
+  Timer? _debounce;
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _debounce?.cancel();
     super.dispose();
+  }
+
+  // Debounce to 350 ms so the Schwab instruments API isn't hit on every keystroke.
+  void _onQueryChanged(String v) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) setState(() => _query = v.trim());
+    });
   }
 
   @override
@@ -366,57 +401,76 @@ class _TickerSearchDialogState extends ConsumerState<_TickerSearchDialog> {
 
     return Dialog(
       backgroundColor: AppTheme.elevatedColor,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
               controller: _ctrl,
               autofocus: true,
+              style: const TextStyle(fontSize: 15),
               decoration: const InputDecoration(
                 hintText: 'Search ticker or company…',
-                prefixIcon: Icon(Icons.search),
+                prefixIcon: Icon(Icons.search_rounded, size: 20),
+                isDense: true,
               ),
-              onChanged: (v) => setState(() => _query = v.trim()),
+              onChanged: _onQueryChanged,
             ),
             const SizedBox(height: 8),
             if (_query.isEmpty)
               const Padding(
-                padding: EdgeInsets.all(16),
+                padding: EdgeInsets.symmetric(vertical: 16),
                 child: Text(
                   'Type a symbol or company name',
-                  style: TextStyle(color: AppTheme.neutralColor),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: AppTheme.neutralColor, fontSize: 13),
                 ),
               )
             else
               resultsAsync.when(
                 loading: () => const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: CircularProgressIndicator(),
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
                 ),
-                error: (e, _) => const Text('Search failed'),
+                error: (_, _) => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'Search failed',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppTheme.neutralColor),
+                  ),
+                ),
                 data: (results) => results.isEmpty
                     ? const Padding(
-                        padding: EdgeInsets.all(16),
+                        padding: EdgeInsets.symmetric(vertical: 16),
                         child: Text(
                           'No results',
-                          style: TextStyle(color: AppTheme.neutralColor),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: AppTheme.neutralColor, fontSize: 13),
                         ),
                       )
                     : ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 320),
+                        constraints: const BoxConstraints(maxHeight: 300),
                         child: ListView.builder(
                           shrinkWrap: true,
                           itemCount: results.length,
                           itemBuilder: (_, i) {
                             final r = results[i];
                             return ListTile(
+                              dense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8),
                               title: Text(
                                 r.symbol,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
+                                  fontSize: 14,
                                 ),
                               ),
                               subtitle: Text(
@@ -425,6 +479,7 @@ class _TickerSearchDialogState extends ConsumerState<_TickerSearchDialog> {
                                   color: AppTheme.neutralColor,
                                   fontSize: 12,
                                 ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                               trailing: Text(
                                 r.exchange,

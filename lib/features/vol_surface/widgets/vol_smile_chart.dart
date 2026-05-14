@@ -50,8 +50,50 @@ class _VolSmileChartState extends State<VolSmileChart> {
 
   void _initVisible() {
     final dtes = widget.points.map((p) => p.dte).toSet().toList()..sort();
-    // Show first 8 DTEs by default
     _visibleDtes = dtes.take(8).toSet();
+  }
+
+  static String _dteGroup(int dte) {
+    if (dte < 30) return '<30d';
+    if (dte <= 90) return '30–90d';
+    return '>90d';
+  }
+
+  // Tapping a group header selects/deselects all DTEs in that group.
+  Widget _groupHeader(String label, List<int> groupDtes, {required bool isFirst}) {
+    final anyVisible = groupDtes.any((d) => _visibleDtes.contains(d));
+    return GestureDetector(
+      onTap: () => setState(() {
+        if (anyVisible) {
+          _visibleDtes.removeAll(groupDtes);
+        } else {
+          _visibleDtes.addAll(groupDtes);
+        }
+      }),
+      child: Container(
+        margin: EdgeInsets.only(left: isFirst ? 0 : 2, right: 6),
+        padding: EdgeInsets.only(left: isFirst ? 0 : 6),
+        decoration: isFirst
+            ? null
+            : const BoxDecoration(
+                border: Border(
+                    left: BorderSide(color: Color(0xFF374151)))),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: anyVisible
+                  ? const Color(0xFF6b7280)
+                  : const Color(0xFF374151),
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+              fontFamily: 'monospace',
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -62,6 +104,14 @@ class _VolSmileChartState extends State<VolSmileChart> {
           child: Text('No data', style: TextStyle(color: Colors.white38)));
     }
 
+    // Pre-compute groups so headers know their member DTEs.
+    final groupMembers = <String, List<int>>{};
+    for (final dte in allDtes) {
+      groupMembers.putIfAbsent(_dteGroup(dte), () => []).add(dte);
+    }
+    final multiGroup = groupMembers.length > 1;
+
+    // Build line chart bars (palette index tied to allDtes position).
     final bars = <LineChartBarData>[];
     for (var i = 0; i < allDtes.length; i++) {
       final dte = allDtes[i];
@@ -87,7 +137,7 @@ class _VolSmileChartState extends State<VolSmileChart> {
       ));
     }
 
-    // Compute axis bounds
+    // Axis bounds
     double minX = double.infinity, maxX = double.negativeInfinity;
     double minY = double.infinity, maxY = double.negativeInfinity;
     for (final b in bars) {
@@ -104,46 +154,57 @@ class _VolSmileChartState extends State<VolSmileChart> {
     if (!maxY.isFinite) maxY = 1;
     final padY = (maxY - minY) * 0.1;
 
+    // Build chip strip: group headers (when multi-group) + individual chips.
+    // Palette index i stays tied to allDtes[i] so chip and line colors match.
+    final chipChildren = <Widget>[];
+    String? lastGroup;
+    bool firstGroup = true;
+    for (var i = 0; i < allDtes.length; i++) {
+      final dte = allDtes[i];
+      final grp = _dteGroup(dte);
+      if (multiGroup && grp != lastGroup) {
+        lastGroup = grp;
+        chipChildren.add(
+            _groupHeader(grp, groupMembers[grp]!, isFirst: firstGroup));
+        firstGroup = false;
+      }
+      chipChildren.add(Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: FilterChip(
+          label: Text('${dte}d', style: const TextStyle(fontSize: 11)),
+          selected: _visibleDtes.contains(dte),
+          selectedColor: _palette[i % _palette.length].withValues(alpha: 0.25),
+          checkmarkColor: _palette[i % _palette.length],
+          side: BorderSide(
+              color: _palette[i % _palette.length].withValues(alpha: 0.5)),
+          backgroundColor: const Color(0xFF1a1f2e),
+          labelStyle: TextStyle(
+            color: _visibleDtes.contains(dte)
+                ? _palette[i % _palette.length]
+                : Colors.white38,
+          ),
+          onSelected: (v) => setState(() {
+            if (v) {
+              _visibleDtes.add(dte);
+            } else {
+              _visibleDtes.remove(dte);
+            }
+          }),
+        ),
+      ));
+    }
+
     return Column(
       children: [
-        // DTE toggle chips
         SizedBox(
           height: 40,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            children: [
-              for (var i = 0; i < allDtes.length; i++)
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: FilterChip(
-                    label: Text('${allDtes[i]}d',
-                        style: const TextStyle(fontSize: 11)),
-                    selected: _visibleDtes.contains(allDtes[i]),
-                    selectedColor:
-                        _palette[i % _palette.length].withValues(alpha: 0.25),
-                    checkmarkColor: _palette[i % _palette.length],
-                    side: BorderSide(
-                        color: _palette[i % _palette.length].withValues(alpha: 0.5)),
-                    backgroundColor: const Color(0xFF1a1f2e),
-                    labelStyle: TextStyle(
-                      color: _visibleDtes.contains(allDtes[i])
-                          ? _palette[i % _palette.length]
-                          : Colors.white38,
-                    ),
-                    onSelected: (v) => setState(() {
-                      if (v) {
-                        _visibleDtes.add(allDtes[i]);
-                      } else {
-                        _visibleDtes.remove(allDtes[i]);
-                      }
-                    }),
-                  ),
-                ),
-            ],
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            children: chipChildren,
           ),
         ),
-        // Chart
         Expanded(
           child: bars.isEmpty
               ? const Center(

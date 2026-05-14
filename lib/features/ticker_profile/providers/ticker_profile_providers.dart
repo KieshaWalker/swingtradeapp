@@ -15,10 +15,7 @@
 //                                  ticker:{symbol} AND formType:(10-K OR 10-Q OR 8-K OR 4)
 //                                  feeds into Timeline tab (secFiling events)
 //
-//   ── KALSHI (not yet integrated) ─────────────────────────────────────────
-//   TODO: add kalshiMarketProvider(symbol) → GET /markets?ticker={symbol}
-//         would feed prediction market prices into the Timeline and Overview tabs
-//
+
 // Tier 1 — Raw Supabase fetchers (FutureProvider.family)
 // Tier 2 — Derived (Provider.family, no new fetches)
 // Tier 3 — Timeline assembly (merges all 6 sources chronologically)

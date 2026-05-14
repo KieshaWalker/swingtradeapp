@@ -39,7 +39,7 @@ class _CalculatorScreenState extends State<CalculatorScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 8, vsync: this);
+    _tabs = TabController(length: 9, vsync: this);
   }
 
   @override
@@ -57,6 +57,8 @@ class _CalculatorScreenState extends State<CalculatorScreen>
         bottom: TabBar(
           controller: _tabs,
           indicatorColor: AppTheme.profitColor,
+          indicatorWeight: 3,
+          indicatorSize: TabBarIndicatorSize.label,
           labelColor: AppTheme.profitColor,
           unselectedLabelColor: AppTheme.neutralColor,
           isScrollable: true,
@@ -69,6 +71,7 @@ class _CalculatorScreenState extends State<CalculatorScreen>
             Tab(text: 'Forward Price'),
             Tab(text: 'Theoretical Price'),
             Tab(text: 'Intrinsic Value'),
+            Tab(text: 'Implied Vol'),
           ],
         ),
       ),
@@ -83,6 +86,7 @@ class _CalculatorScreenState extends State<CalculatorScreen>
           const _ForwardPriceTab(),
           const _TheoreticalPriceTab(),
           const _IntrinsicValueTab(),
+          const _ImpliedVolTab(),
         ],
       ),
     );
@@ -106,7 +110,7 @@ class _ResultRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: AppTheme.neutralColor)),
+          Text(label, style: const TextStyle(color: AppTheme.neutralColor, fontSize: 13)),
           Text(value,
               style: TextStyle(
                   color: color, fontWeight: FontWeight.w700, fontSize: 16)),
@@ -130,6 +134,8 @@ class _FormulaPanel extends StatelessWidget {
         border: Border.all(color: AppTheme.borderColor.withValues(alpha: 0.4)),
       ),
       child: ExpansionTile(
+        backgroundColor: Colors.transparent,
+        collapsedBackgroundColor: Colors.transparent,
         title: Text(title,
             style: const TextStyle(
                 color: AppTheme.neutralColor,
@@ -616,7 +622,7 @@ class _BlackScholesTabState extends State<_BlackScholesTab> {
           const SizedBox(width: 12),
           Expanded(child: _OptionTypeToggle(
             isCall: _isCall,
-            onChanged: (v) => setState(() => _isCall = v),
+            onChanged: (v) => setState(() { _isCall = v; _priceResult = null; _greeksResult = null; }),
           )),
         ]),
         const SizedBox(height: 20),
@@ -739,7 +745,7 @@ class _BlackScholesTabState extends State<_BlackScholesTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(t.$1, style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11)),
+              Text(t.$1, style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11), overflow: TextOverflow.ellipsis),
               Text(val.toStringAsFixed(4),
                   style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13)),
             ],
@@ -1093,7 +1099,7 @@ class _HestonTabState extends State<_HestonTab> {
           )),
         ]),
         const SizedBox(height: 12),
-        _OptionTypeToggle(isCall: _isCall, onChanged: (v) => setState(() => _isCall = v)),
+        _OptionTypeToggle(isCall: _isCall, onChanged: (v) => setState(() { _isCall = v; _result = null; })),
         const SizedBox(height: 20),
         // ── Heston params ──
         const Text('Heston Parameters', style: TextStyle(color: Colors.white,
@@ -1300,9 +1306,11 @@ class _OptionTypeToggle extends StatelessWidget {
         border: Border.all(color: AppTheme.borderColor.withValues(alpha: 0.5)),
       ),
       child: Row(children: [
-        Expanded(child: GestureDetector(
+        Expanded(child: InkWell(
           onTap: () => onChanged(true),
-          child: Container(
+          borderRadius: const BorderRadius.horizontal(left: Radius.circular(7)),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
             padding: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
               color: isCall ? AppTheme.profitColor.withValues(alpha: 0.2) : Colors.transparent,
@@ -1314,9 +1322,11 @@ class _OptionTypeToggle extends StatelessWidget {
                     fontWeight: FontWeight.w700))),
           ),
         )),
-        Expanded(child: GestureDetector(
+        Expanded(child: InkWell(
           onTap: () => onChanged(false),
-          child: Container(
+          borderRadius: const BorderRadius.horizontal(right: Radius.circular(7)),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
             padding: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
               color: !isCall ? AppTheme.lossColor.withValues(alpha: 0.2) : Colors.transparent,
@@ -1644,7 +1654,7 @@ class _TheoreticalPriceTabState extends State<_TheoreticalPriceTab> {
           )),
         ]),
         const SizedBox(height: 12),
-        _OptionTypeToggle(isCall: _isCall, onChanged: (v) => setState(() => _isCall = v)),
+        _OptionTypeToggle(isCall: _isCall, onChanged: (v) => setState(() { _isCall = v; _result = null; })),
         const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
@@ -2181,6 +2191,274 @@ class _InfoButton extends StatelessWidget {
       visualDensity: VisualDensity.compact,
       tooltip: 'How to estimate $title',
       onPressed: () => _show(context),
+    );
+  }
+}
+
+// =============================================================================
+// Tab 9 — Implied Volatility Solver
+// =============================================================================
+class _ImpliedVolTab extends StatefulWidget {
+  const _ImpliedVolTab();
+
+  @override
+  State<_ImpliedVolTab> createState() => _ImpliedVolTabState();
+}
+
+class _ImpliedVolTabState extends State<_ImpliedVolTab> {
+  final _marketPriceCtrl = TextEditingController(text: '3.50');
+  final _spotCtrl        = TextEditingController(text: '100');
+  final _strikeCtrl      = TextEditingController(text: '100');
+  final _dteCtrl         = TextEditingController(text: '30');
+  final _rCtrl           = TextEditingController(text: '4.33');
+  bool _isCall = true;
+
+  bool _loading = false;
+  Map<String, dynamic>? _result;
+  String? _error;
+
+  Future<void> _calculate() async {
+    final marketPrice = double.tryParse(_marketPriceCtrl.text);
+    final spot        = double.tryParse(_spotCtrl.text);
+    final strike      = double.tryParse(_strikeCtrl.text);
+    final dte         = int.tryParse(_dteCtrl.text);
+    final r           = double.tryParse(_rCtrl.text);
+    if (marketPrice == null || spot == null || strike == null ||
+        dte == null || r == null) { return; }
+
+    setState(() { _loading = true; _error = null; _result = null; });
+    try {
+      final res = await PythonApiClient.bsImpliedVol(
+        marketPrice: marketPrice,
+        s: spot,
+        k: strike,
+        dte: dte,
+        r: r / 100,
+        optionType: _isCall ? 'call' : 'put',
+      );
+      setState(() => _result = res);
+    } on PythonApiException catch (e) {
+      setState(() => _error = e.statusCode == 422
+          ? 'Price violates no-arbitrage bounds — check inputs.'
+          : 'API error: ${e.message}');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _marketPriceCtrl.dispose(); _spotCtrl.dispose(); _strikeCtrl.dispose();
+    _dteCtrl.dispose(); _rCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Enter an observed market price to back out the implied volatility '
+          'using Newton-Raphson iteration on the Black-Scholes formula.',
+          style: TextStyle(color: AppTheme.neutralColor),
+        ),
+        const SizedBox(height: 20),
+        // ── Inputs ──
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _spotCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Spot (S)', prefixText: '\$', helperText: 'Underlying price'),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _strikeCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Strike (K)', prefixText: '\$'),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _dteCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+                labelText: 'Days to Expiry', helperText: 'Calendar days'),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _rCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Risk-free Rate', suffixText: '%', helperText: 'SOFR ~4.33%'),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _marketPriceCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Market Price', prefixText: '\$',
+                helperText: 'Observed option mid-price'),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: _OptionTypeToggle(
+            isCall: _isCall,
+            onChanged: (v) => setState(() { _isCall = v; _result = null; _error = null; }),
+          )),
+        ]),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _loading ? null : _calculate,
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.profitColor,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 14)),
+            child: _loading
+                ? const SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                : const Text('Solve for IV', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ),
+        // ── Error ──
+        if (_error != null) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.lossColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.lossColor.withValues(alpha: 0.4)),
+            ),
+            child: Text(_error!, style: const TextStyle(color: AppTheme.lossColor, fontSize: 13)),
+          ),
+        ],
+        // ── Results ──
+        if (_result != null) ...[
+          const SizedBox(height: 24),
+          Divider(color: AppTheme.borderColor),
+          const SizedBox(height: 12),
+          // Primary IV result
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppTheme.profitColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppTheme.profitColor.withValues(alpha: 0.3)),
+            ),
+            child: Column(children: [
+              const Text('Implied Volatility',
+                  style: TextStyle(color: AppTheme.neutralColor, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text(
+                '${(_result!['implied_vol_pct'] as num).toStringAsFixed(2)}%',
+                style: const TextStyle(
+                    color: AppTheme.profitColor, fontWeight: FontWeight.w900, fontSize: 36),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'σ = ${(_result!['implied_vol'] as num).toStringAsFixed(6)}',
+                style: const TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          _ResultRow(
+            label: 'Price check (BS @ IV)',
+            value: '\$${(_result!['price_check'] as num).toStringAsFixed(4)}',
+            color: Colors.white,
+          ),
+          _ResultRow(
+            label: 'Forward (F = Se^{rT})',
+            value: '\$${(_result!['forward'] as num).toStringAsFixed(4)}',
+            color: AppTheme.neutralColor,
+          ),
+          const SizedBox(height: 16),
+          const Text('Greeks at solved IV',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
+          const SizedBox(height: 8),
+          _ivGreekGrid(_result!),
+        ],
+        const SizedBox(height: 24),
+        // ── Formula Panel ──
+        const _FormulaPanel(
+          title: 'About Implied Volatility',
+          lines: [
+            _FormulaLine(
+              'Given a market price P_mkt, find σ such that:\n'
+              '  BS(S, K, T, r, σ) = P_mkt\n\n'
+              'Solved iteratively: σ_{n+1} = σ_n − (BS(σ_n) − P_mkt) / Vega(σ_n)',
+              heading: 'Newton-Raphson method',
+            ),
+            _FormulaLine(
+              'The solver converges to 1e-7 accuracy in < 10 iterations for '
+              'well-behaved inputs. It returns no solution when:\n'
+              '  • Price ≤ intrinsic value (deep ITM at expiry)\n'
+              '  • Price ≥ discounted forward (arbitrage violation)\n'
+              '  • Vega ≈ 0 (extremely deep ITM/OTM or very short DTE)',
+              heading: 'Convergence & edge cases',
+            ),
+            _FormulaLine(
+              'IV reflects market consensus on future realized vol. '
+              'Compare it to historical realized vol to assess whether options '
+              'are rich or cheap. A 30-day IV of 25% implies the market expects '
+              'the underlying to move ±25% annualized.',
+              heading: 'Interpreting the result',
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _ivGreekGrid(Map<String, dynamic> r) {
+    final greeks = [
+      ('Delta (Δ)', r['delta'], false),
+      ('Gamma (Γ)', r['gamma'], false),
+      ('Theta (Θ) /day', r['theta'], true),
+      ('Vega (ν) /1%', r['vega'], false),
+      ('Rho (ρ) /1%', r['rho'], false),
+      ('Vanna', r['vanna'], false),
+      ('Charm /day', r['charm'], true),
+      ('Vomma', r['vomma'], false),
+    ];
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      childAspectRatio: 2.8,
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      children: greeks.map((t) {
+        final val = (t.$2 as num).toDouble();
+        final color = t.$3
+            ? (val < 0 ? AppTheme.lossColor : AppTheme.profitColor)
+            : Colors.white;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppTheme.elevatedColor,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(t.$1,
+                  style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11)),
+              Text(val.toStringAsFixed(4),
+                  style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13)),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 }

@@ -21,8 +21,7 @@
 //   ── My Edge ─────────────────────────────────────────────────────────────
 //   All analytics     Supabase  trades table — computed locally, no API calls
 //                     (tickerAnalyticsProvider → TickerTradeAnalytics.compute())
-//   TODO: IV Rank history from Kalshi or broker feed for IVR bucketing
-//
+
 //   ── Levels ──────────────────────────────────────────────────────────────
 //   S/R levels        Supabase  ticker_support_resistance (tickerSRLevelsProvider)
 //
@@ -30,8 +29,7 @@
 //   Merged feed from all 6 sources (tickerTimelineProvider):
 //     Supabase  trades / notes / insider buys / earnings reactions / S/R levels
 //     SEC EDGAR secfilingdata.com  POST /live-query-api  (secFilingsForTickerProvider)
-//   TODO: Kalshi market events — add kalshiMarketProvider(symbol) here
-//
+
 // FAB per tab:
 //   Overview  → add note sheet (saves to Supabase)
 //   Levels    → add S/R level sheet (saves to Supabase)

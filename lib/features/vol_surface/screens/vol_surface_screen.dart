@@ -347,8 +347,24 @@ class _DatasetTile extends StatelessWidget {
     required this.onDelete,
   });
 
+  static String _age(DateTime obsDate) {
+    final today = DateTime.now();
+    final days = DateTime(today.year, today.month, today.day)
+        .difference(DateTime(obsDate.year, obsDate.month, obsDate.day))
+        .inDays;
+    if (days <= 0) return '';
+    return '${days}d ago';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final age = _age(snap.obsDate);
+    final info = [
+      if (snap.points.isNotEmpty) '${snap.points.length} rows',
+      if (snap.spotPrice != null) '\$${snap.spotPrice!.toStringAsFixed(2)}',
+      if (age.isNotEmpty) age,
+    ].join(' · ');
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -378,9 +394,7 @@ class _DatasetTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  snap.ticker +
-                  (snap.points.isNotEmpty ? ' · ${snap.points.length} rows' : '') +
-                  (snap.spotPrice != null ? ' · \$${snap.spotPrice!.toStringAsFixed(2)}' : ''),
+                  info,
                   style: const TextStyle(
                       color:     Color(0xFF6b7280),
                       fontSize:  10,
@@ -410,14 +424,12 @@ class _GroupedDatasetList extends ConsumerStatefulWidget {
   final VolSnapshot?               activeSnap;
   final ValueChanged<VolSnapshot>  onSelectSnap;
   final ValueChanged<VolSnapshot>  onDeleteSnap;
-  final ScrollController?          scrollController;
 
   const _GroupedDatasetList({
     required this.snaps,
     required this.activeSnap,
     required this.onSelectSnap,
     required this.onDeleteSnap,
-    this.scrollController,
   });
 
   @override
@@ -439,7 +451,6 @@ class _GroupedDatasetListState extends ConsumerState<_GroupedDatasetList> {
     }
 
     return ListView(
-      controller: widget.scrollController,
       padding: const EdgeInsets.only(bottom: 8),
       children: [
         for (final ticker in grouped.keys) ...[
@@ -533,69 +544,77 @@ class _TickerHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(8, 8, 8, 2),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: isActive
-              ? const Color(0x1A3b82f6)
-              : const Color(0xFF0d1117),
-          border: Border.all(
-              color: isActive
-                  ? const Color(0x553b82f6)
-                  : const Color(0xFF1f2937)),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(
-          children: [
-            GestureDetector(
-              onTap: onToggle,
+    return Container(
+      margin: const EdgeInsets.fromLTRB(8, 8, 8, 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: isActive
+            ? const Color(0x1A3b82f6)
+            : const Color(0xFF0d1117),
+        border: Border.all(
+            color: isActive
+                ? const Color(0x553b82f6)
+                : const Color(0xFF1f2937)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          // Chevron — collapse/expand only; no outer tap wrapping this.
+          GestureDetector(
+            onTap: onToggle,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Icon(
+                collapsed
+                    ? Icons.chevron_right_rounded
+                    : Icons.expand_more_rounded,
+                size: 16,
+                color: const Color(0xFF4b5563),
+              ),
+            ),
+          ),
+          // Ticker label + count — the only area that selects the snapshot.
+          Expanded(
+            child: GestureDetector(
+              onTap: onTap,
               behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Icon(
-                  collapsed
-                      ? Icons.chevron_right_rounded
-                      : Icons.expand_more_rounded,
-                  size: 16,
-                  color: const Color(0xFF4b5563),
-                ),
+              child: Row(
+                children: [
+                  Text(
+                    ticker,
+                    style: TextStyle(
+                      color:         isActive
+                          ? const Color(0xFF60a5fa)
+                          : const Color(0xFF93c5fd),
+                      fontSize:      12,
+                      fontWeight:    FontWeight.w700,
+                      letterSpacing: 0.8,
+                      fontFamily:    'monospace',
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$count',
+                    style: const TextStyle(
+                        color:      Color(0xFF4b5563),
+                        fontSize:   10,
+                        fontFamily: 'monospace'),
+                  ),
+                ],
               ),
             ),
-            Text(
-              ticker,
-              style: TextStyle(
-                color:        isActive
-                    ? const Color(0xFF60a5fa)
-                    : const Color(0xFF93c5fd),
-                fontSize:     12,
-                fontWeight:   FontWeight.w700,
-                letterSpacing: 0.8,
-                fontFamily:   'monospace',
-              ),
+          ),
+          GestureDetector(
+            onTap: onDeleteAll,
+            behavior: HitTestBehavior.opaque,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Icon(Icons.delete_outline_rounded,
+                  size: 14, color: Color(0xFF4b5563)),
             ),
-            const SizedBox(width: 6),
-            Text(
-              '$count',
-              style: const TextStyle(
-                  color:     Color(0xFF4b5563),
-                  fontSize:  10,
-                  fontFamily: 'monospace'),
-            ),
-            const Spacer(),
-            GestureDetector(
-              onTap: onDeleteAll,
-              behavior: HitTestBehavior.opaque,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Icon(Icons.delete_outline_rounded,
-                    size: 14, color: Color(0xFF4b5563)),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -604,7 +623,7 @@ class _TickerHeader extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Main panel (wide layout)
 // ═══════════════════════════════════════════════════════════════════════════════
-class _MainPanel extends StatelessWidget {
+class _MainPanel extends StatefulWidget {
   final TabController           tabs;
   final String                  ivMode;
   final ValueChanged<String>    onIvModeChanged;
@@ -628,33 +647,63 @@ class _MainPanel extends StatelessWidget {
   });
 
   @override
+  State<_MainPanel> createState() => _MainPanelState();
+}
+
+class _MainPanelState extends State<_MainPanel> {
+  double _interpHeight = 220;
+  static const double _interpMin = 80;
+  static const double _interpMax = 440;
+
+  @override
   Widget build(BuildContext context) {
     return Column(children: [
       _ControlsBar(
-        tabs:               tabs,
-        ivMode:             ivMode,
-        onIvModeChanged:    onIvModeChanged,
-        snaps:              snaps,
-        activeSnap:         activeSnap,
-        baseSnap:           baseSnap,
-        onActiveSnapChanged: onActiveSnapChanged,
-        onBaseSnapChanged:   onBaseSnapChanged,
+        tabs:                widget.tabs,
+        ivMode:              widget.ivMode,
+        onIvModeChanged:     widget.onIvModeChanged,
+        snaps:               widget.snaps,
+        activeSnap:          widget.activeSnap,
+        baseSnap:            widget.baseSnap,
+        onActiveSnapChanged: widget.onActiveSnapChanged,
+        onBaseSnapChanged:   widget.onBaseSnapChanged,
       ),
       Expanded(child: _ChartArea(
-        tabs:       tabs,
-        activeSnap: activeSnap,
-        baseSnap:   baseSnap,
-        ivMode:     ivMode,
-        loading:    loading,
+        tabs:       widget.tabs,
+        activeSnap: widget.activeSnap,
+        baseSnap:   widget.baseSnap,
+        ivMode:     widget.ivMode,
+        loading:    widget.loading,
       )),
-      if (activeSnap != null)
-        SizedBox(
-          height: 220,
-          child: VolSurfaceInterpretation(
-            snap:   activeSnap!,
-            ivMode: ivMode,
+      if (widget.activeSnap != null) ...[
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onVerticalDragUpdate: (d) => setState(() {
+            _interpHeight = (_interpHeight - d.delta.dy)
+                .clamp(_interpMin, _interpMax);
+          }),
+          child: Container(
+            height: 16,
+            color: const Color(0xFF111827),
+            child: Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF374151),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
           ),
         ),
+        SizedBox(
+          height: _interpHeight,
+          child: VolSurfaceInterpretation(
+            snap:   widget.activeSnap!,
+            ivMode: widget.ivMode,
+          ),
+        ),
+      ],
     ]);
   }
 }
@@ -662,7 +711,7 @@ class _MainPanel extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════════
 // Controls bar
 // ═══════════════════════════════════════════════════════════════════════════════
-class _ControlsBar extends StatelessWidget {
+class _ControlsBar extends StatefulWidget {
   final TabController           tabs;
   final String                  ivMode;
   final ValueChanged<String>    onIvModeChanged;
@@ -684,67 +733,131 @@ class _ControlsBar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final selectedTicker = baseSnap?.ticker ?? activeSnap?.ticker;
+  State<_ControlsBar> createState() => _ControlsBarState();
+}
 
-    return AnimatedBuilder(
-      animation: tabs,
-      builder: (context2, child) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF111827),
-          border: Border(bottom: BorderSide(color: Color(0xFF1f2937))),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Wrap(
-          spacing: 14,
-          runSpacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            _SegmentedControl(
-              options: const [
-                ('heatmap', 'Heatmap'),
-                ('smile', 'Smile'),
-                ('diff', 'Diff'),
+class _ControlsBarState extends State<_ControlsBar> {
+  late int _tabIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabIndex = widget.tabs.index;
+    widget.tabs.addListener(_onTabChanged);
+  }
+
+  @override
+  void didUpdateWidget(_ControlsBar old) {
+    super.didUpdateWidget(old);
+    if (old.tabs != widget.tabs) {
+      old.tabs.removeListener(_onTabChanged);
+      widget.tabs.addListener(_onTabChanged);
+      _tabIndex = widget.tabs.index;
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.tabs.removeListener(_onTabChanged);
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    // tabs.index jumps to the target immediately when animateTo() is called;
+    // subsequent animation-tick notifications will find no change and skip.
+    if (widget.tabs.index != _tabIndex) {
+      setState(() => _tabIndex = widget.tabs.index);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedTicker =
+        widget.baseSnap?.ticker ?? widget.activeSnap?.ticker;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF111827),
+        border: Border(bottom: BorderSide(color: Color(0xFF1f2937))),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row 1 — view selector + IV mode selector (height never changes)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+            child: Row(
+              children: [
+                _SegmentedControl(
+                  options: const [
+                    ('heatmap', 'Heatmap'),
+                    ('smile', 'Smile'),
+                    ('diff', 'Diff'),
+                  ],
+                  selected: ['heatmap', 'smile', 'diff'][_tabIndex],
+                  onSelected: (v) => widget.tabs
+                      .animateTo(['heatmap', 'smile', 'diff'].indexOf(v)),
+                ),
+                const SizedBox(width: 12),
+                _SegmentedControl(
+                  options: _ivModes,
+                  selected: widget.ivMode,
+                  onSelected: widget.onIvModeChanged,
+                ),
               ],
-              selected: ['heatmap', 'smile', 'diff'][tabs.index],
-              onSelected: (v) =>
-                  tabs.animateTo(['heatmap', 'smile', 'diff'].indexOf(v)),
             ),
-            _SegmentedControl(
-              options: _ivModes,
-              selected: ivMode,
-              onSelected: onIvModeChanged,
-            ),
-            if (tabs.index == 2 && snaps.isNotEmpty) ...[
-              _SnapSelect(
-                label: 'Base',
-                snaps: selectedTicker != null
-                    ? snaps.where((s) => s.ticker == selectedTicker).toList()
-                    : snaps,
-                selected: baseSnap,
-                onChanged: onBaseSnapChanged,
+          ),
+          // Row 2 — snap selectors (always one row, content changes per tab)
+          if (widget.snaps.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Row(
+                children: [
+                  if (_tabIndex == 2) ...[
+                    _SnapSelect(
+                      label: 'Earlier',
+                      snaps: selectedTicker != null
+                          ? widget.snaps
+                              .where((s) => s.ticker == selectedTicker)
+                              .toList()
+                          : widget.snaps,
+                      selected: widget.baseSnap,
+                      onChanged: widget.onBaseSnapChanged,
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.east_rounded,
+                          size: 12, color: Color(0xFF4b5563)),
+                    ),
+                    _SnapSelect(
+                      label: 'Later',
+                      snaps: selectedTicker != null
+                          ? widget.snaps
+                              .where((s) => s.ticker == selectedTicker)
+                              .toList()
+                          : widget.snaps,
+                      selected: widget.activeSnap,
+                      onChanged: widget.onActiveSnapChanged,
+                    ),
+                  ] else
+                    _SnapSelect(
+                      label: 'Date',
+                      snaps: widget.activeSnap != null
+                          ? widget.snaps
+                              .where((s) =>
+                                  s.ticker == widget.activeSnap!.ticker)
+                              .toList()
+                          : widget.snaps,
+                      selected: widget.activeSnap,
+                      onChanged: widget.onActiveSnapChanged,
+                    ),
+                ],
               ),
-              _SnapSelect(
-                label: 'Compare',
-                snaps: selectedTicker != null
-                    ? snaps.where((s) => s.ticker == selectedTicker).toList()
-                    : snaps,
-                selected: activeSnap,
-                onChanged: onActiveSnapChanged,
-              ),
-            ] else if (tabs.index != 2 && snaps.isNotEmpty)
-              _SnapSelect(
-                label: 'Date',
-                snaps: activeSnap != null
-                    ? snaps
-                        .where((s) => s.ticker == activeSnap!.ticker)
-                        .toList()
-                    : snaps,
-                selected: activeSnap,
-                onChanged: onActiveSnapChanged,
-              ),
-          ],
-        ),
+            )
+          else
+            const SizedBox(height: 8),
+        ],
       ),
     );
   }
@@ -772,9 +885,16 @@ class _SegmentedControl extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           for (var i = 0; i < options.length; i++)
-            GestureDetector(
+            InkWell(
               onTap: () => onSelected(options[i].$1),
-              child: Container(
+              borderRadius: BorderRadius.horizontal(
+                left:  i == 0 ? const Radius.circular(5) : Radius.zero,
+                right: i == options.length - 1
+                    ? const Radius.circular(5)
+                    : Radius.zero,
+              ),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -899,6 +1019,7 @@ class _ChartArea extends StatelessWidget {
       children: [
         activeSnap != null
             ? VolHeatmap(
+                key:       ValueKey('heatmap_${activeSnap!.id}_$ivMode'),
                 points:    activeSnap!.points,
                 spotPrice: activeSnap!.spotPrice,
                 ivMode:    ivMode,
@@ -906,6 +1027,7 @@ class _ChartArea extends StatelessWidget {
             : _empty('Select a ticker and date to view the surface'),
         activeSnap != null
             ? VolSmileChart(
+                key:       ValueKey('smile_${activeSnap!.id}_$ivMode'),
                 points:    activeSnap!.points,
                 spotPrice: activeSnap!.spotPrice,
                 ivMode:    ivMode,
@@ -917,7 +1039,7 @@ class _ChartArea extends StatelessWidget {
                 compare: activeSnap!,
                 ivMode:  ivMode,
               )
-            : _empty('Select Base and Compare datasets'),
+            : _empty('Select Earlier and Later datasets'),
       ],
     );
   }
@@ -982,7 +1104,7 @@ class _DiffHeatmap extends StatelessWidget {
       Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
         child: Row(children: [
-          Text('${compare.obsDateStr} − ${base.obsDateStr}',
+          Text('${base.obsDateStr}  →  ${compare.obsDateStr}',
               style: const TextStyle(
                   color:     Color(0xFF9ca3af),
                   fontSize:  11,
@@ -1046,231 +1168,56 @@ class _NarrowLayoutState extends State<_NarrowLayout> {
   static const double _interpMin = 80;
   static const double _interpMax = 440;
 
-  void _showDatasetSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF111827),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(12))),
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        minChildSize:     0.4,
-        maxChildSize:     0.92,
-        builder: (ctx, scrollController) => _DatasetSheetContent(
-          snaps:        widget.snaps,
-          activeSnap:   widget.activeSnap,
-          onSelectSnap: (s) {
-            widget.onSelectSnap(s);
-            Navigator.pop(context);
-          },
-          onDeleteSnap: widget.onDeleteSnap,
-          scrollController: scrollController,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Column(children: [
-          _ControlsBar(
-            tabs:               widget.tabs,
-            ivMode:             widget.ivMode,
-            onIvModeChanged:    widget.onIvModeChanged,
-            snaps:              widget.snaps,
-            activeSnap:         widget.activeSnap,
-            baseSnap:           widget.baseSnap,
-            onActiveSnapChanged: widget.onSelectSnap,
-            onBaseSnapChanged:   widget.onBaseSnapChanged,
-          ),
-          Expanded(child: _ChartArea(
-            tabs:       widget.tabs,
-            activeSnap: widget.activeSnap,
-            baseSnap:   widget.baseSnap,
-            ivMode:     widget.ivMode,
-            loading:    widget.loading,
-          )),
-          if (widget.activeSnap != null) ...[
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragUpdate: (d) => setState(() {
-                _interpHeight = (_interpHeight - d.delta.dy)
-                    .clamp(_interpMin, _interpMax);
-              }),
+    return Column(children: [
+      _ControlsBar(
+        tabs:               widget.tabs,
+        ivMode:             widget.ivMode,
+        onIvModeChanged:    widget.onIvModeChanged,
+        snaps:              widget.snaps,
+        activeSnap:         widget.activeSnap,
+        baseSnap:           widget.baseSnap,
+        onActiveSnapChanged: widget.onSelectSnap,
+        onBaseSnapChanged:   widget.onBaseSnapChanged,
+      ),
+      Expanded(child: _ChartArea(
+        tabs:       widget.tabs,
+        activeSnap: widget.activeSnap,
+        baseSnap:   widget.baseSnap,
+        ivMode:     widget.ivMode,
+        loading:    widget.loading,
+      )),
+      if (widget.activeSnap != null) ...[
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onVerticalDragUpdate: (d) => setState(() {
+            _interpHeight = (_interpHeight - d.delta.dy)
+                .clamp(_interpMin, _interpMax);
+          }),
+          child: Container(
+            height: 16,
+            color: const Color(0xFF111827),
+            child: Center(
               child: Container(
-                height: 16,
-                color: const Color(0xFF111827),
-                child: Center(
-                  child: Container(
-                    width: 36, height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF374151),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF374151),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
-            SizedBox(
-              height: _interpHeight,
-              child: VolSurfaceInterpretation(
-                snap:   widget.activeSnap!,
-                ivMode: widget.ivMode,
-              ),
-            ),
-          ],
-        ]),
-        Positioned(
-          bottom: widget.activeSnap != null ? _interpHeight + 16 + 16 : 16,
-          right:  16,
-          child: FloatingActionButton.extended(
-            onPressed: () => _showDatasetSheet(context),
-            backgroundColor: const Color(0xFF3b82f6),
-            label: const Text('Datasets',
-                style: TextStyle(fontFamily: 'monospace')),
-            icon: const Icon(Icons.dataset_rounded),
+          ),
+        ),
+        SizedBox(
+          height: _interpHeight,
+          child: VolSurfaceInterpretation(
+            snap:   widget.activeSnap!,
+            ivMode: widget.ivMode,
           ),
         ),
       ],
-    );
-  }
-}
-
-// Bottom sheet content for narrow layout
-class _DatasetSheetContent extends StatefulWidget {
-  final List<VolSnapshot>          snaps;
-  final VolSnapshot?               activeSnap;
-  final ValueChanged<VolSnapshot>  onSelectSnap;
-  final ValueChanged<VolSnapshot>  onDeleteSnap;
-  final ScrollController           scrollController;
-
-  const _DatasetSheetContent({
-    required this.snaps,
-    required this.activeSnap,
-    required this.onSelectSnap,
-    required this.onDeleteSnap,
-    required this.scrollController,
-  });
-
-  @override
-  State<_DatasetSheetContent> createState() => _DatasetSheetContentState();
-}
-
-class _DatasetSheetContentState extends State<_DatasetSheetContent> {
-  final _searchCtrl = TextEditingController();
-  String _filter = '';
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = _filter.isEmpty
-        ? widget.snaps
-        : widget.snaps
-            .where((s) =>
-                s.ticker.toUpperCase().contains(_filter.toUpperCase()))
-            .toList();
-
-    return Column(children: [
-      // Drag handle
-      
-      Center(
-        child: Container(
-          margin: const EdgeInsets.only(top: 10, bottom: 12),
-          width: 36, height: 4,
-          decoration: BoxDecoration(
-            color: const Color(0xFF374151),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-      ),
-      // Header
-      const Padding(
-        padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
-        child: Row(children: [
-          Text('SELECT DATASET',
-              style: TextStyle(
-                  fontSize:    10,
-                  fontWeight:  FontWeight.w700,
-                  letterSpacing: 1.2,
-                  color:       Color(0xFF6b7280),
-                  fontFamily:  'monospace')),
-        ]),
-      ),
-      // Search
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-        child: TextField(
-          controller: _searchCtrl,
-          autofocus: true,
-          onChanged: (v) => setState(() => _filter = v),
-          style: const TextStyle(
-              fontSize: 13, color: Color(0xFFd1d5db)),
-          decoration: InputDecoration(
-            hintText: 'Search ticker…',
-            hintStyle: const TextStyle(color: Color(0xFF4b5563)),
-            prefixIcon: const Icon(Icons.search_rounded,
-                size: 18, color: Color(0xFF6b7280)),
-            suffixIcon: _filter.isNotEmpty
-                ? GestureDetector(
-                    onTap: () {
-                      _searchCtrl.clear();
-                      setState(() => _filter = '');
-                    },
-                    child: const Icon(Icons.close_rounded,
-                        size: 16, color: Color(0xFF6b7280)),
-                  )
-                : null,
-            filled: true,
-            fillColor: const Color(0xFF0d1117),
-            contentPadding: const EdgeInsets.symmetric(vertical: 10),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF374151)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF374151)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF3b82f6)),
-            ),
-          ),
-        ),
-      ),
-      const Divider(color: Color(0xFF1f2937), height: 1),
-      // List
-      Expanded(
-        child: filtered.isEmpty
-            ? Center(
-                child: Text(
-                  _filter.isEmpty
-                      ? 'No datasets yet.\nOpen an options chain to auto-ingest.'
-                      : 'No tickers match "$_filter".',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color:     Color(0xFF4b5563),
-                      fontSize:  13,
-                      height:    1.6),
-                ),
-              )
-            : _GroupedDatasetList(
-                snaps:           filtered,
-                activeSnap:      widget.activeSnap,
-                onSelectSnap:    widget.onSelectSnap,
-                onDeleteSnap:    widget.onDeleteSnap,
-                scrollController: widget.scrollController,
-              ),
-      ),
     ]);
   }
 }
+

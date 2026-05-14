@@ -159,6 +159,28 @@ class PythonApiClient {
         'is_call': optionType == 'call',
       });
 
+  /// Returns {implied_vol, implied_vol_pct, price_check, forward, delta, gamma,
+  ///          theta, vega, rho, vanna, charm, vomma}
+  /// Throws PythonApiException(422) when the price violates no-arbitrage bounds.
+  static Future<Map<String, dynamic>> bsImpliedVol({
+    required double marketPrice,
+    required double s,
+    required double k,
+    required int dte,
+    required double r,
+    required String optionType,
+    double initialGuess = 0.25,
+  }) =>
+      _post('/bs/iv', {
+        'market_price':   marketPrice,
+        'spot':           s,
+        'strike':         k,
+        'days_to_expiry': dte.clamp(1, 9999),
+        'r':              r,
+        'is_call':        optionType == 'call',
+        'initial_guess':  initialGuess,
+      });
+
   // ── SABR ───────────────────────────────────────────────────────────────────
 
   static Future<Map<String, dynamic>> sabrIv({

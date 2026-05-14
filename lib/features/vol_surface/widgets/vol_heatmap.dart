@@ -73,12 +73,13 @@ class _VolHeatmapState extends State<VolHeatmap> {
       setState(() => _hit = null);
       return;
     }
-    final iv = g.grid[yi][xi];
-    setState(() => _hit = _HitCell(
-          strike: g.strikes[xi],
-          dte: g.dtes[yi],
-          iv: iv,
-        ));
+    final tapped = _HitCell(
+      strike: g.strikes[xi],
+      dte: g.dtes[yi],
+      iv: g.grid[yi][xi],
+    );
+    // Sticky: tap same cell to dismiss, different cell to move tooltip.
+    setState(() => _hit = (_hit == tapped) ? null : tapped);
   }
 
   @override
@@ -93,11 +94,16 @@ class _VolHeatmapState extends State<VolHeatmap> {
       children: [
         GestureDetector(
           onTapDown: (d) => _onTap(d.localPosition, context.size ?? Size.zero),
-          onTapUp: (_) => setState(() => _hit = null),
           child: LayoutBuilder(
             builder: (_, constraints) => CustomPaint(
               size: constraints.biggest,
-              painter: _HeatmapPainter(grid: g, spotPrice: widget.spotPrice, legendTitle: widget.legendTitle),
+              painter: _HeatmapPainter(
+                grid: g,
+                spotPrice: widget.spotPrice,
+                legendTitle: widget.legendTitle,
+                hitCell: _hit,
+                zeroCentered: widget.zeroCentered,
+              ),
             ),
           ),
         ),
@@ -118,6 +124,13 @@ class _HitCell {
   final int dte;
   final double? iv;
   const _HitCell({required this.strike, required this.dte, this.iv});
+
+  @override
+  bool operator ==(Object other) =>
+      other is _HitCell && other.strike == strike && other.dte == dte;
+
+  @override
+  int get hashCode => Object.hash(strike, dte);
 }
 
 class _GridData {
@@ -194,6 +207,8 @@ class _GridData {
 class _HeatmapPainter extends CustomPainter {
   final _GridData grid;
   final double? spotPrice;
+  final _HitCell? hitCell;
+  final bool zeroCentered;
 
   static const leftMargin = 52.0;
   static const bottomMargin = 44.0;
@@ -203,8 +218,13 @@ class _HeatmapPainter extends CustomPainter {
 
   final String legendTitle;
 
-  const _HeatmapPainter(
-      {required this.grid, this.spotPrice, this.legendTitle = 'IV %'});
+  const _HeatmapPainter({
+    required this.grid,
+    this.spotPrice,
+    this.legendTitle = 'IV %',
+    this.hitCell,
+    this.zeroCentered = false,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -230,9 +250,30 @@ class _HeatmapPainter extends CustomPainter {
           ch,
         );
         final color = iv != null
-            ? _ivColor(iv, grid.minIv, grid.maxIv)
+            ? _ivColor(iv, grid.minIv, grid.maxIv, zeroCentered: zeroCentered)
             : const Color(0xFF1e1e2e);
         canvas.drawRect(rect, Paint()..color = color);
+      }
+    }
+
+    // ── Hit cell highlight ──
+    if (hitCell != null) {
+      final xi = grid.strikes.indexOf(hitCell!.strike);
+      final yi = grid.dtes.indexOf(hitCell!.dte);
+      if (xi >= 0 && yi >= 0) {
+        final rect = Rect.fromLTWH(
+          leftMargin + xi * cw,
+          topMargin + yi * ch,
+          cw,
+          ch,
+        );
+        canvas.drawRect(
+          rect,
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.85)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5,
+        );
       }
     }
 
@@ -332,9 +373,9 @@ class _HeatmapPainter extends CustomPainter {
       begin: Alignment.bottomCenter,
       end: Alignment.topCenter,
       colors: [
-        _ivColor(grid.minIv, grid.minIv, grid.maxIv),
-        _ivColor((grid.minIv + grid.maxIv) / 2, grid.minIv, grid.maxIv),
-        _ivColor(grid.maxIv, grid.minIv, grid.maxIv),
+        _ivColor(grid.minIv, grid.minIv, grid.maxIv, zeroCentered: zeroCentered),
+        _ivColor((grid.minIv + grid.maxIv) / 2, grid.minIv, grid.maxIv, zeroCentered: zeroCentered),
+        _ivColor(grid.maxIv, grid.minIv, grid.maxIv, zeroCentered: zeroCentered),
       ],
     );
     canvas.drawRect(rect, Paint()..shader = gradient.createShader(rect));
@@ -374,15 +415,43 @@ class _HeatmapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_HeatmapPainter old) =>
-      old.grid != grid || old.spotPrice != spotPrice || old.legendTitle != legendTitle;
+      old.grid != grid ||
+      old.spotPrice != spotPrice ||
+      old.legendTitle != legendTitle ||
+      old.hitCell != hitCell ||
+      old.zeroCentered != zeroCentered;
 
   static String _fmtStrike(double s) =>
       s == s.truncateToDouble() ? s.toInt().toString() : s.toStringAsFixed(1);
 
-  static Color _ivColor(double iv, double minIv, double maxIv) {
+  static Color _ivColor(
+    double iv,
+    double minIv,
+    double maxIv, {
+    bool zeroCentered = false,
+  }) {
     if (maxIv <= minIv) return const Color(0xFF1d4ed8);
     final t = ((iv - minIv) / (maxIv - minIv)).clamp(0.0, 1.0);
-    // Deep blue → cyan → green → yellow → orange → red
+
+    if (zeroCentered) {
+      // Diverging: blue (fell) → slate-white (no change) → red (rose).
+      // t=0.5 maps exactly to zero delta, so the midpoint is unambiguously neutral.
+      const stops = [
+        (0.00, Color(0xFF1d4ed8)), // blue-700  — strong fall
+        (0.35, Color(0xFF93c5fd)), // blue-300  — mild fall
+        (0.50, Color(0xFFe2e8f0)), // slate-200 — no change
+        (0.65, Color(0xFFfca5a5)), // red-300   — mild rise
+        (1.00, Color(0xFFdc2626)), // red-600   — strong rise
+      ];
+      for (var i = 0; i < stops.length - 1; i++) {
+        final (t0, c0) = stops[i];
+        final (t1, c1) = stops[i + 1];
+        if (t <= t1) return Color.lerp(c0, c1, (t - t0) / (t1 - t0))!;
+      }
+      return stops.last.$2;
+    }
+
+    // Standard: deep blue → cyan → green → yellow → orange → red
     const stops = [
       (0.00, Color(0xFF1e3a8a)),
       (0.20, Color(0xFF0ea5e9)),
@@ -394,10 +463,7 @@ class _HeatmapPainter extends CustomPainter {
     for (var i = 0; i < stops.length - 1; i++) {
       final (t0, c0) = stops[i];
       final (t1, c1) = stops[i + 1];
-      if (t <= t1) {
-        final local = (t - t0) / (t1 - t0);
-        return Color.lerp(c0, c1, local)!;
-      }
+      if (t <= t1) return Color.lerp(c0, c1, (t - t0) / (t1 - t0))!;
     }
     return stops.last.$2;
   }
