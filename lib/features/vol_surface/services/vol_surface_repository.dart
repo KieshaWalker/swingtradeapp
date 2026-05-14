@@ -13,7 +13,7 @@ class VolSurfaceRepository {
   Future<List<VolSnapshot>> loadAll() async {
     final response = await _db
         .from(_table)
-        .select('id,ticker,obs_date,spot_price,points,parsed_at')
+        .select('id,ticker,obs_date,spot_price,parsed_at')
         .order('ticker', ascending: true)
         .order('obs_date', ascending: true);
     return (response as List<dynamic>)
