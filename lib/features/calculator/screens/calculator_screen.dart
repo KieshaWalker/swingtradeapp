@@ -632,8 +632,8 @@ class _BlackScholesTabState extends State<_BlackScholesTab> {
           Expanded(child: TextFormField(
             controller: _rCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Risk-free Rate (r)',
-                suffixText: '%', helperText: 'SOFR ~4.33%'),
+            decoration: InputDecoration(labelText: 'Risk-free Rate (r)',
+                suffixText: '%', helperText: 'SOFR ${(widget.initialRate ?? 4.33).toStringAsFixed(2)}%'),
           )),
           const SizedBox(width: 12),
           Expanded(child: _OptionTypeToggle(
@@ -1120,7 +1120,7 @@ class _HestonTabState extends State<_HestonTab> {
           Expanded(child: TextFormField(
             controller: _rCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Rate (r)', suffixText: '%'),
+            decoration: InputDecoration(labelText: 'Rate (r)', suffixText: '%', helperText: 'SOFR ${(widget.initialRate ?? 4.33).toStringAsFixed(2)}%'),
           )),
         ]),
         const SizedBox(height: 12),
@@ -1483,8 +1483,8 @@ class _ForwardPriceTabState extends State<_ForwardPriceTab> {
           Expanded(child: TextFormField(
             controller: _rCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-                labelText: 'Risk-free Rate (r)', suffixText: '%', helperText: 'SOFR ~4.33%'),
+            decoration: InputDecoration(
+                labelText: 'Risk-free Rate (r)', suffixText: '%', helperText: 'SOFR ${(widget.initialRate ?? 4.33).toStringAsFixed(2)}%'),
             onChanged: (_) => setState(() {}),
           )),
           const SizedBox(width: 12),
@@ -1692,8 +1692,8 @@ class _TheoreticalPriceTabState extends State<_TheoreticalPriceTab> {
           Expanded(child: TextFormField(
             controller: _rCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-                labelText: 'Risk-free Rate', suffixText: '%'),
+            decoration: InputDecoration(
+                labelText: 'Risk-free Rate', suffixText: '%', helperText: 'SOFR ${(widget.initialRate ?? 4.33).toStringAsFixed(2)}%'),
           )),
         ]),
         const SizedBox(height: 12),
@@ -2344,8 +2344,8 @@ class _ImpliedVolTabState extends State<_ImpliedVolTab> {
           Expanded(child: TextFormField(
             controller: _rCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-                labelText: 'Risk-free Rate', suffixText: '%', helperText: 'SOFR ~4.33%'),
+            decoration: InputDecoration(
+                labelText: 'Risk-free Rate', suffixText: '%', helperText: 'SOFR ${(widget.initialRate ?? 4.33).toStringAsFixed(2)}%'),
           )),
         ]),
         const SizedBox(height: 12),
