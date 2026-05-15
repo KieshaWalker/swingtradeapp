@@ -41,7 +41,7 @@ class _CalculatorScreenState extends State<CalculatorScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 9, vsync: this);
+    _tabs = TabController(length: 11, vsync: this);
     FredService().getSeries('SOFR30DAYAVG', limit: 1).then((series) {
       if (mounted && series.observations.isNotEmpty) {
         setState(() => _liveRate = series.observations.first.value);
@@ -79,6 +79,8 @@ class _CalculatorScreenState extends State<CalculatorScreen>
             Tab(text: 'Theoretical Price'),
             Tab(text: 'Intrinsic Value'),
             Tab(text: 'Implied Vol'),
+            Tab(text: 'Kappa'),
+            Tab(text: 'Vomma'),
           ],
         ),
       ),
@@ -94,6 +96,8 @@ class _CalculatorScreenState extends State<CalculatorScreen>
           _TheoreticalPriceTab(initialRate: _liveRate),
           const _IntrinsicValueTab(),
           _ImpliedVolTab(initialRate: _liveRate),
+          const _KappaTab(),
+          _VommaTab(initialRate: _liveRate),
         ],
       ),
     );
@@ -2511,6 +2515,290 @@ class _ImpliedVolTabState extends State<_ImpliedVolTab> {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+// =============================================================================
+// Tab 10 — Heston κ (Kappa) Calculator
+// =============================================================================
+class _KappaTab extends StatefulWidget {
+  const _KappaTab();
+  @override
+  State<_KappaTab> createState() => _KappaTabState();
+}
+
+class _KappaTabState extends State<_KappaTab> {
+  final _kappaCtrl = TextEditingController(text: '2.0');
+  final _thetaCtrl = TextEditingController(text: '20');
+  final _v0Ctrl    = TextEditingController(text: '20');
+  final _xiCtrl    = TextEditingController(text: '0.50');
+  final _dteCtrl   = TextEditingController(text: '30');
+  Map<String, dynamic>? _result;
+
+  @override
+  void dispose() {
+    _kappaCtrl.dispose(); _thetaCtrl.dispose(); _v0Ctrl.dispose();
+    _xiCtrl.dispose(); _dteCtrl.dispose();
+    super.dispose();
+  }
+
+  void _calculate() {
+    final kappa    = double.tryParse(_kappaCtrl.text);
+    final thetaVol = double.tryParse(_thetaCtrl.text);
+    final v0Vol    = double.tryParse(_v0Ctrl.text);
+    final xi       = double.tryParse(_xiCtrl.text);
+    final dte      = int.tryParse(_dteCtrl.text);
+    if (kappa == null || kappa <= 0 || thetaVol == null ||
+        v0Vol == null || xi == null || dte == null) { return; }
+
+    final theta        = (thetaVol / 100) * (thetaVol / 100);
+    final v0           = (v0Vol   / 100) * (v0Vol   / 100);
+    final T            = dte / 365.0;
+    final halfLifeDays = (log(2) / kappa) * 365;
+    final eVarT        = theta + (v0 - theta) * exp(-kappa * T);
+    final eVolT        = sqrt(eVarT.clamp(0.0, double.infinity)) * 100;
+    final lhs          = 2 * kappa * theta;
+    final rhs          = xi * xi;
+
+    setState(() {
+      _result = {
+        'half_life_days':   halfLifeDays,
+        'e_vol_pct':        eVolT,
+        'half_lives':       (dte / 365.0) / (log(2) / kappa),
+        'feller_satisfied': lhs >= rhs,
+        'feller_lhs':       lhs,
+        'feller_rhs':       rhs,
+      };
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = _result;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _kappaCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'κ (kappa)', helperText: 'Mean reversion speed'),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _thetaCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'θ — Long-run Vol', suffixText: '%', helperText: 'Long-run variance target'),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _v0Ctrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'v₀ — Current Vol', suffixText: '%', helperText: 'Spot variance today'),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _xiCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'ξ — Vol of Vol', helperText: 'Heston noise term'),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _dteCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'DTE', suffixText: 'days'),
+          )),
+          const Expanded(child: SizedBox()),
+        ]),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(onPressed: _calculate, child: const Text('Calculate')),
+        ),
+        if (r != null) ...[
+          const SizedBox(height: 20),
+          _ResultRow(
+            label: 'Half-life of mean reversion',
+            value: '${(r['half_life_days'] as double).toStringAsFixed(1)} days',
+            color: AppTheme.neutralColor,
+          ),
+          _ResultRow(
+            label: 'Expected vol at expiry',
+            value: '${(r['e_vol_pct'] as double).toStringAsFixed(2)}%',
+            color: AppTheme.neutralColor,
+          ),
+          _ResultRow(
+            label: 'Half-lives until expiry',
+            value: (r['half_lives'] as double).toStringAsFixed(2),
+            color: AppTheme.neutralColor,
+          ),
+          _ResultRow(
+            label: 'Feller  (2κθ ≥ ξ²)',
+            value: '${(r['feller_lhs'] as double).toStringAsFixed(4)} vs '
+                '${(r['feller_rhs'] as double).toStringAsFixed(4)}  '
+                '${(r['feller_satisfied'] as bool) ? '✓ satisfied' : '✗ violated'}',
+            color: (r['feller_satisfied'] as bool) ? AppTheme.profitColor : AppTheme.lossColor,
+          ),
+        ],
+      ]),
+    );
+  }
+}
+
+// =============================================================================
+// Tab 11 — Vomma / Volga Calculator  (∂²V/∂σ²)
+// =============================================================================
+class _VommaTab extends StatefulWidget {
+  const _VommaTab({this.initialRate});
+  final double? initialRate;
+  @override
+  State<_VommaTab> createState() => _VommaTabState();
+}
+
+class _VommaTabState extends State<_VommaTab> {
+  final _spotCtrl   = TextEditingController(text: '100');
+  final _strikeCtrl = TextEditingController(text: '100');
+  final _dteCtrl    = TextEditingController(text: '30');
+  final _ivCtrl     = TextEditingController(text: '20');
+  final _rCtrl      = TextEditingController(text: '4.33');
+  bool _isCall  = true;
+  bool _loading = false;
+  Map<String, dynamic>? _result;
+  String? _error;
+
+  @override
+  void didUpdateWidget(covariant _VommaTab old) {
+    super.didUpdateWidget(old);
+    if (widget.initialRate != null && old.initialRate == null) {
+      _rCtrl.text = widget.initialRate!.toStringAsFixed(2);
+    }
+  }
+
+  @override
+  void dispose() {
+    _spotCtrl.dispose(); _strikeCtrl.dispose(); _dteCtrl.dispose();
+    _ivCtrl.dispose(); _rCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _calculate() async {
+    final spot   = double.tryParse(_spotCtrl.text);
+    final strike = double.tryParse(_strikeCtrl.text);
+    final dte    = int.tryParse(_dteCtrl.text);
+    final iv     = double.tryParse(_ivCtrl.text);
+    final r      = double.tryParse(_rCtrl.text);
+    if (spot == null || strike == null || dte == null || iv == null || r == null) return;
+    setState(() { _loading = true; _error = null; });
+    try {
+      final res = await PythonApiClient.bsGreeks(
+        s: spot, k: strike, t: dte / 365.0,
+        sigma: iv / 100, r: r / 100,
+        optionType: _isCall ? 'call' : 'put',
+      );
+      setState(() { _result = res; _loading = false; });
+    } catch (e) {
+      setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final res   = _result;
+    final vomma = (res?['vomma'] as num?)?.toDouble();
+    final vega  = (res?['vega']  as num?)?.toDouble();
+    final vanna = (res?['vanna'] as num?)?.toDouble();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _spotCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Spot (S)', prefixText: '\$'),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _strikeCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Strike (K)', prefixText: '\$'),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _dteCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'DTE', suffixText: 'days'),
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: TextFormField(
+            controller: _ivCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'IV (σ)', suffixText: '%'),
+          )),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextFormField(
+            controller: _rCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: 'Risk-free Rate (r)',
+              suffixText: '%',
+              helperText: 'SOFR ${(widget.initialRate ?? 4.33).toStringAsFixed(2)}%',
+            ),
+          )),
+          const SizedBox(width: 12),
+          _OptionTypeToggle(isCall: _isCall, onChanged: (v) => setState(() => _isCall = v)),
+        ]),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _loading ? null : _calculate,
+            child: _loading
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Calculate'),
+          ),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: const TextStyle(color: AppTheme.lossColor, fontSize: 12)),
+        ],
+        if (vomma != null) ...[
+          const SizedBox(height: 20),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C2128),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFF30363D)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Vomma  (∂²V/∂σ²)',
+                  style: TextStyle(fontSize: 11, color: AppTheme.neutralColor)),
+              const SizedBox(height: 4),
+              Text(vomma.toStringAsFixed(4),
+                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text(
+                'Vega shifts ${(vomma * 0.01).abs().toStringAsFixed(4)} per +1 vol pt in IV',
+                style: const TextStyle(fontSize: 11, color: AppTheme.neutralColor),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          if (vega  != null) _ResultRow(label: 'Vega  (∂V/∂σ)',    value: vega.toStringAsFixed(4),  color: AppTheme.neutralColor),
+          if (vanna != null) _ResultRow(label: 'Vanna (∂²V/∂S∂σ)', value: vanna.toStringAsFixed(4), color: AppTheme.neutralColor),
+        ],
+      ]),
     );
   }
 }
