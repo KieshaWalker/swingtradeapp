@@ -75,7 +75,7 @@ FEATURE_NAMES: list[str] = [
 ]
 
 LOOKAHEAD: int        = 5    # flip within next N obs = positive label
-MIN_SAMPLES_EARLY: int = 60  # minimum rows to attempt early-mode training
+MIN_SAMPLES_EARLY: int = 40  # minimum rows to attempt early-mode training
 MIN_SAMPLES_FULL:  int = 200 # minimum rows for full walk-forward CV evaluation
 # Back-compat alias used elsewhere (e.g. router error message)
 MIN_SAMPLES: int = MIN_SAMPLES_FULL

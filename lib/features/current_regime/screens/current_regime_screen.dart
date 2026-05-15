@@ -246,6 +246,18 @@ class _MarketContextStrip extends StatelessWidget {
             subtitle: macro.regime.description.length > 40
                 ? macro.regime.description.substring(0, 40)
                 : macro.regime.description,
+            tooltip:
+              'Macro Score — a composite score (0–100) built from macroeconomic '
+              'indicators including the yield curve, credit spreads, inflation data, '
+              'and economic activity.\n\n'
+              'Higher = risk-on, expansionary environment.\n'
+              'Lower = stress, contraction, or systemic risk.\n\n'
+              'Regimes:\n'
+              '• Risk On (80–100): Conditions strongly favor equity risk-taking\n'
+              '• Neutral Bullish (60–79): Moderate tailwind; trade with the trend\n'
+              '• Neutral (40–59): No clear macro edge; size down\n'
+              '• Caution (20–39): Macro headwinds building; prefer hedged structures\n'
+              '• Crisis (<20): Systemic stress — preserve capital, avoid naked risk',
           ),
         ),
 
@@ -261,8 +273,24 @@ class _MarketContextStrip extends StatelessWidget {
               ? 'VIX ${ctx.vixCurrent!.toStringAsFixed(1)}'
                 '  Dev ${_pct(ctx.vixDevPct)}'
                 '  RSI ${ctx.vixRsi?.toStringAsFixed(0) ?? '—'}'
-                '  P ${ctx.vixHmmProb != null ? '${(ctx.vixHmmProb! * 100).toStringAsFixed(0)}%' : '—'}'
+                '  HMM ${ctx.vixHmmProb != null ? '${(ctx.vixHmmProb! * 100).toStringAsFixed(0)}%' : '—'}'
               : null,
+          tooltip:
+            'VIX Regime — a Hidden Markov Model classifies the volatility '
+            'environment into two states based on VIX behavior.\n\n'
+            'High Vol (risk-off): VIX is elevated and trending. Dealer hedging '
+            'demand is rising. Avoid short-premium positions.\n\n'
+            'Low Vol (risk-on): VIX is suppressed. Dealers are absorbing tail risk. '
+            'Favorable for premium selling and directional trades.\n\n'
+            'Subtitle guide:\n'
+            '• VIX — current VIX index level (30-day implied vol of S&P 500)\n'
+            '• Dev — how far VIX sits above/below its own 10-day moving average '
+            '(e.g. +8% means VIX is 8% above its MA — spiking)\n'
+            '• RSI — Wilder RSI(14) on VIX closes; above 70 means VIX is '
+            'overbought and may retreat; below 30 means VIX is oversold and '
+            'a spike is possible\n'
+            '• HMM — the model\'s confidence in the current state assignment '
+            '(e.g. 99% means the model is highly certain it\'s in Low Vol)',
         ),
 
         // Term structure
@@ -271,6 +299,17 @@ class _MarketContextStrip extends StatelessWidget {
           value:    tsLabel,
           color:    tsColor,
           subtitle: tsSub,
+          tooltip:
+            'VIX Term Structure — the shape of the VIX futures curve, measured as '
+            'VIX (30-day implied vol) divided by VIX3M (90-day implied vol).\n\n'
+            'Contango (ratio < 1.0): Near-term vol is cheaper than long-term vol. '
+            'This is the normal state — markets are calm and no acute stress is '
+            'priced into the near term. Carry favors short-vol strategies.\n\n'
+            'Backwardation (ratio > 1.0): Near-term vol exceeds long-term vol. '
+            'The market fears the next 30 days more than the next 90. This is an '
+            'acute stress signal historically associated with regime flips, '
+            'liquidity events, and fast-market conditions. A rising ratio is a '
+            'leading stress indicator even before VIX itself spikes.',
         ),
 
         // SPY gamma
@@ -283,6 +322,19 @@ class _MarketContextStrip extends StatelessWidget {
           subtitle: spyRow != null
               ? 'ZGL: ${_pct((spyRow['spot_to_zgl_pct'] as num?)?.toDouble())}'
               : null,
+          tooltip:
+            'SPY Gamma — the net dealer gamma position on SPY options, which '
+            'determines how market makers hedge as price moves.\n\n'
+            'Positive gamma: Dealers are net long gamma. They hedge mechanically '
+            'by buying dips and selling rips, which dampens SPY volatility. '
+            'Moves are absorbed rather than amplified.\n\n'
+            'Negative gamma: Dealers are net short gamma. They must hedge by '
+            'selling into declines and buying into rallies, which amplifies '
+            'moves in both directions. Volatility is structural, not random.\n\n'
+            'ZGL (Zero-Gamma Level): the exact SPY price where dealer net gamma '
+            'crosses zero. The distance shown is how far SPY sits above (positive '
+            '%) or below (negative %) that level. The further above ZGL, the more '
+            'stable the positive-gamma cushion.',
         ),
 
         // Breadth
@@ -291,6 +343,19 @@ class _MarketContextStrip extends StatelessWidget {
           value:    breadthLabel,
           color:    breadthColor,
           subtitle: breadthSub,
+          tooltip:
+            'Breadth — measures the width of market participation, calculated as '
+            'the return of RSP (equal-weight S&P 500) relative to SPY (cap-weight '
+            'S&P 500), expressed as a z-score (standard deviations from average).\n\n'
+            'Broad (z > +1.5): Most stocks are participating. The rally or selloff '
+            'is structurally wide — high conviction signal.\n\n'
+            'Diverging (z < −1.5): Only a handful of mega-cap stocks are driving '
+            'the index while most stocks weaken beneath the surface. This is a '
+            'classic warning sign that often precedes broader market deterioration.\n\n'
+            'Neutral (−1.5 to +1.5): Normal participation, no strong conviction '
+            'signal from breadth alone.\n\n'
+            'The z-score measures how unusual today\'s breadth reading is relative '
+            'to recent history.',
         ),
 
         // Ticker count
@@ -303,6 +368,17 @@ class _MarketContextStrip extends StatelessWidget {
             '${analysis.trendingPositive.length}↑  '
             '${analysis.trendingNegative.length}↓  '
             '${analysis.stableNegative.length}−GEX',
+          tooltip:
+            'Tracked — the total number of tickers currently being analyzed, '
+            'broken down by regime bucket.\n\n'
+            '• +GEX: Positive Gamma (Stable) — spot comfortably above the '
+            'zero-gamma level; ML confirms the regime is holding\n'
+            '• ↑ (Recovering): Currently in negative gamma but ML signals are '
+            'improving — a flip toward positive may be forming\n'
+            '• ↓ (Deteriorating): Currently in positive gamma but ML signals '
+            'are weakening — elevated risk of flipping negative\n'
+            '• −GEX: Negative Gamma (Stable) — spot below zero-gamma level; '
+            'dealers are amplifying moves; ML confirms deterioration',
         ),
       ],
     );
@@ -322,39 +398,65 @@ class _ContextChip extends StatelessWidget {
   final String  value;
   final Color   color;
   final String? subtitle;
+  final String? tooltip;
 
   const _ContextChip({
     required this.label,
     required this.value,
     required this.color,
     this.subtitle,
+    this.tooltip,
   });
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-    constraints: const BoxConstraints(minWidth: 110),
-    decoration: BoxDecoration(
-      color:        AppTheme.cardColor,
-      borderRadius: BorderRadius.circular(10),
-      border:       Border.all(color: color.withValues(alpha: 0.4)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label, style: TextStyle(color: AppTheme.neutralColor, fontSize: 11)),
-        const SizedBox(height: 3),
-        Text(value,
-          style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w700)),
-        if (subtitle != null) ...[
-          const SizedBox(height: 2),
-          Text(subtitle!,
-            style: const TextStyle(color: Colors.white54, fontSize: 10)),
+  Widget build(BuildContext context) {
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      constraints: const BoxConstraints(minWidth: 110),
+      decoration: BoxDecoration(
+        color:        AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(10),
+        border:       Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: AppTheme.neutralColor,
+              fontSize: 11,
+              decoration: tooltip != null ? TextDecoration.underline : null,
+              decorationStyle: TextDecorationStyle.dotted,
+              decorationColor: AppTheme.neutralColor,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(value,
+            style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w700)),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            Text(subtitle!,
+              style: const TextStyle(color: Colors.white54, fontSize: 10)),
+          ],
         ],
-      ],
-    ),
-  );
+      ),
+    );
+    if (tooltip == null) return chip;
+    return Tooltip(
+      message: tooltip!,
+      triggerMode: TooltipTriggerMode.tap,
+      preferBelow: false,
+      textStyle: const TextStyle(color: Colors.white, fontSize: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E2535),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: chip,
+    );
+  }
 }
 
 // ── Model Info Card ───────────────────────────────────────────────────────────
@@ -379,8 +481,8 @@ class _ModelInfoCard extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'No trained model — using 14-feature heuristic scoring. '
-                'Call POST /regime/train to fit a supervised model.',
+                'No trained model yet — scoring uses 14-feature heuristic weights. '
+                'A supervised model trains automatically each Sunday as history accumulates.',
                 style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
               ),
             ),
@@ -423,19 +525,71 @@ class _ModelInfoCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              _MetricBadge('AUC-ROC',   meta.aucRoc.toStringAsFixed(3)),
+              _MetricBadge(
+                'AUC-ROC',
+                meta.aucRoc.toStringAsFixed(3),
+                tooltip:
+                  'Area Under the ROC Curve — the gold-standard measure of how well '
+                  'the model separates "regime flip coming" from "regime stays stable" '
+                  'across every possible decision threshold.\n\n'
+                  '0.5 = pure chance (coin flip).\n'
+                  '1.0 = perfect — ranks every real flip above every non-flip.\n\n'
+                  'Intuition: if you randomly picked one day that DID flip and one that '
+                  'did NOT, AUC is the probability the model scored the flip day higher. '
+                  'An AUC of 0.80 means an 80% chance of that correct ranking.\n\n'
+                  'The model is rejected and replaced with heuristic scoring if AUC < 0.52.',
+              ),
               const SizedBox(width: 12),
-              _MetricBadge('Accuracy',  '${(meta.accuracy  * 100).toStringAsFixed(1)}%'),
+              _MetricBadge(
+                'Accuracy',
+                '${(meta.accuracy * 100).toStringAsFixed(1)}%',
+                tooltip:
+                  'Of all predictions made (flip or no-flip), the fraction that were correct.\n\n'
+                  'Warning: accuracy is misleading when flips are rare. If only 17% of '
+                  'days actually flip, a model that always says "no flip" scores 83% '
+                  'accuracy while being completely useless.\n\n'
+                  'Read accuracy alongside Precision and Recall — those metrics tell you '
+                  'what happens specifically on the days the model raises an alarm.',
+              ),
               const SizedBox(width: 12),
-              _MetricBadge('Precision', '${(meta.precision * 100).toStringAsFixed(1)}%'),
+              _MetricBadge(
+                'Precision',
+                '${(meta.precision * 100).toStringAsFixed(1)}%',
+                tooltip:
+                  'Of every day the model flagged as "flip incoming," the fraction that '
+                  'actually flipped.\n\n'
+                  'High precision = few false alarms. A precision of 100% means every '
+                  'warning the model issued was real — but it may have stayed silent on '
+                  'many flips it missed (see Recall).\n\n'
+                  'A precision of 60% means 4 in 10 flip warnings were wrong — '
+                  'treat that as elevated risk, not a certainty.',
+              ),
               const SizedBox(width: 12),
-              _MetricBadge('Recall',    '${(meta.recall    * 100).toStringAsFixed(1)}%'),
+              _MetricBadge(
+                'Recall',
+                '${(meta.recall * 100).toStringAsFixed(1)}%',
+                tooltip:
+                  'Of all the days that actually flipped, the fraction the model caught '
+                  'before they happened.\n\n'
+                  'High recall = few missed flips. A recall of 50% means the model caught '
+                  'half the real regime transitions and missed the other half entirely.\n\n'
+                  'Precision and Recall trade off against each other: a model that warns '
+                  'constantly will catch every flip (high recall) but cry wolf constantly '
+                  '(low precision). This model is tuned toward precision — fewer, '
+                  'higher-confidence warnings.',
+              ),
             ],
           ),
           const SizedBox(height: 6),
           Text(
-            '${meta.nSamples} samples · ${meta.nPositive} flip events ($flipRate% base rate)',
+            '${meta.nSamples} training samples · ${meta.nPositive} regime flips observed ($flipRate% flip rate)',
             style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Flip rate = how often a regime change occurred in training data. '
+            'Lower = rarer flips; model tuned to minimize false alarms.',
+            style: const TextStyle(color: Colors.white38, fontSize: 10),
           ),
         ],
       ),
@@ -444,19 +598,44 @@ class _ModelInfoCard extends StatelessWidget {
 }
 
 class _MetricBadge extends StatelessWidget {
-  final String label, value;
-  const _MetricBadge(this.label, this.value);
+  final String  label, value;
+  final String? tooltip;
+  const _MetricBadge(this.label, this.value, {this.tooltip});
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(label, style: TextStyle(color: AppTheme.neutralColor, fontSize: 10)),
-      Text(value,
-        style: const TextStyle(
-          color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final col = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: AppTheme.neutralColor,
+            fontSize: 10,
+            decoration: tooltip != null ? TextDecoration.underline : null,
+            decorationStyle: TextDecorationStyle.dotted,
+            decorationColor: AppTheme.neutralColor,
+          ),
+        ),
+        Text(value,
+          style: const TextStyle(
+            color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+      ],
+    );
+    if (tooltip == null) return col;
+    return Tooltip(
+      message: tooltip!,
+      preferBelow: false,
+      triggerMode: TooltipTriggerMode.tap,
+      textStyle: const TextStyle(color: Colors.white, fontSize: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E2535),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: col,
+    );
+  }
 }
 
 // ── Feature Weight Legend ─────────────────────────────────────────────────────
@@ -558,7 +737,16 @@ class _FeatureWeightLegend extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 4),
+        Text(
+          meta.available
+            ? 'Bar widths show design-intent weights. The supervised model uses '
+              'its own learned coefficients internally — tap any feature name for details.'
+            : 'No trained model. Bar widths show hand-tuned heuristic weights. '
+              'Tap any feature name for a full explanation.',
+          style: const TextStyle(color: Colors.white38, fontSize: 10),
+        ),
+        const SizedBox(height: 8),
         ..._features.map((f) => Padding(
           padding: const EdgeInsets.only(bottom: 6),
           child: Row(
@@ -837,32 +1025,86 @@ class _TickerCard extends StatelessWidget {
                     fontSize: 9, padH: 5, padV: 2),
                 const SizedBox(width: 4),
                 if (hasBackw)
-                  _RiskDot('B', const Color(0xFFFB923C)),
+                  _RiskDot('B', const Color(0xFFFB923C),
+                    tooltip:
+                      'Backwardation: near-term vol (VIX) exceeds long-term vol (VIX3M). '
+                      'The market is pricing acute stress into the next 30 days. '
+                      'Premium selling window is narrowed — buyers of vol have structural edge.',
+                  ),
                 if (has0dte)
-                  _RiskDot('0', const Color(0xFFFBBF24)),
+                  _RiskDot('0', const Color(0xFFFBBF24),
+                    tooltip:
+                      '0DTE dominance: zero-days-to-expiry options make up ≥50% of '
+                      'total gamma exposure. Dealer gamma resets to zero at market close '
+                      'every day — structural support does not carry overnight. '
+                      'Intraday vol bursts around key strikes are more likely.',
+                  ),
                 if (hasBreadth)
-                  _RiskDot('↓', AppTheme.lossColor),
+                  _RiskDot('↓', AppTheme.lossColor,
+                    tooltip:
+                      'Breadth divergence: the equal-weight index (RSP) is '
+                      'underperforming the cap-weight index (SPY). A narrow handful '
+                      'of large-cap stocks are holding up the index while most stocks '
+                      'weaken — a classic warning sign that often precedes broader selling.',
+                  ),
               ],
             ),
             const SizedBox(height: 4),
             // Confidence bar
-            ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value:           result.confidence.clamp(0.0, 1.0),
-                backgroundColor: AppTheme.cardColor,
-                color:           color.withValues(alpha: 0.8),
-                minHeight:       3,
+            Tooltip(
+              message:
+                'Confidence — how much signal the model has for this ticker. '
+                'Driven by data richness (number of history observations) and '
+                'feature completeness (how many of the 14 features are populated). '
+                'Full bar = high confidence; empty = insufficient data to trust the score.',
+              triggerMode: TooltipTriggerMode.tap,
+              preferBelow: false,
+              textStyle: const TextStyle(color: Colors.white, fontSize: 11),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E2535),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('conf ${(result.confidence * 100).toStringAsFixed(0)}%',
+                    style: const TextStyle(color: Colors.white38, fontSize: 9)),
+                  const SizedBox(height: 2),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value:           result.confidence.clamp(0.0, 1.0),
+                      backgroundColor: AppTheme.cardColor,
+                      color:           color.withValues(alpha: 0.8),
+                      minHeight:       3,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 3),
-            // Row 3: flip prob + scoring method
+            // Row 3: flip risk + scoring method
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'flip ${(result.transitionProb * 100).toStringAsFixed(0)}%',
-                  style: TextStyle(color: AppTheme.neutralColor, fontSize: 10)),
+                Tooltip(
+                  message:
+                    'Flip risk — probability the gamma regime reverses (positive ↔ '
+                    'negative) within the next 5 trading sessions, as estimated by '
+                    'the model or heuristic. Higher % = regime change more likely soon.',
+                  triggerMode: TooltipTriggerMode.tap,
+                  preferBelow: false,
+                  textStyle: const TextStyle(color: Colors.white, fontSize: 11),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E2535),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    '${(result.transitionProb * 100).toStringAsFixed(0)}% flip',
+                    style: TextStyle(color: AppTheme.neutralColor, fontSize: 10)),
+                ),
                 const SizedBox(width: 5),
                 _ScoringBadge(result.scoringMethod),
               ],
@@ -875,24 +1117,40 @@ class _TickerCard extends StatelessWidget {
 }
 
 class _RiskDot extends StatelessWidget {
-  final String label;
-  final Color  color;
-  const _RiskDot(this.label, this.color);
+  final String  label;
+  final Color   color;
+  final String? tooltip;
+  const _RiskDot(this.label, this.color, {this.tooltip});
 
   @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(right: 2),
-    width: 14, height: 14,
-    decoration: BoxDecoration(
-      color:        color.withValues(alpha: 0.2),
-      borderRadius: BorderRadius.circular(3),
-      border:       Border.all(color: color.withValues(alpha: 0.6)),
-    ),
-    child: Center(
-      child: Text(label,
-        style: TextStyle(color: color, fontSize: 7, fontWeight: FontWeight.w800)),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final dot = Container(
+      margin: const EdgeInsets.only(right: 2),
+      width: 14, height: 14,
+      decoration: BoxDecoration(
+        color:        color.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(3),
+        border:       Border.all(color: color.withValues(alpha: 0.6)),
+      ),
+      child: Center(
+        child: Text(label,
+          style: TextStyle(color: color, fontSize: 7, fontWeight: FontWeight.w800)),
+      ),
+    );
+    if (tooltip == null) return dot;
+    return Tooltip(
+      message: tooltip!,
+      triggerMode: TooltipTriggerMode.tap,
+      preferBelow: false,
+      textStyle: const TextStyle(color: Colors.white, fontSize: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E2535),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: dot,
+    );
+  }
 }
 
 // ── Scoring Badge ─────────────────────────────────────────────────────────────
@@ -903,20 +1161,49 @@ class _ScoringBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (label, color) = switch (method) {
-      String s when s.contains('xgb')      => ('XGB', const Color(0xFF60A5FA)),
-      String s when s.contains('logistic') => ('LR',  const Color(0xFF818CF8)),
-      _                                    => ('H',   Colors.white24),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      decoration: BoxDecoration(
-        color:        color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(3),
+    final (label, color, tip) = switch (method) {
+      String s when s.contains('xgb') => (
+        'XGB',
+        const Color(0xFF60A5FA),
+        'Scored by XGBoost — a gradient-boosted tree model trained on historical '
+        'regime flip data. More expressive than logistic regression; captures '
+        'non-linear relationships between features.',
       ),
-      child: Text(label,
-        style: TextStyle(
-          color: color, fontSize: 8, fontWeight: FontWeight.w700)),
+      String s when s.contains('logistic') => (
+        'LR',
+        const Color(0xFF818CF8),
+        'Scored by Logistic Regression — a supervised model trained on historical '
+        'regime flip data. Outputs a probability that the regime flips within the '
+        'next 5 sessions, converted to a −1 to +1 score.',
+      ),
+      _ => (
+        'H',
+        Colors.white54,
+        'Scored by Heuristic — no trained model is active. Score is computed '
+        'from 11 hand-weighted features using fixed coefficients. Less adaptive '
+        'than a trained model but fully transparent.',
+      ),
+    };
+    return Tooltip(
+      message: tip,
+      triggerMode: TooltipTriggerMode.tap,
+      preferBelow: false,
+      textStyle: const TextStyle(color: Colors.white, fontSize: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E2535),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        decoration: BoxDecoration(
+          color:        color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(3),
+        ),
+        child: Text(label,
+          style: TextStyle(
+            color: color, fontSize: 8, fontWeight: FontWeight.w700)),
+      ),
     );
   }
 }
@@ -1025,10 +1312,17 @@ class _TickerDetailSheet extends StatelessWidget {
                 _biasColor(result.strategyBias), fontSize: 10),
             const SizedBox(width: 8),
             Text(
-              'Score ${_score(result.mlScore)}  '
-              'Flip ${(result.transitionProb * 100).toStringAsFixed(0)}%  '
-              'Conf ${(result.confidence * 100).toStringAsFixed(0)}%',
+              'ML Score ${_score(result.mlScore)}  '
+              'Flip Risk ${(result.transitionProb * 100).toStringAsFixed(0)}%  '
+              'Confidence ${(result.confidence * 100).toStringAsFixed(0)}%',
               style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Score: −1 (strongly negative gamma) to +1 (strongly positive gamma)  ·  '
+              'Flip Risk: P(regime reverses within 5 sessions)  ·  '
+              'Confidence: data + feature completeness',
+              style: const TextStyle(color: Colors.white38, fontSize: 10),
             ),
           ],
         ),
@@ -1528,11 +1822,13 @@ class _FeatureSnapshot extends StatelessWidget {
       ),
       (
         'HMM State',
-        f.hmmState ?? '—',
+        f.hmmState == 'high_vol' ? 'High Vol'
+            : f.hmmState == 'low_vol' ? 'Low Vol'
+            : '—',
         f.hmmState == 'high_vol'
-            ? 'Risk-off: ${f.hmmProbability != null ? '${(f.hmmProbability! * 100).toStringAsFixed(0)}% confidence' : ''}'
+            ? 'Risk-off — stressed vol environment${f.hmmProbability != null ? ' (${(f.hmmProbability! * 100).toStringAsFixed(0)}% model confidence)' : ''}'
             : f.hmmState == 'low_vol'
-              ? 'Risk-on: ${f.hmmProbability != null ? '${(f.hmmProbability! * 100).toStringAsFixed(0)}% confidence' : ''}'
+              ? 'Risk-on — calm vol environment${f.hmmProbability != null ? ' (${(f.hmmProbability! * 100).toStringAsFixed(0)}% model confidence)' : ''}'
               : '—',
         f.hmmState == 'high_vol' ? AppTheme.lossColor
             : f.hmmState == 'low_vol' ? AppTheme.profitColor : null,
@@ -1560,10 +1856,12 @@ class _FeatureSnapshot extends StatelessWidget {
         'Term Structure',
         f.vixTermStructureRatio != null
             ? f.vixTermStructureRatio!.toStringAsFixed(3) : '—',
-        f.isBackwardation
-            ? 'Backwardation — near-term stress premium'
-            : 'Contango — calm near-term structure',
-        f.isBackwardation ? const Color(0xFFFB923C) : AppTheme.profitColor,
+        f.vixTermStructureRatio == null ? '—'
+            : f.isBackwardation
+              ? 'Backwardation — near-term stress premium (VIX > VIX3M)'
+              : 'Contango — calm near-term structure (VIX < VIX3M)',
+        f.vixTermStructureRatio == null ? null
+            : f.isBackwardation ? const Color(0xFFFB923C) : AppTheme.profitColor,
       ),
       (
         'VT Distance',

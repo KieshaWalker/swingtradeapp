@@ -172,6 +172,14 @@ upsert_job regime-pull \
   --attempt-deadline=900s \
   --description="Regime classification → regime_snapshots (Mon-Fri hourly)"
 
+# Job ML — Regime ML retrain (weekly, after enough history accumulates)
+upsert_job regime-train-weekly \
+  "${COMMON_FLAGS[@]}" \
+  --schedule="0 0 * * 0" \
+  --uri="${SERVICE_URL}/jobs/regime-train" \
+  --attempt-deadline=600s \
+  --description="Weekly regime ML retrain — logistic on 180d of regime_snapshots (Sunday 00:00 UTC)"
+
 # Job 10 — Position EOD snapshot (must run after market close)
 upsert_job position-eod-snapshot \
   "${COMMON_FLAGS[@]}" \
@@ -210,8 +218,7 @@ echo "  Cloud Run:  ${SERVICE_URL}"
 echo "  Scheduler:  vol-surface-pull, sabr-pull, heston-pull, heston-pull-2, iv-pull,"
 echo "              greek-grid-pull, greek-snapshots-pull, regime-pull,"
 echo "              expected-move-pull, position-eod-snapshot,"
-echo "              vol-period-weekly, vol-period-monthly"
-echo "  Note: regime ML retrains automatically at the end of every regime-pull run."
+echo "              vol-period-weekly, vol-period-monthly, regime-train-weekly"
 echo ""
 echo "Manual triggers:"
 echo "  gcloud scheduler jobs run <job-name> --location=${REGION} --project=${PROJECT_ID}"
