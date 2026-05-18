@@ -62,6 +62,8 @@ import '../features/greek_grid/screens/greek_grid_screen.dart';
 import '../features/settings/screens/schwab_bootstrap_screen.dart';
 import '../features/current_regime/screens/current_regime_screen.dart';
 import '../features/positions/screens/positions_screen.dart';
+import '../features/strategy_tracker/screens/strategy_tracker_screen.dart';
+import '../features/strategy_tracker/screens/strategy_detail_screen.dart';
 
 // =============================================================================
 // _RouterNotifier
@@ -212,6 +214,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => const NoTransitionPage(
           child: _AppShell(child: PositionsScreen()),
         ),
+      ),
+      GoRoute(
+        path: '/strategy-tracker',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: StrategyTrackerScreen()),
+        ),
+        routes: [
+          GoRoute(
+            path: ':id',
+            builder: (_, state) => StrategyDetailScreen(
+              setupId: state.pathParameters['id']!,
+            ),
+          ),
+        ],
       ),
 
       // Tickers — dashboard + full-screen profile (no shell)

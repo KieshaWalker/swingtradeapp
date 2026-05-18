@@ -37,6 +37,7 @@ import '../../../services/schwab/schwab_providers.dart';
 import '../../../services/sec/sec_models.dart';
 import '../../../services/sec/sec_providers.dart';
 import '../../../services/iv/iv_providers.dart';
+import '../../../features/strategy_tracker/providers/strategy_tracker_provider.dart';
 import '../models/trade.dart';
 import '../providers/trades_provider.dart';
 import '../services/live_greeks_service.dart';
@@ -228,6 +229,10 @@ class TradeDetailScreen extends ConsumerWidget {
                 ),
               ),
             ),
+          const SizedBox(height: 12),
+
+          // Strategy tag
+          _StrategyTagCard(tradeId: trade.id),
           const SizedBox(height: 12),
 
           // Notes
@@ -799,6 +804,200 @@ class _SecFilingRow extends StatelessWidget {
             const SizedBox(width: 4),
             const Icon(Icons.chevron_right,
                 size: 16, color: AppTheme.neutralColor),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _StrategyTagCard
+// =============================================================================
+// Shows the strategy currently tagged to this trade. Watches tradesProvider
+// live so the tag updates instantly after edit without re-navigating.
+// "Edit" opens a picker that lists all strategies + a "Remove tag" option.
+// =============================================================================
+class _StrategyTagCard extends ConsumerWidget {
+  final String tradeId;
+  const _StrategyTagCard({required this.tradeId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Get live strategy_setup_id for this trade
+    final tradesValue      = ref.watch(tradesProvider);
+    final currentSetupId   = tradesValue.valueOrNull
+        ?.where((t) => t.id == tradeId)
+        .firstOrNull
+        ?.strategySetupId;
+
+    // Get strategy name if tagged
+    final setupsValue   = ref.watch(strategyTrackerProvider);
+    final linkedSetup   = currentSetupId == null
+        ? null
+        : setupsValue.valueOrNull
+            ?.where((s) => s.id == currentSetupId)
+            .firstOrNull;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Row(
+          children: [
+            const Icon(Icons.track_changes_rounded,
+                size: 18, color: AppTheme.neutralColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Strategy',
+                    style: TextStyle(
+                      color:    AppTheme.neutralColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    linkedSetup?.name ?? 'No strategy tagged',
+                    style: TextStyle(
+                      color:      linkedSetup != null
+                          ? Colors.white
+                          : AppTheme.neutralColor,
+                      fontSize:   14,
+                      fontWeight: linkedSetup != null
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => _showPicker(context, ref, currentSetupId),
+              child: Text(
+                currentSetupId == null ? 'Tag' : 'Edit',
+                style: const TextStyle(
+                  color:      AppTheme.profitColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize:   13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPicker(
+    BuildContext context,
+    WidgetRef ref,
+    String? currentSetupId,
+  ) {
+    final setups =
+        ref.read(strategyTrackerProvider).valueOrNull ?? [];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.elevatedColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 8),
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: AppTheme.borderColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'TAG TO STRATEGY',
+                  style: TextStyle(
+                    color:         AppTheme.neutralColor,
+                    fontSize:      11,
+                    fontWeight:    FontWeight.w700,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+            ),
+            if (currentSetupId != null)
+              ListTile(
+                leading: const Icon(Icons.link_off,
+                    color: AppTheme.lossColor, size: 20),
+                title: const Text(
+                  'Remove tag',
+                  style: TextStyle(color: AppTheme.lossColor),
+                ),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await ref
+                      .read(tradesNotifierProvider.notifier)
+                      .tagStrategy(tradeId, null);
+                },
+              ),
+            if (setups.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(20),
+                child: Text(
+                  'No strategies yet. Create one in Strategy Tracker.',
+                  style: TextStyle(color: AppTheme.neutralColor),
+                  textAlign: TextAlign.center,
+                ),
+              )
+            else
+              for (final setup in setups)
+                ListTile(
+                  leading: Icon(
+                    setup.id == currentSetupId
+                        ? Icons.check_circle
+                        : Icons.track_changes_rounded,
+                    color: setup.id == currentSetupId
+                        ? AppTheme.profitColor
+                        : AppTheme.neutralColor,
+                    size: 20,
+                  ),
+                  title: Text(
+                    setup.name,
+                    style: TextStyle(
+                      color: setup.id == currentSetupId
+                          ? AppTheme.profitColor
+                          : Colors.white,
+                      fontWeight: setup.id == currentSetupId
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                    ),
+                  ),
+                  subtitle: setup.totalScored > 0
+                      ? Text(
+                          '${(setup.winRate * 100).toStringAsFixed(0)}% WR · '
+                          '${setup.totalScored} trades',
+                          style: const TextStyle(
+                            color:    AppTheme.neutralColor,
+                            fontSize: 11,
+                          ),
+                        )
+                      : null,
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await ref
+                        .read(tradesNotifierProvider.notifier)
+                        .tagStrategy(tradeId, setup.id);
+                  },
+                ),
+            const SizedBox(height: 8),
           ],
         ),
       ),

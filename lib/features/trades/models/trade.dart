@@ -129,6 +129,9 @@ class Trade {
   final double? stopLoss;
   final double? takeProfit;
 
+  // Strategy tracker link (migration 021)
+  final String? strategySetupId;
+
   const Trade({
     required this.id,
     required this.userId,
@@ -161,6 +164,7 @@ class Trade {
     this.timeOfExit,
     this.stopLoss,
     this.takeProfit,
+    this.strategySetupId,
   });
 
   double get costBasis => entryPrice * contracts * 100;
@@ -245,6 +249,7 @@ class Trade {
         takeProfit: json['take_profit'] != null
             ? (json['take_profit'] as num).toDouble()
             : null,
+        strategySetupId: json['strategy_setup_id'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -275,5 +280,6 @@ class Trade {
         'time_of_exit': timeOfExit,
         'stop_loss': stopLoss,
         'take_profit': takeProfit,
+        if (strategySetupId != null) 'strategy_setup_id': strategySetupId,
       };
 }
