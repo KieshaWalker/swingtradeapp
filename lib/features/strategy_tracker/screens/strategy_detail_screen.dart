@@ -7,13 +7,15 @@
 // stats auto-refresh when trades are tagged or closed.
 //
 // Sections:
-//   Header     — name, status badge, win-rate hero
-//   Stats grid — Win Rate · Profit Factor · Expectancy · Total P&L
-//   Secondary  — Total trades (open/closed/scored), max consecutive losses
-//   Criteria   — full checklist of every defined entry condition
-//   Chart      — rolling 10-trade WR (green) + cumulative WR (gray dashed)
-//                Horizontal reference at 50%; shows "die and come back" shape
-//   Trades     — all linked trades newest-first, with outcome badge
+//   Header      — name, status badge (AppBar), edit button, win-rate hero
+//   Stats grid  — Win Rate · Profit Factor · Expectancy · Total P&L
+//   Secondary   — Total trades (open/closed/scored), max consecutive losses
+//   Target Area — selected price targets (ATH, 200 SMA, Prior High…) blue chips
+//   Criteria    — full checklist of every defined entry condition
+//   Notes       — strategy description, if set
+//   Chart       — rolling 10-trade WR (green) + cumulative WR (gray dashed)
+//                 Horizontal reference at 50%; shows "die and come back" shape
+//   Trades      — all linked trades newest-first, with outcome badge
 // =============================================================================
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +26,7 @@ import '../../../core/theme.dart';
 import '../../trades/models/trade.dart';
 import '../models/strategy_models.dart';
 import '../providers/strategy_tracker_provider.dart';
+import '../widgets/add_strategy_sheet.dart';
 
 // ── Screen shell ──────────────────────────────────────────────────────────────
 
@@ -80,7 +83,7 @@ class _DetailView extends StatelessWidget {
         title: Text(setup.name),
         actions: [
           Container(
-            margin: const EdgeInsets.only(right: 12),
+            margin: const EdgeInsets.only(right: 4),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color:        setup.status.color.withValues(alpha: 0.15),
@@ -96,6 +99,16 @@ class _DetailView extends StatelessWidget {
                 fontSize:      12,
                 letterSpacing: 0.5,
               ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_rounded, size: 20),
+            tooltip: 'Edit strategy',
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => AddStrategySheet(initialSetup: setup),
             ),
           ),
         ],
@@ -226,6 +239,25 @@ class _DetailView extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
+
+          // ── Target areas ──────────────────────────────────────────────────────
+          if (setup.hasTargets) ...[
+            _SectionLabel('Target Area'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                child: Wrap(
+                  spacing:    8,
+                  runSpacing: 8,
+                  children: [
+                    for (final area in setup.targetAreas)
+                      _TargetBadge(area),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
 
           // ── Entry criteria ────────────────────────────────────────────────────
           if (setup.hasCriteria) ...[
@@ -359,6 +391,33 @@ class _DetailView extends StatelessWidget {
       ),
     );
   }
+}
+
+// ── Target area badge ─────────────────────────────────────────────────────────
+
+class _TargetBadge extends StatelessWidget {
+  final TargetArea area;
+  const _TargetBadge(this.area);
+
+  static const _color = Color(0xFF60A5FA);
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color:        _color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(7),
+          border:       Border.all(color: _color.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          area.label,
+          style: const TextStyle(
+            color:      _color,
+            fontSize:   12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
 }
 
 // ── Stat card ─────────────────────────────────────────────────────────────────

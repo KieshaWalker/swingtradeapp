@@ -4,6 +4,9 @@
 // Enums:
 //   VolumeCondition     { aboveAvg, belowAvg, any }
 //   SetupStatus         { hot, warm, neutral, cold, dead, recovering, insufficient }
+//   TargetArea          { sma20…sma200, allTimeHigh, allTimeLow, weekHigh52,
+//                         weekLow52, priorHigh, priorLow, gapFill,
+//                         breakoutLevel, srZone }
 //
 // Criteria classes (serialized to/from JSONB in strategy_setups):
 //   SmaCondition        — {sma: 20, position: "above"|"below"}
@@ -16,9 +19,65 @@
 //   closedTrades  — subset where status != open (used for all stat math)
 //   scoredTrades  — closedTrades with realizedPnl != null (wins/losses definite)
 //   allCriteriaLabels — flat list of human-readable criteria for UI display
+//   targetAreas   — where the trade is intended to reach (separate from entry)
 // =============================================================================
 import 'package:flutter/material.dart';
 import '../../trades/models/trade.dart';
+
+// ── TargetArea ────────────────────────────────────────────────────────────────
+// Where the trade aims to reach. Stored as text[] in strategy_setups.
+
+enum TargetArea {
+  sma20, sma50, sma100, sma200,
+  allTimeHigh, allTimeLow,
+  weekHigh52, weekLow52,
+  priorHigh, priorLow,
+  gapFill, breakoutLevel, srZone,
+}
+
+extension TargetAreaExt on TargetArea {
+  String get dbValue => switch (this) {
+        TargetArea.sma20         => '20_sma',
+        TargetArea.sma50         => '50_sma',
+        TargetArea.sma100        => '100_sma',
+        TargetArea.sma200        => '200_sma',
+        TargetArea.allTimeHigh   => 'all_time_high',
+        TargetArea.allTimeLow    => 'all_time_low',
+        TargetArea.weekHigh52    => '52w_high',
+        TargetArea.weekLow52     => '52w_low',
+        TargetArea.priorHigh     => 'prior_high',
+        TargetArea.priorLow      => 'prior_low',
+        TargetArea.gapFill       => 'gap_fill',
+        TargetArea.breakoutLevel => 'breakout',
+        TargetArea.srZone        => 'sr_zone',
+      };
+
+  String get label => switch (this) {
+        TargetArea.sma20         => '20 SMA',
+        TargetArea.sma50         => '50 SMA',
+        TargetArea.sma100        => '100 SMA',
+        TargetArea.sma200        => '200 SMA',
+        TargetArea.allTimeHigh   => 'All-Time High',
+        TargetArea.allTimeLow    => 'All-Time Low',
+        TargetArea.weekHigh52    => '52W High',
+        TargetArea.weekLow52     => '52W Low',
+        TargetArea.priorHigh     => 'Prior High',
+        TargetArea.priorLow      => 'Prior Low',
+        TargetArea.gapFill       => 'Gap Fill',
+        TargetArea.breakoutLevel => 'Breakout',
+        TargetArea.srZone        => 'S/R Zone',
+      };
+}
+
+TargetArea? targetAreaFromDb(String s) =>
+    TargetArea.values.where((t) => t.dbValue == s).firstOrNull;
+
+// Groups used in the add/edit sheet UI
+const kTargetAreaGroups = <(String, List<TargetArea>)>[
+  ('SMA Levels',      [TargetArea.sma20, TargetArea.sma50, TargetArea.sma100, TargetArea.sma200]),
+  ('Market Extremes', [TargetArea.allTimeHigh, TargetArea.allTimeLow, TargetArea.weekHigh52, TargetArea.weekLow52]),
+  ('Price Structure', [TargetArea.priorHigh, TargetArea.priorLow, TargetArea.gapFill, TargetArea.breakoutLevel, TargetArea.srZone]),
+];
 
 // ── VolumeCondition ────────────────────────────────────────────────────────────
 
@@ -203,6 +262,9 @@ class StrategySetup {
   // User-defined free-form criteria (each is just a label string)
   final List<String>       customCriteria;
 
+  // Where the trade is targeting (separate from entry criteria)
+  final List<TargetArea>   targetAreas;
+
   final DateTime           createdAt;
 
   // All trades tagged to this strategy (open + closed), oldest-first
@@ -222,6 +284,7 @@ class StrategySetup {
     this.vixCondition,
     this.spyCondition,
     required this.customCriteria,
+    required this.targetAreas,
     required this.createdAt,
     this.linkedTrades = const [],
   });
@@ -340,6 +403,7 @@ class StrategySetup {
       ];
 
   bool get hasCriteria => allCriteriaLabels.isNotEmpty;
+  bool get hasTargets  => targetAreas.isNotEmpty;
 
   // ── Serialization ─────────────────────────────────────────────────────────────
 
@@ -359,11 +423,11 @@ class StrategySetup {
                 .map((e) => SmaCondition.fromJson(e as Map<String, dynamic>))
                 .toList()
             : [],
-        srLevelRequired:  j['sr_level_required']   as bool? ?? false,
-        srProximityPct:   j['sr_proximity_pct'] != null
+        srLevelRequired:   j['sr_level_required']  as bool? ?? false,
+        srProximityPct:    j['sr_proximity_pct'] != null
             ? (j['sr_proximity_pct'] as num).toDouble()
             : null,
-        volumeCondition:  volumeConditionFromDb(j['volume_condition'] as String?),
+        volumeCondition:   volumeConditionFromDb(j['volume_condition'] as String?),
         volumeCrossNeeded: j['volume_cross_needed'] as bool? ?? false,
         lowerVolumeNeeded: j['lower_volume_needed'] as bool? ?? false,
         vixCondition: j['vix_condition'] != null
@@ -382,7 +446,13 @@ class StrategySetup {
                 })
                 .toList()
             : [],
-        createdAt:   DateTime.parse(j['created_at'] as String),
+        targetAreas: j['target_areas'] != null
+            ? (j['target_areas'] as List)
+                .map((e) => targetAreaFromDb(e as String))
+                .whereType<TargetArea>()
+                .toList()
+            : [],
+        createdAt:    DateTime.parse(j['created_at'] as String),
         linkedTrades: linkedTrades,
       );
 
@@ -393,12 +463,12 @@ class StrategySetup {
         'sma_conditions':     smaConditions.map((s) => s.toJson()).toList(),
         'sr_level_required':  srLevelRequired,
         if (srProximityPct != null) 'sr_proximity_pct': srProximityPct,
-        'volume_condition':   volumeCondition.dbValue,
+        'volume_condition':    volumeCondition.dbValue,
         'volume_cross_needed': volumeCrossNeeded,
         'lower_volume_needed': lowerVolumeNeeded,
         if (vixCondition != null) 'vix_condition': vixCondition!.toJson(),
         if (spyCondition != null) 'spy_condition': spyCondition!.toJson(),
-        'custom_criteria':
-            customCriteria.map((c) => {'label': c}).toList(),
+        'custom_criteria': customCriteria.map((c) => {'label': c}).toList(),
+        'target_areas':    targetAreas.map((t) => t.dbValue).toList(),
       };
 }

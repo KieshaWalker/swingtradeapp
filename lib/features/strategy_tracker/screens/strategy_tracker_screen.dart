@@ -6,7 +6,7 @@
 // Widgets:
 //   StrategyTrackerScreen — ConsumerWidget; list of all strategy cards + FAB
 //   _SummaryHeader        — total strategies, avg win rate, total P&L
-//   _StrategyCard         — one card per setup; tap → detail; long-press → delete
+//   _StrategyCard         — one card per setup; tap → detail; kebab → edit/delete
 //   _RecentDots           — last 10 scored trades visualised as coloured circles
 //   _StatusBadge          — HOT / WARM / COLD / DEAD / RECOVERING chip
 //   _CriteriaChips        — first few criteria labels as compact chips
@@ -20,6 +20,17 @@ import '../../../core/widgets/app_menu_button.dart';
 import '../models/strategy_models.dart';
 import '../providers/strategy_tracker_provider.dart';
 import '../widgets/add_strategy_sheet.dart';
+
+// ── Shared sheet launcher ─────────────────────────────────────────────────────
+
+void _showStrategySheet(BuildContext context, {StrategySetup? initialSetup}) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => AddStrategySheet(initialSetup: initialSetup),
+  );
+}
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 
@@ -54,21 +65,12 @@ class StrategyTrackerScreen extends ConsumerWidget {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddSheet(context),
+        onPressed: () => _showStrategySheet(context),
         icon: const Icon(Icons.add),
         label: const Text('New Strategy'),
         backgroundColor: AppTheme.profitColor,
         foregroundColor: Colors.black,
       ),
-    );
-  }
-
-  void _showAddSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const AddStrategySheet(),
     );
   }
 }
@@ -176,13 +178,12 @@ class _StrategyCard extends ConsumerWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () => context.push('/strategy-tracker/${setup.id}'),
-          onLongPress: () => _confirmDelete(context, ref),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Row 1: name + status badge
+                // Row 1: name + status badge + kebab menu
                 Row(
                   children: [
                     Expanded(
@@ -198,6 +199,7 @@ class _StrategyCard extends ConsumerWidget {
                     ),
                     const SizedBox(width: 8),
                     _StatusBadge(setup.status),
+                    _CardMenu(setup: setup),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -259,6 +261,12 @@ class _StrategyCard extends ConsumerWidget {
                 if (setup.hasCriteria)
                   _CriteriaChips(labels: setup.allCriteriaLabels),
 
+                // Row 5: target area chips
+                if (setup.hasTargets) ...[
+                  if (setup.hasCriteria) const SizedBox(height: 5),
+                  _TargetAreaChips(areas: setup.targetAreas),
+                ],
+
                 // Tags
                 if (setup.tags.isNotEmpty) ...[
                   const SizedBox(height: 6),
@@ -293,6 +301,58 @@ class _StrategyCard extends ConsumerWidget {
     );
   }
 
+}
+
+// ── Card kebab menu (Edit / Delete) ───────────────────────────────────────────
+
+class _CardMenu extends ConsumerWidget {
+  final StrategySetup setup;
+  const _CardMenu({required this.setup});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<_CardAction>(
+      icon: const Icon(
+        Icons.more_vert_rounded,
+        size:  18,
+        color: AppTheme.neutralColor,
+      ),
+      color:  AppTheme.elevatedColor,
+      shape:  RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      onSelected: (action) {
+        if (action == _CardAction.edit) {
+          _showStrategySheet(context, initialSetup: setup);
+        } else {
+          _confirmDelete(context, ref);
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: _CardAction.edit,
+          child: Row(
+            children: [
+              Icon(Icons.edit_rounded, size: 16, color: Colors.white70),
+              SizedBox(width: 10),
+              Text('Edit', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: _CardAction.delete,
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline_rounded,
+                  size: 16, color: AppTheme.lossColor),
+              SizedBox(width: 10),
+              Text('Delete',
+                  style: TextStyle(color: AppTheme.lossColor)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   void _confirmDelete(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
@@ -316,7 +376,8 @@ class _StrategyCard extends ConsumerWidget {
                   .read(strategyTrackerProvider.notifier)
                   .deleteSetup(setup.id);
             },
-            style: TextButton.styleFrom(foregroundColor: AppTheme.lossColor),
+            style: TextButton.styleFrom(
+                foregroundColor: AppTheme.lossColor),
             child: const Text('Delete'),
           ),
         ],
@@ -324,6 +385,8 @@ class _StrategyCard extends ConsumerWidget {
     );
   }
 }
+
+enum _CardAction { edit, delete }
 
 class _MiniStat extends StatelessWidget {
   final String value;
@@ -451,6 +514,52 @@ class _CriteriaChips extends StatelessWidget {
       );
 }
 
+// ── Target area chips (compact, blue) ─────────────────────────────────────────
+
+class _TargetAreaChips extends StatelessWidget {
+  final List<TargetArea> areas;
+  const _TargetAreaChips({required this.areas});
+
+  static const _color = Color(0xFF60A5FA);
+
+  @override
+  Widget build(BuildContext context) {
+    final shown    = areas.take(4).toList();
+    final overflow = areas.length - shown.length;
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: [
+        for (final a in shown) _chip(a.label),
+        if (overflow > 0) _chip('+$overflow more', muted: true),
+      ],
+    );
+  }
+
+  Widget _chip(String label, {bool muted = false}) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: muted
+              ? AppTheme.elevatedColor
+              : _color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(
+            color: muted
+                ? AppTheme.borderColor.withValues(alpha: 0.3)
+                : _color.withValues(alpha: 0.30),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize:   10,
+            fontWeight: FontWeight.w600,
+            color:      muted ? AppTheme.neutralColor : _color,
+          ),
+        ),
+      );
+}
+
 // ── Status badge ──────────────────────────────────────────────────────────────
 
 class _StatusBadge extends StatelessWidget {
@@ -512,12 +621,7 @@ class _EmptyState extends StatelessWidget {
               ),
               const SizedBox(height: 28),
               ElevatedButton.icon(
-                onPressed: () => showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  builder: (_) => const AddStrategySheet(),
-                ),
+                onPressed: () => _showStrategySheet(context),
                 icon:  const Icon(Icons.add, size: 16),
                 label: const Text('Create Strategy'),
               ),

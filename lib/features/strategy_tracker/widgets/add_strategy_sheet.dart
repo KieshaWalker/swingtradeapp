@@ -1,7 +1,10 @@
 // =============================================================================
 // features/strategy_tracker/widgets/add_strategy_sheet.dart
 // =============================================================================
-// Full-featured strategy creation form presented as a scrollable modal sheet.
+// Shared create / edit sheet for strategy setups.
+//
+// Pass initialSetup = null  → create mode (title "New Strategy", calls addSetup)
+// Pass initialSetup = setup → edit mode   (title "Edit Strategy", calls updateSetup)
 //
 // Sections:
 //   1. Name (required, unique per user) + Description
@@ -10,8 +13,9 @@
 //   4. Volume          — Above Avg / Any / Below Avg segmented + two toggles
 //   5. VIX             — optional condition: < / > / between + value(s)
 //   6. SPY             — optional: SMA position or qualitative area
-//   7. Custom Criteria — free-form user-defined rules (add / remove)
-//   8. Tags            — chip-style tag input
+//   7. Target Area     — multi-select chips (SMA, ATH, ATL, prior high/low…)
+//   8. Custom Criteria — reusable toggles from other strategies + free-form new
+//   9. Tags            — chip-style tag input
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,49 +25,86 @@ import '../models/strategy_models.dart';
 import '../providers/strategy_tracker_provider.dart';
 
 class AddStrategySheet extends ConsumerStatefulWidget {
-  const AddStrategySheet({super.key});
+  final StrategySetup? initialSetup; // null = create, non-null = edit
+  const AddStrategySheet({super.key, this.initialSetup});
 
   @override
   ConsumerState<AddStrategySheet> createState() => _AddStrategySheetState();
 }
 
 class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
-  final _nameCtrl        = TextEditingController();
-  final _descCtrl        = TextEditingController();
-  final _srProxCtrl      = TextEditingController();
-  final _vixValCtrl      = TextEditingController();
-  final _vixLowCtrl      = TextEditingController();
-  final _vixHighCtrl     = TextEditingController();
-  final _customCtrl      = TextEditingController();
-  final _tagCtrl         = TextEditingController();
+  final _nameCtrl    = TextEditingController();
+  final _descCtrl    = TextEditingController();
+  final _srProxCtrl  = TextEditingController();
+  final _vixValCtrl  = TextEditingController();
+  final _vixLowCtrl  = TextEditingController();
+  final _vixHighCtrl = TextEditingController();
+  final _customCtrl  = TextEditingController();
+  final _tagCtrl     = TextEditingController();
 
-  // SMA conditions: each entry is {sma: 20, position: 'above'|'below'}
   final List<SmaCondition> _smaConditions = [];
 
-  // S/R
-  bool   _srRequired = false;
+  bool            _srRequired      = false;
+  VolumeCondition _volumeCondition = VolumeCondition.any;
+  bool            _volumeCross     = false;
+  bool            _lowerVolume     = false;
+  bool            _vixEnabled      = false;
+  String          _vixOperator     = 'lt';
+  bool            _spyEnabled      = false;
+  String          _spyType         = 'sma';
+  int             _spySma          = 200;
+  String          _spyPosition     = 'above';
+  String          _spyArea         = 'at_highs';
 
-  // Volume
-  VolumeCondition _volumeCondition  = VolumeCondition.any;
-  bool            _volumeCross      = false;
-  bool            _lowerVolume      = false;
-
-  // VIX
-  bool   _vixEnabled  = false;
-  String _vixOperator = 'lt';  // 'lt' | 'gt' | 'between'
-
-  // SPY
-  bool   _spyEnabled  = false;
-  String _spyType     = 'sma'; // 'sma' | 'area'
-  int    _spySma      = 200;
-  String _spyPosition = 'above';
-  String _spyArea     = 'at_highs';
-
-  // Custom criteria & tags
-  final List<String> _customCriteria = [];
-  final List<String> _tags           = [];
+  final List<String>    _customCriteria = [];
+  final Set<TargetArea> _targetAreas    = {};
+  final List<String>    _tags           = [];
 
   bool _saving = false;
+
+  bool get _isEditing => widget.initialSetup != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final s = widget.initialSetup;
+    if (s == null) return;
+
+    _nameCtrl.text   = s.name;
+    _descCtrl.text   = s.description ?? '';
+    _srRequired      = s.srLevelRequired;
+    _srProxCtrl.text = s.srProximityPct != null
+        ? _numStr(s.srProximityPct!)
+        : '';
+    _volumeCondition = s.volumeCondition;
+    _volumeCross     = s.volumeCrossNeeded;
+    _lowerVolume     = s.lowerVolumeNeeded;
+    _smaConditions.addAll(s.smaConditions);
+    _tags.addAll(s.tags);
+    _customCriteria.addAll(s.customCriteria);
+    _targetAreas.addAll(s.targetAreas);
+
+    if (s.vixCondition != null) {
+      _vixEnabled      = true;
+      _vixOperator     = s.vixCondition!.operator;
+      _vixValCtrl.text = s.vixCondition!.value != null
+          ? _numStr(s.vixCondition!.value!)
+          : '';
+      _vixLowCtrl.text = s.vixCondition!.low != null
+          ? _numStr(s.vixCondition!.low!)
+          : '';
+      _vixHighCtrl.text = s.vixCondition!.high != null
+          ? _numStr(s.vixCondition!.high!)
+          : '';
+    }
+    if (s.spyCondition != null) {
+      _spyEnabled  = true;
+      _spyType     = s.spyCondition!.type;
+      _spySma      = s.spyCondition!.sma ?? 200;
+      _spyPosition = s.spyCondition!.position ?? 'above';
+      _spyArea     = s.spyCondition!.area ?? 'at_highs';
+    }
+  }
 
   @override
   void dispose() {
@@ -77,6 +118,9 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
     _tagCtrl.dispose();
     super.dispose();
   }
+
+  static String _numStr(double v) =>
+      v % 1 == 0 ? v.toInt().toString() : v.toString();
 
   VixCondition? get _vixCondition {
     if (!_vixEnabled) return null;
@@ -94,8 +138,7 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
   SpyCondition? get _spyCondition {
     if (!_spyEnabled) return null;
     if (_spyType == 'sma') {
-      return SpyCondition(
-          type: 'sma', sma: _spySma, position: _spyPosition);
+      return SpyCondition(type: 'sma', sma: _spySma, position: _spyPosition);
     }
     return SpyCondition(type: 'area', area: _spyArea);
   }
@@ -109,26 +152,32 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
     setState(() => _saving = true);
     try {
       final setup = StrategySetup(
-        id:               '',
-        name:             name,
-        description:      _descCtrl.text.trim().isNotEmpty
+        id:                '',
+        name:              name,
+        description:       _descCtrl.text.trim().isNotEmpty
             ? _descCtrl.text.trim()
             : null,
-        tags:             List<String>.from(_tags),
-        smaConditions:    List<SmaCondition>.from(_smaConditions),
-        srLevelRequired:  _srRequired,
-        srProximityPct:   _srRequired
+        tags:              List<String>.from(_tags),
+        smaConditions:     List<SmaCondition>.from(_smaConditions),
+        srLevelRequired:   _srRequired,
+        srProximityPct:    _srRequired
             ? double.tryParse(_srProxCtrl.text)
             : null,
-        volumeCondition:  _volumeCondition,
+        volumeCondition:   _volumeCondition,
         volumeCrossNeeded: _volumeCross,
         lowerVolumeNeeded: _lowerVolume,
-        vixCondition:     _vixCondition,
-        spyCondition:     _spyCondition,
-        customCriteria:   List<String>.from(_customCriteria),
-        createdAt:        DateTime.now(),
+        vixCondition:      _vixCondition,
+        spyCondition:      _spyCondition,
+        customCriteria:    List<String>.from(_customCriteria),
+        targetAreas:       _targetAreas.toList(),
+        createdAt:         DateTime.now(),
       );
-      await ref.read(strategyTrackerProvider.notifier).addSetup(setup);
+      final notifier = ref.read(strategyTrackerProvider.notifier);
+      if (_isEditing) {
+        await notifier.updateSetup(widget.initialSetup!.id, setup);
+      } else {
+        await notifier.addSetup(setup);
+      }
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -154,9 +203,24 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
 
+    // Collect all known custom criteria from OTHER strategies (reusable pool)
+    final allSetups = ref.watch(strategyTrackerProvider).valueOrNull ?? [];
+    final knownSet  = <String>{};
+    for (final s in allSetups) {
+      if (!_isEditing || s.id != widget.initialSetup!.id) {
+        knownSet.addAll(s.customCriteria);
+      }
+    }
+    final knownCriteria = (knownSet.toList()..sort());
+
+    // Criteria NOT in the known pool are "new" — shown as deletable plain rows
+    final newCriteria = _customCriteria
+        .where((c) => !knownSet.contains(c))
+        .toList();
+
     return Container(
       decoration: const BoxDecoration(
-        color: AppTheme.cardColor,
+        color:        AppTheme.cardColor,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       padding: EdgeInsets.only(bottom: bottom),
@@ -168,7 +232,7 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
             margin: const EdgeInsets.only(top: 10, bottom: 4),
             width: 36, height: 4,
             decoration: BoxDecoration(
-              color: AppTheme.borderColor,
+              color:        AppTheme.borderColor,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -176,9 +240,9 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             child: Row(
               children: [
-                const Text(
-                  'New Strategy',
-                  style: TextStyle(
+                Text(
+                  _isEditing ? 'Edit Strategy' : 'New Strategy',
+                  style: const TextStyle(
                     fontSize:   18,
                     fontWeight: FontWeight.w800,
                     color:      Colors.white,
@@ -236,8 +300,10 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                 for (int i = 0; i < _smaConditions.length; i++)
                   _SmaRow(
                     condition: _smaConditions[i],
-                    onChanged: (c) => setState(() => _smaConditions[i] = c),
-                    onRemove:  () => setState(() => _smaConditions.removeAt(i)),
+                    onChanged: (c) =>
+                        setState(() => _smaConditions[i] = c),
+                    onRemove: () =>
+                        setState(() => _smaConditions.removeAt(i)),
                   ),
                 TextButton.icon(
                   onPressed: () => setState(() => _smaConditions.add(
@@ -247,7 +313,7 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                   label: const Text('Add SMA Condition'),
                   style: TextButton.styleFrom(
                     foregroundColor: AppTheme.profitColor,
-                    padding: EdgeInsets.zero,
+                    padding:        EdgeInsets.zero,
                   ),
                 ),
 
@@ -260,21 +326,21 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                   title: const Text('Daily S/R level required'),
                   subtitle: const Text(
                     'Price must be near a key daily level',
-                    style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+                    style: TextStyle(
+                        color: AppTheme.neutralColor, fontSize: 12),
                   ),
-                  value:    _srRequired,
-                  onChanged: (v) => setState(() => _srRequired = v),
+                  value:           _srRequired,
+                  onChanged:       (v) => setState(() => _srRequired = v),
                   activeThumbColor: AppTheme.profitColor,
                 ),
                 if (_srRequired) ...[
                   const SizedBox(height: 8),
                   TextField(
                     controller: _srProxCtrl,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
                     inputFormatters: [
-                      FilteringTextInputFormatter.allow(
-                          RegExp(r'[0-9.]')),
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                     ],
                     decoration: const InputDecoration(
                       labelText: 'Proximity to S/R (optional)',
@@ -292,7 +358,8 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                   options:  VolumeCondition.values,
                   selected: _volumeCondition,
                   label:    (v) => v.label,
-                  onSelect: (v) => setState(() => _volumeCondition = v),
+                  onSelect: (v) =>
+                      setState(() => _volumeCondition = v),
                 ),
                 const SizedBox(height: 8),
                 SwitchListTile(
@@ -300,10 +367,11 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                   title: const Text('Volume cross trigger needed'),
                   subtitle: const Text(
                     'Requires a volume crossover as entry signal',
-                    style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+                    style: TextStyle(
+                        color: AppTheme.neutralColor, fontSize: 12),
                   ),
-                  value:    _volumeCross,
-                  onChanged: (v) => setState(() => _volumeCross = v),
+                  value:           _volumeCross,
+                  onChanged:       (v) => setState(() => _volumeCross = v),
                   activeThumbColor: AppTheme.profitColor,
                 ),
                 SwitchListTile(
@@ -311,10 +379,11 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                   title: const Text('Lower / declining volume needed'),
                   subtitle: const Text(
                     'Consolidation or pullback on decreasing volume',
-                    style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+                    style: TextStyle(
+                        color: AppTheme.neutralColor, fontSize: 12),
                   ),
-                  value:    _lowerVolume,
-                  onChanged: (v) => setState(() => _lowerVolume = v),
+                  value:           _lowerVolume,
+                  onChanged:       (v) => setState(() => _lowerVolume = v),
                   activeThumbColor: AppTheme.profitColor,
                 ),
 
@@ -325,8 +394,8 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('VIX must be in a specific area'),
-                  value:    _vixEnabled,
-                  onChanged: (v) => setState(() => _vixEnabled = v),
+                  value:           _vixEnabled,
+                  onChanged:       (v) => setState(() => _vixEnabled = v),
                   activeThumbColor: AppTheme.profitColor,
                 ),
                 if (_vixEnabled) ...[
@@ -350,7 +419,8 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                           child: TextField(
                             controller: _vixLowCtrl,
                             keyboardType:
-                                const TextInputType.numberWithOptions(decimal: true),
+                                const TextInputType.numberWithOptions(
+                                    decimal: true),
                             decoration: const InputDecoration(
                                 labelText: 'Low', hintText: '15'),
                           ),
@@ -360,7 +430,8 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                           child: TextField(
                             controller: _vixHighCtrl,
                             keyboardType:
-                                const TextInputType.numberWithOptions(decimal: true),
+                                const TextInputType.numberWithOptions(
+                                    decimal: true),
                             decoration: const InputDecoration(
                                 labelText: 'High', hintText: '25'),
                           ),
@@ -371,7 +442,8 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                     TextField(
                       controller: _vixValCtrl,
                       keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
+                          const TextInputType.numberWithOptions(
+                              decimal: true),
                       decoration: InputDecoration(
                         labelText: _vixOperator == 'lt'
                             ? 'VIX below'
@@ -388,8 +460,8 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('SPY must be in a specific area'),
-                  value:    _spyEnabled,
-                  onChanged: (v) => setState(() => _spyEnabled = v),
+                  value:           _spyEnabled,
+                  onChanged:       (v) => setState(() => _spyEnabled = v),
                   activeThumbColor: AppTheme.profitColor,
                 ),
                 if (_spyEnabled) ...[
@@ -440,18 +512,74 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
 
                 const SizedBox(height: 16),
 
-                // ── 7. Custom Criteria ────────────────────────────────────────
-                _SheetSection('Custom Criteria'),
+                // ── 7. Target Area ────────────────────────────────────────────
+                _SheetSection('Target Area'),
                 const Text(
-                  'Add any rule not covered above. Each entry becomes a '
-                  'checklist item on the strategy detail screen.',
+                  'Where is this trade trying to reach? Select all that apply.',
                   style: TextStyle(
                     color:    AppTheme.neutralColor,
                     fontSize: 12,
                   ),
                 ),
-                const SizedBox(height: 8),
-                for (int i = 0; i < _customCriteria.length; i++)
+                const SizedBox(height: 10),
+                for (final (groupLabel, areas) in kTargetAreaGroups) ...[
+                  _SubSection(groupLabel.toUpperCase()),
+                  Wrap(
+                    spacing:    6,
+                    runSpacing: 6,
+                    children: [
+                      for (final area in areas)
+                        _TargetChip(
+                          label:    area.label,
+                          selected: _targetAreas.contains(area),
+                          onTap: () => setState(() {
+                            if (_targetAreas.contains(area)) {
+                              _targetAreas.remove(area);
+                            } else {
+                              _targetAreas.add(area);
+                            }
+                          }),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                ],
+
+                const SizedBox(height: 6),
+
+                // ── 8. Custom Criteria ────────────────────────────────────────
+                _SheetSection('Custom Criteria'),
+                const Text(
+                  'Toggle criteria from your other strategies, or type new '
+                  'ones. New entries become reusable for future strategies.',
+                  style: TextStyle(
+                    color:    AppTheme.neutralColor,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // Reusable criteria pool — toggle true/false
+                if (knownCriteria.isNotEmpty) ...[
+                  _SubSection('FROM YOUR OTHER STRATEGIES'),
+                  for (final criterion in knownCriteria)
+                    _CriterionToggle(
+                      label:   criterion,
+                      enabled: _customCriteria.contains(criterion),
+                      onToggle: (on) => setState(() {
+                        if (on) {
+                          _customCriteria.add(criterion);
+                        } else {
+                          _customCriteria.remove(criterion);
+                        }
+                      }),
+                    ),
+                  const SizedBox(height: 12),
+                  _SubSection('NEW'),
+                ],
+
+                // Plain deletable rows for criteria unique to this strategy
+                for (int i = 0; i < newCriteria.length; i++)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Row(
@@ -461,29 +589,31 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            _customCriteria[i],
+                            newCriteria[i],
                             style: const TextStyle(
                                 color: Colors.white, fontSize: 13),
                           ),
                         ),
                         GestureDetector(
-                          onTap: () =>
-                              setState(() => _customCriteria.removeAt(i)),
+                          onTap: () => setState(
+                              () => _customCriteria.remove(newCriteria[i])),
                           child: const Icon(Icons.close,
-                              size: 16, color: AppTheme.neutralColor),
+                              size: 16,
+                              color: AppTheme.neutralColor),
                         ),
                       ],
                     ),
                   ),
+
+                // Text input for brand-new criteria
                 Row(
                   children: [
                     Expanded(
                       child: TextField(
                         controller: _customCtrl,
                         decoration: const InputDecoration(
-                          hintText: 'e.g. Must see hammer candle on daily',
-                          hintStyle:
-                              TextStyle(color: AppTheme.neutralColor),
+                          hintText:  'e.g. Must see hammer candle on daily',
+                          hintStyle: TextStyle(color: AppTheme.neutralColor),
                         ),
                         onSubmitted: (_) => _addCustom(),
                       ),
@@ -501,22 +631,21 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
 
                 const SizedBox(height: 16),
 
-                // ── 8. Tags ───────────────────────────────────────────────────
+                // ── 9. Tags ───────────────────────────────────────────────────
                 _SheetSection('Tags'),
                 Wrap(
-                  spacing: 6,
+                  spacing:    6,
                   runSpacing: 6,
                   children: [
                     for (final tag in _tags)
                       Chip(
-                        label:         Text(tag),
-                        onDeleted:     () =>
+                        label:    Text(tag),
+                        onDeleted: () =>
                             setState(() => _tags.remove(tag)),
                         backgroundColor:
                             AppTheme.profitColor.withValues(alpha: 0.12),
                         side: BorderSide(
-                          color:
-                              AppTheme.profitColor.withValues(alpha: 0.3),
+                          color: AppTheme.profitColor.withValues(alpha: 0.3),
                         ),
                         labelStyle: const TextStyle(
                           color:    AppTheme.profitColor,
@@ -529,12 +658,12 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                       child: TextField(
                         controller: _tagCtrl,
                         decoration: const InputDecoration(
-                          hintText:      'Add tag…',
+                          hintText: 'Add tag…',
                           hintStyle:
                               TextStyle(color: AppTheme.neutralColor),
                           isDense: true,
-                          contentPadding:
-                              EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                          contentPadding: EdgeInsets.symmetric(
+                              vertical: 8, horizontal: 10),
                         ),
                         onSubmitted: (_) => _addTag(),
                       ),
@@ -551,10 +680,12 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
                           width: 18, height: 18,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            color: Colors.black,
+                            color:       Colors.black,
                           ),
                         )
-                      : const Text('Save Strategy'),
+                      : Text(_isEditing
+                            ? 'Save Changes'
+                            : 'Save Strategy'),
                 ),
               ],
             ),
@@ -566,7 +697,7 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
 
   void _addCustom() {
     final text = _customCtrl.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _customCriteria.contains(text)) return;
     setState(() {
       _customCriteria.add(text);
       _customCtrl.clear();
@@ -583,10 +714,140 @@ class _AddStrategySheetState extends ConsumerState<AddStrategySheet> {
   }
 }
 
+// ── Reusable criterion toggle row ─────────────────────────────────────────────
+
+class _CriterionToggle extends StatelessWidget {
+  final String   label;
+  final bool     enabled;
+  final ValueChanged<bool> onToggle;
+
+  const _CriterionToggle({
+    required this.label,
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: () => onToggle(!enabled),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          margin: const EdgeInsets.only(bottom: 6),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: enabled
+                ? AppTheme.profitColor.withValues(alpha: 0.10)
+                : AppTheme.elevatedColor,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: enabled
+                  ? AppTheme.profitColor.withValues(alpha: 0.45)
+                  : AppTheme.borderColor.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 120),
+                child: Icon(
+                  enabled
+                      ? Icons.check_circle_rounded
+                      : Icons.circle_outlined,
+                  key:   ValueKey(enabled),
+                  size:  18,
+                  color: enabled
+                      ? AppTheme.profitColor
+                      : AppTheme.neutralColor,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize:   13,
+                    color:      enabled ? Colors.white : AppTheme.neutralColor,
+                    fontWeight: enabled
+                        ? FontWeight.w600
+                        : FontWeight.w400,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+// ── Sub-section label ─────────────────────────────────────────────────────────
+
+class _SubSection extends StatelessWidget {
+  final String text;
+  const _SubSection(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color:         AppTheme.neutralColor,
+            fontSize:      10,
+            fontWeight:    FontWeight.w700,
+            letterSpacing: 0.8,
+          ),
+        ),
+      );
+}
+
+// ── Target area chip (multi-select toggle) ────────────────────────────────────
+
+class _TargetChip extends StatelessWidget {
+  final String   label;
+  final bool     selected;
+  final VoidCallback onTap;
+  const _TargetChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  static const _color = Color(0xFF60A5FA); // soft blue
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected
+                ? _color.withValues(alpha: 0.18)
+                : AppTheme.elevatedColor,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected
+                  ? _color.withValues(alpha: 0.6)
+                  : AppTheme.borderColor.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize:   12,
+              fontWeight: FontWeight.w600,
+              color:      selected ? _color : AppTheme.neutralColor,
+            ),
+          ),
+        ),
+      );
+}
+
 // ── SMA condition row ─────────────────────────────────────────────────────────
 
 class _SmaRow extends StatelessWidget {
-  final SmaCondition condition;
+  final SmaCondition               condition;
   final ValueChanged<SmaCondition> onChanged;
   final VoidCallback               onRemove;
   const _SmaRow({
@@ -600,7 +861,6 @@ class _SmaRow extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: 8),
         child: Row(
           children: [
-            // Position toggle
             Expanded(
               child: _SegmentedRow<String>(
                 options:  const ['above', 'below'],
@@ -611,7 +871,6 @@ class _SmaRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // SMA period picker
             Expanded(
               child: _SegmentedRow<int>(
                 options:  const [20, 50, 100, 200],
@@ -623,8 +882,8 @@ class _SmaRow extends StatelessWidget {
             ),
             const SizedBox(width: 4),
             IconButton(
-              onPressed: onRemove,
-              icon: const Icon(Icons.remove_circle_outline,
+              onPressed:   onRemove,
+              icon:        const Icon(Icons.remove_circle_outline,
                   size: 18, color: AppTheme.lossColor),
               padding:     EdgeInsets.zero,
               constraints: const BoxConstraints(),
@@ -637,10 +896,10 @@ class _SmaRow extends StatelessWidget {
 // ── Segmented control ─────────────────────────────────────────────────────────
 
 class _SegmentedRow<T> extends StatelessWidget {
-  final List<T>     options;
-  final T           selected;
+  final List<T>         options;
+  final T               selected;
   final String Function(T) label;
-  final ValueChanged<T>    onSelect;
+  final ValueChanged<T> onSelect;
 
   const _SegmentedRow({
     required this.options,
@@ -659,7 +918,8 @@ class _SegmentedRow<T> extends StatelessWidget {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 120),
                 margin: const EdgeInsets.only(right: 3),
-                padding: const EdgeInsets.symmetric(vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? AppTheme.profitColor.withValues(alpha: 0.18)

@@ -1,5 +1,5 @@
 -- =============================================================================
--- 021: strategy_tracker
+-- 048: strategy_tracker
 -- Creates strategy_setups and links trades via strategy_setup_id FK.
 -- Strategy win-rate / P&L stats are derived from tagged closed trades —
 -- no separate results table; outcome comes from realizedPnl on the trade.
