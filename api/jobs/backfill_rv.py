@@ -26,6 +26,11 @@ import httpx
 from core.config import settings
 from core.supabase_client import get_supabase
 from jobs.common import get_tickers
+from services.realized_vol import compute_rv as _rv_base
+
+def _compute_rv(closes: list[float]) -> Optional[float]:
+    rv = _rv_base(closes)
+    return rv if rv > 0 else None
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -40,20 +45,6 @@ _CONCURRENCY = 5
 def _epoch_ms(d: date) -> int:
     return int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp() * 1000)
 
-
-def _compute_rv(closes: list[float]) ->Optional[float]:
-    """Annualized RV from a window of closes using Bessel correction."""
-    if len(closes) < 2:
-        return None
-    sum_sq = 0.0
-    n = 0
-    for i in range(1, len(closes)):
-        if closes[i - 1] > 0:
-            sum_sq += math.log(closes[i] / closes[i - 1]) ** 2
-            n += 1
-    if n < 2:
-        return None
-    return math.sqrt(sum_sq / (n - 1) * 252)
 
 
 async def _fetch_history(

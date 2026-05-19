@@ -20,6 +20,7 @@
 //     shares: <transactionShares><value>…</value>
 //     price:  <transactionPricePerShare><value>…</value>
 //     A/D:    <transactionAcquiredDisposedCode><value>…</value>
+//     owner:  <natureOfOwnership><value>…</value>  (indirect-holding entity name)
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -78,10 +79,12 @@ class _ApiForm4SheetState extends ConsumerState<ApiForm4Sheet> {
 
   // ── XML parser ──────────────────────────────────────────────────────────────
 
-  // Extracts the text inside <tag><value>…</value></tag>
+  // Extracts the text inside <tag><value>…</value></tag>.
+  // Skips any leading self-closing elements (e.g. <footnoteId id="F1"/>)
+  // that EDGAR inserts before <value> on footnoted fields.
   static String _xmlVal(String xml, String tag) {
     final m = RegExp(
-            '<$tag>\\s*(?:<footnotesRef[^/]*/?>)?\\s*<value>([^<]*)</value>',
+            '<$tag>(?:\\s*<[^>]+/>)*\\s*<value>([^<]*)</value>',
             dotAll: true)
         .firstMatch(xml);
     return m?.group(1)?.trim() ?? '';
@@ -113,6 +116,7 @@ class _ApiForm4SheetState extends ConsumerState<ApiForm4Sheet> {
       'X' => 'In-the-money exercise',
       'G' => 'Gift',
       'A' => 'Grant / award',
+      'J' => 'Internal transfer',
       _ => code,
     };
   }
@@ -156,8 +160,14 @@ class _ApiForm4SheetState extends ConsumerState<ApiForm4Sheet> {
 
       final price = double.tryParse(priceStr.replaceAll(',', ''));
 
+      // For indirect holdings, EDGAR names the actual entity in natureOfOwnership
+      // (e.g. "By GV 2019, L.P."). Use it per-transaction; fall back to the
+      // top-level rptOwnerName for direct holdings.
+      final nature = _xmlVal(block, 'natureOfOwnership');
+      final txOwner = nature.isNotEmpty ? nature : ownerName;
+
       rows.add(_TxRow(
-        insiderName: ownerName,
+        insiderName: txOwner,
         insiderTitle: title,
         txDate: date,
         rawCode: code,
@@ -165,7 +175,8 @@ class _ApiForm4SheetState extends ConsumerState<ApiForm4Sheet> {
         price: price,
         disposition: disposition.isEmpty ? 'A' : disposition,
         txType: _codeToType(code),
-        selected: true,
+        // J = internal entity transfer — not a market transaction; uncheck by default
+        selected: code.toUpperCase() != 'J',
       ));
     }
     return rows;

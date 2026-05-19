@@ -63,7 +63,7 @@ async def run_expected_move_pull() -> dict:
                 try:
                     (chain, (closes, _)) = await asyncio.gather(
                         fetch_schwab_chain(client, ticker),
-                        fetch_schwab_closes(client, ticker, days=90),  # 90 trading days for rv_63d
+                        fetch_schwab_closes(client, ticker, days=100),  # ~70 trading days; needs 63 for rv_63d
                     )
 
                     # Write RV regardless of whether the chain succeeded

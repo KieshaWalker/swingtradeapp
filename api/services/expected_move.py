@@ -60,7 +60,7 @@ def compute(spot: float, iv: float, dte: int) -> ExpectedMoveSlice:
     )
 
 
-def atm_iv_from_chain(expirations: list[dict], spot: float, target_dte: int) ->Optional[tuple[float]Optional[, int]]:
+def atm_iv_from_chain(expirations: list[dict], spot: float, target_dte: int) -> tuple[Optional[float], Optional[int]]:
     """Extract ATM IV from a parsed expirations list for the DTE closest to target_dte.
 
     Averages call and put IV at the ATM strike so put-call parity drift doesn't

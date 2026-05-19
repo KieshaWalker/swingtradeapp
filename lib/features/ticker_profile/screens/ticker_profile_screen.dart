@@ -38,7 +38,10 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme.dart';
+import '../../../services/sec/sec_models.dart';
+import '../../../services/sec/sec_providers.dart';
 import '../../../services/iv/iv_models.dart';
 import '../../../services/iv/iv_storage_service.dart';
 import '../../../services/schwab/schwab_providers.dart';
@@ -439,6 +442,11 @@ class _OverviewTab extends ConsumerWidget {
               ? const EmptyCard('No fundamental data available')
               : FundamentalsCard(f),
         ),
+        const SizedBox(height: 20),
+
+        // SEC filings
+        SectionHeader('SEC Filings'),
+        _SecFilingsSection(symbol: symbol),
         const SizedBox(height: 20),
 
         // Insider transactions
@@ -1551,6 +1559,112 @@ class _MonthlyPnlChart extends StatelessWidget {
                       : AppTheme.lossColor),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── SEC Filings Section ──────────────────────────────────────────────────────
+
+class _SecFilingsSection extends ConsumerWidget {
+  final String symbol;
+  const _SecFilingsSection({required this.symbol});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final filingsAsync = ref.watch(secFilingsForTickerProvider(symbol));
+
+    return filingsAsync.when(
+      loading: () => const Card(
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 12),
+              Text('Loading SEC filings…',
+                  style: TextStyle(color: AppTheme.neutralColor)),
+            ],
+          ),
+        ),
+      ),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (filings) {
+        if (filings.isEmpty) {
+          return const EmptyCard('No SEC filings found');
+        }
+        return Column(
+          children: filings.take(5).map((f) => _SecFilingRow(filing: f)).toList(),
+        );
+      },
+    );
+  }
+}
+
+class _SecFilingRow extends StatelessWidget {
+  final SecFiling filing;
+  const _SecFilingRow({required this.filing});
+
+  Color get _typeColor => switch (filing.category) {
+        'earnings' => const Color(0xFF7EC8E3),
+        'event'    => const Color(0xFFFFD166),
+        'insider'  => AppTheme.profitColor,
+        'holder'   => const Color(0xFFBBABFF),
+        _          => AppTheme.neutralColor,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () async {
+        final uri = Uri.parse(filing.linkToHtml);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: _typeColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                filing.formType,
+                style: TextStyle(
+                  color: _typeColor,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                filing.formLabel,
+                style: const TextStyle(fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text(
+              '${filing.filedAt.year}-'
+              '${filing.filedAt.month.toString().padLeft(2, '0')}-'
+              '${filing.filedAt.day.toString().padLeft(2, '0')}',
+              style: const TextStyle(
+                color: AppTheme.neutralColor,
+                fontSize: 11,
+              ),
+            ),
+          ],
         ),
       ),
     );

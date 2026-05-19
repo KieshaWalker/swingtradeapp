@@ -101,6 +101,13 @@ def _fetch_today_sabr(db, ticker: str, user_id: str, today: str) -> list[dict]:
     return resp.data or []
 
 
+def _n14(v):
+    """Return None if v would overflow numeric(14,2) (abs >= 1e12)."""
+    if v is None:
+        return None
+    return None if abs(v) >= 1e12 else v
+
+
 def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvol=None) -> None:
     gex_by_strike = [
         {"strike": g.strike, "dealer_gex": g.dealer_gex(spot),
@@ -113,7 +120,7 @@ def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvo
         "atm_iv":                 iv_result.current_iv,
         "skew":                   iv_result.skew,
         "gex_by_strike":          gex_by_strike,
-        "total_gex":              iv_result.total_gex,
+        "total_gex":              _n14(iv_result.total_gex),
         "max_gex_strike":         iv_result.max_gex_strike,
         "put_call_ratio":         iv_result.put_call_ratio,
         "underlying_price":       spot,
@@ -125,19 +132,19 @@ def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvo
         "iv_gex_signal":          iv_result.iv_gex_signal.value if iv_result.iv_gex_signal else None,
         "zero_gamma_level":       iv_result.zero_gamma_level,
         "spot_to_zero_gamma_pct": iv_result.spot_to_zero_gamma_pct,
-        "delta_gex":              iv_result.delta_gex,
+        "delta_gex":              _n14(iv_result.delta_gex),
         "put_wall_density":       iv_result.put_wall_density,
         "vanna_regime":           iv_result.vanna_regime.value,
-        "total_vex":              iv_result.total_vex,
-        "total_cex":              iv_result.total_cex,
-        "total_volga":            iv_result.total_volga,
+        "total_vex":              _n14(iv_result.total_vex),
+        "total_cex":              _n14(iv_result.total_cex),
+        "total_volga":            _n14(iv_result.total_volga),
         "max_vex_strike":         iv_result.max_vex_strike,
         "skew_avg_52w":           iv_result.skew_avg_52w,
         "skew_z_score":           iv_result.skew_z_score,
         "rnd":                    [s.to_dict() for s in iv_result.rnd] or None,
         # Fields read by regime_pull
         "spot_to_vt_pct":         iv_result.spot_to_vt_pct,
-        "gex_0dte":               iv_result.gex_0dte,
+        "gex_0dte":               _n14(iv_result.gex_0dte),
         "gex_0dte_pct":           iv_result.gex_0dte_pct,
     }
     if vvol is not None:

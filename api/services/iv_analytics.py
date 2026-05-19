@@ -713,13 +713,17 @@ def _second_order_greeks(
     d1 = (log_moneyness + (r + 0.5 * sigma * sigma) * T) / sig_sqt
     d2 = d1 - sig_sqt
 
+    # Clamp d1/d2 to prevent extreme values for deep OTM/ITM options near expiry
+    d1 = max(-50.0, min(50.0, d1))
+    d2 = max(-50.0, min(50.0, d2))
+
     # Vanna = -gamma * S * sqrt(T) * d2
     vanna = -gamma * spot * sqrt_T * d2
 
     # Charm = gamma * S * (r*d1/σ - d2/(2T)) / 365
     charm = (-gamma * spot * (2 * r * T - d2 * sigma * sqrt_T) / (2 * 365)) if T > 0 else 0.0
 
-    # Volga = vega * d1 * d2 / σ
+    # Volga = vega * d1 * d2 / σ  (sigma already checked >= sig_sqt/sqrt_T > 0)
     volga = vega * d1 * d2 / sigma
 
     return vanna, charm, volga
