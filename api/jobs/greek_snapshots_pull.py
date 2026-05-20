@@ -25,7 +25,7 @@ _DTE_BUCKETS = [4, 7, 31]
 async def run_greek_snapshots_pull() -> dict:
     now = datetime.now(timezone.utc)
     if now.hour >= 21:
-        log.info("greek_snapshots_pull: skipped (after 4 PM UTC)")
+        log.info("greek_snapshots_pull: skipped (after 4 PM ET / 21:00 UTC)")
         return {"status": "after_4pm"}
     
     db = get_supabase()
@@ -95,7 +95,7 @@ def _upsert_greek_snapshots(
                     "call_theta":  atm_call.get("theta"),
                     "call_vega":   atm_call.get("vega"),
                     "call_rho":    atm_call.get("rho"),
-                    "call_iv":     _pct_to_dec(atm_call.get("impliedVolatility")),
+                    "call_iv":     _pct_to_dec(atm_call.get("volatility") or atm_call.get("impliedVolatility")),
                     "call_oi":     atm_call.get("openInterest"),
                 })
 
@@ -108,7 +108,7 @@ def _upsert_greek_snapshots(
                     "put_theta":  atm_put.get("theta"),
                     "put_vega":   atm_put.get("vega"),
                     "put_rho":    atm_put.get("rho"),
-                    "put_iv":     _pct_to_dec(atm_put.get("impliedVolatility")),
+                    "put_iv":     _pct_to_dec(atm_put.get("volatility") or atm_put.get("impliedVolatility")),
                     "put_oi":     atm_put.get("openInterest"),
                 })
 

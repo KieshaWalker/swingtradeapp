@@ -185,11 +185,13 @@ def _build_snapshot(
         spot_last  = em_rows[-1].get("spot")
         n_days     = len(em_rows)
     else:
-        iv_series  = [r["atm_iv"]          for r in iv_rows if r.get("atm_iv")          is not None]
-        iv_first   = iv_rows[0].get("atm_iv")           if iv_rows else None
-        iv_last    = iv_rows[-1].get("atm_iv")           if iv_rows else None
-        spot_first = iv_rows[0].get("underlying_price")  if iv_rows else None
-        spot_last  = iv_rows[-1].get("underlying_price") if iv_rows else None
+        # atm_iv in iv_snapshots is stored in percent (e.g. 21.0); divide by 100
+        # so units match expected_move_snapshots.iv (decimal) and compute_rv() output.
+        iv_series  = [r["atm_iv"] / 100     for r in iv_rows if r.get("atm_iv")          is not None]
+        iv_first   = (iv_rows[0].get("atm_iv") or 0) / 100  if iv_rows else None
+        iv_last    = (iv_rows[-1].get("atm_iv") or 0) / 100 if iv_rows else None
+        spot_first = iv_rows[0].get("underlying_price")      if iv_rows else None
+        spot_last  = iv_rows[-1].get("underlying_price")     if iv_rows else None
         n_days     = len(iv_rows)
 
     iv_change = (iv_last - iv_first) if (iv_last is not None and iv_first is not None) else None

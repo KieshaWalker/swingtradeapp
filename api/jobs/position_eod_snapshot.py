@@ -20,6 +20,8 @@ import httpx
 
 from core.supabase_client import get_supabase
 from jobs.common import fetch_schwab_chain, _fany, _pct_to_dec
+from services.fair_value_engine import compute as fv_compute
+from services.heston import HestonParams
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +81,34 @@ async def run_position_eod_snapshot() -> dict:
                     c = contracts[0] if contracts else {}
                     contract_map[(exp_date, float(strike_str), "put")] = c
 
+            # Fetch Heston params once per ticker — shared across all legs.
+            heston_params:Optional[HestonParams] = None
+            try:
+                h_rows = (
+                    db.table("heston_calibrations")
+                    .select("kappa,theta,xi,rho,v0,rmse_iv,n_points")
+                    .eq("ticker", ticker)
+                    .order("obs_date", desc=True)
+                    .limit(1)
+                    .execute()
+                ).data or []
+                if h_rows:
+                    h = h_rows[0]
+                    if (
+                        h.get("rmse_iv") is not None
+                        and h["rmse_iv"] < 0.02
+                        and (h.get("n_points") or 0) >= 8
+                    ):
+                        heston_params = HestonParams(
+                            kappa=h["kappa"],
+                            theta=h["theta"],
+                            xi=h["xi"],
+                            rho=h["rho"],
+                            V0=h["v0"],
+                        )
+            except Exception as he:
+                log.warning("heston_fetch_error ticker=%s error=%r", ticker, he)
+
             for leg in ticker_legs:
                 try:
                     expiry:Optional[str] = leg.get("expiry")
@@ -115,25 +145,19 @@ async def run_position_eod_snapshot() -> dict:
                     vega = _fany(contract, "vega")
                     rho = _fany(contract, "rho")
 
-                    # Call fair-value API for model prices
-                    fv:Optional[dict] = None
+                    # Compute fair-value model prices via direct function call.
+                    fv_result = None
                     if iv and dte > 0 and mark is not None and spot > 0:
                         try:
-                            fv_resp = await client.post(
-                                "http://localhost:8000/fair-value/compute",
-                                json={
-                                    "spot": spot,
-                                    "strike": float(strike),
-                                    "implied_vol": iv,
-                                    "days_to_expiry": dte,
-                                    "is_call": leg_type == "call",
-                                    "broker_mid": mark,
-                                    "ticker": ticker,
-                                },
-                                timeout=15.0,
+                            fv_result = fv_compute(
+                                spot=spot,
+                                strike=float(strike),
+                                implied_vol=iv,
+                                days_to_expiry=dte,
+                                is_call=(leg_type == "call"),
+                                broker_mid=mark,
+                                heston_params=heston_params,
                             )
-                            if fv_resp.status_code == 200:
-                                fv = fv_resp.json()
                         except Exception as fv_exc:
                             log.warning("fv_error leg=%s error=%r", leg["id"], fv_exc)
 
@@ -151,11 +175,11 @@ async def run_position_eod_snapshot() -> dict:
                         "vega": vega,
                         "rho": rho,
                     }
-                    if fv:
-                        snapshot["bs_theo"] = fv.get("bs_fair_value")
-                        snapshot["sabr_theo"] = fv.get("sabr_fair_value")
-                        snapshot["heston_theo"] = fv.get("heston_fair_value")
-                        snapshot["model_theo"] = fv.get("model_fair_value")
+                    if fv_result:
+                        snapshot["bs_theo"]     = fv_result.bs_fair_value
+                        snapshot["sabr_theo"]   = fv_result.sabr_fair_value
+                        snapshot["heston_theo"] = fv_result.heston_fair_value
+                        snapshot["model_theo"]  = fv_result.model_fair_value
 
                     snapshots.append(snapshot)
                     results[leg["id"]] = "ok"

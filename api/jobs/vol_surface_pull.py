@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 async def run_vol_surface_pull() -> dict:
     now = datetime.now(timezone.utc)
     if now.hour >= 21:
-        log.info("vol_surface_pull: skipped (after 4 PM UTC)")
+        log.info("vol_surface_pull: skipped (after 4 PM ET / 21:00 UTC)")
         return {"status": "after_4pm"}
     
     db = get_supabase()
