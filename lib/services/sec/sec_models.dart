@@ -81,22 +81,52 @@ class SecFiling {
     return null;
   }
 
-  /// URL to the primary Form 4 XML document.
-  /// Prefers documentFormatFiles; falls back to replacing .htm with .xml in linkToHtml.
-  String? get xmlUrl {
-    // Prefer explicit XML file from documentFormatFiles
+  /// URL that opens the filing as a readable HTML page in a browser.
+  ///
+  /// EDGAR Form 4s have no separate .html file. The human-readable view is
+  /// served by applying an XSLT stylesheet server-side; those entries carry an
+  /// `xslF345X*/` segment in their path. We prefer that over the raw-XML entry
+  /// (same type "4") and fall back to linkToHtml (the filing index page) only
+  /// when documentFormatFiles is empty.
+  String get htmlUrl {
     for (final f in documentFormatFiles) {
       final url = f['documentUrl'] as String? ?? '';
       final type = (f['type'] as String? ?? '').toUpperCase();
-      // Primary Form 4 document is type "4" or ends in .xml
-      if (url.isNotEmpty && (type == '4' || url.toLowerCase().endsWith('.xml'))) {
+      if (url.isNotEmpty && type == '4' && url.contains('/xslF345X')) {
         return url;
       }
     }
-    // Fallback: replace .htm/.html extension with .xml
+    return linkToHtml;
+  }
+
+  /// URL to the raw Form 4 XML document (used for programmatic parsing).
+  ///
+  /// Prefers the type-4 entry that does NOT have an xslF345X prefix (i.e. the
+  /// plain XML, not the XSLT-transformed view). Falls back to deriving the URL
+  /// from linkToHtml when documentFormatFiles is absent.
+  String? get xmlUrl {
+    // Prefer the plain XML entry (no XSL prefix)
+    for (final f in documentFormatFiles) {
+      final url = f['documentUrl'] as String? ?? '';
+      final type = (f['type'] as String? ?? '').toUpperCase();
+      if (url.isNotEmpty &&
+          type == '4' &&
+          url.toLowerCase().endsWith('.xml') &&
+          !url.contains('/xslF345X')) {
+        return url;
+      }
+    }
+    // Fallback: any .xml in the document list
+    for (final f in documentFormatFiles) {
+      final url = f['documentUrl'] as String? ?? '';
+      if (url.isNotEmpty && url.toLowerCase().endsWith('.xml')) return url;
+    }
+    // Last resort: swap -index.htm suffix for .xml, or replace .htm/.html
     if (linkToHtml.isNotEmpty) {
-      final xmlLink = linkToHtml.replaceAll(RegExp(r'\.(htm|html)$'), '.xml');
-      if (xmlLink != linkToHtml) return xmlLink;
+      final idx = linkToHtml.replaceAll(RegExp(r'-index\.htm$'), '.xml');
+      if (idx != linkToHtml) return idx;
+      final ext = linkToHtml.replaceAll(RegExp(r'\.(htm|html)$'), '.xml');
+      if (ext != linkToHtml) return ext;
     }
     return null;
   }

@@ -9,6 +9,8 @@
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
 import '../../../services/iv/realized_vol_models.dart';
@@ -218,12 +220,17 @@ class _RvChart extends StatefulWidget {
 }
 
 class _RvChartState extends State<_RvChart> {
-  // ~90 trading days ≈ 4.5 months shown by default
   static const _defaultWindow = 90.0;
+  static const _minWindow = 10.0;
 
   late double _minX;
   late double _maxX;
   double _contentWidth = 300.0;
+
+  // Scale gesture state
+  double _minXAtScaleStart = 0.0;
+  double _maxXAtScaleStart = 0.0;
+  Offset _focalAtScaleStart = Offset.zero;
 
   @override
   void initState() {
@@ -245,7 +252,7 @@ class _RvChartState extends State<_RvChart> {
 
   void _scroll(double dxPixels) {
     final windowSize = _maxX - _minX;
-    if (windowSize <= 0) return;
+    if (windowSize <= 0 || _contentWidth <= 0) return;
     final pxPerUnit = _contentWidth / windowSize;
     final delta = -dxPixels / pxPerUnit;
     final n = widget.rvSnaps.length.toDouble();
@@ -255,6 +262,34 @@ class _RvChartState extends State<_RvChart> {
       _minX = newMin;
       _maxX = newMin + windowSize;
     });
+  }
+
+  void _onScaleStart(ScaleStartDetails details) {
+    _minXAtScaleStart = _minX;
+    _maxXAtScaleStart = _maxX;
+    _focalAtScaleStart = details.localFocalPoint;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (details.pointerCount <= 1) {
+      _scroll(details.focalPointDelta.dx);
+    } else {
+      final scale = details.scale;
+      if (scale <= 0) return;
+      final windowAtStart = _maxXAtScaleStart - _minXAtScaleStart;
+      final maxN = widget.rvSnaps.length.toDouble() - 1;
+      final newWindow = (windowAtStart / scale).clamp(_minWindow, maxN);
+
+      // y-axis reservedSize(40) + left padding(4) = 44px offset to chart area
+      const leftPad = 44.0;
+      final focalFrac = ((_focalAtScaleStart.dx - leftPad) / _contentWidth).clamp(0.0, 1.0);
+      final focalDataX = _minXAtScaleStart + focalFrac * windowAtStart;
+      final newMin = (focalDataX - focalFrac * newWindow).clamp(0.0, maxN - newWindow);
+      setState(() {
+        _minX = newMin;
+        _maxX = newMin + newWindow;
+      });
+    }
   }
 
   @override
@@ -342,14 +377,13 @@ class _RvChartState extends State<_RvChart> {
             1.0,
             double.infinity,
           );
-          return LineChart(
+          final chart = LineChart(
             LineChartData(
               minX: _minX,
               maxX: _maxX,
               minY: minY,
               maxY: maxY,
               clipData: const FlClipData.all(),
-
               gridData: FlGridData(
                 show: true,
                 drawVerticalLine: false,
@@ -401,16 +435,10 @@ class _RvChartState extends State<_RvChart> {
                 topTitles: const AxisTitles(
                   sideTitles: SideTitles(showTitles: false),
                 ),
-              ), // horizontal scoll and hover
-
+              ),
               lineBarsData: lineBars,
               lineTouchData: LineTouchData(
                 handleBuiltInTouches: true,
-                touchCallback: (event, response) {
-                  if (event is FlPanUpdateEvent) {
-                    _scroll(event.details.delta.dx);
-                  }
-                },
                 touchTooltipData: LineTouchTooltipData(
                   getTooltipColor: (_) => AppTheme.elevatedColor,
                   fitInsideHorizontally: true,
@@ -441,6 +469,39 @@ class _RvChartState extends State<_RvChart> {
                   },
                 ),
               ),
+            ),
+          );
+
+          // Mouse scroll wheel: ctrl+scroll zooms, plain scroll pans
+          return Listener(
+            onPointerSignal: (event) {
+              if (event is! PointerScrollEvent) return;
+              final dy = event.scrollDelta.dy;
+              if (event.kind == PointerDeviceKind.mouse &&
+                  HardwareKeyboard.instance.isControlPressed) {
+                // Zoom: scroll up = zoom in, scroll down = zoom out
+                final windowSize = _maxX - _minX;
+                final maxN = widget.rvSnaps.length.toDouble() - 1;
+                final zoomFactor = dy > 0 ? 1.12 : 0.89;
+                final newWindow = (windowSize * zoomFactor).clamp(_minWindow, maxN);
+                const leftPad = 44.0;
+                final focalFrac = ((event.localPosition.dx - leftPad) / _contentWidth).clamp(0.0, 1.0);
+                final focalDataX = _minX + focalFrac * windowSize;
+                final newMin = (focalDataX - focalFrac * newWindow).clamp(0.0, maxN - newWindow);
+                setState(() {
+                  _minX = newMin;
+                  _maxX = newMin + newWindow;
+                });
+              } else {
+                // Pan
+                _scroll(-dy * 2);
+              }
+            },
+            child: GestureDetector(
+              onScaleStart: _onScaleStart,
+              onScaleUpdate: _onScaleUpdate,
+              onDoubleTap: () => setState(_initWindow),
+              child: chart,
             ),
           );
         },

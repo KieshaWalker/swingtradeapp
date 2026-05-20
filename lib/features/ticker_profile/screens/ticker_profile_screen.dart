@@ -1623,7 +1623,7 @@ class _SecFilingRow extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () async {
-        final uri = Uri.parse(filing.linkToHtml);
+        final uri = Uri.parse(filing.htmlUrl);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         }

@@ -24,8 +24,8 @@
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme.dart';
 import '../../../services/sec/sec_models.dart';
 import '../../../services/sec/sec_providers.dart';
@@ -148,8 +148,11 @@ class _ApiForm4SheetState extends ConsumerState<ApiForm4Sheet> {
       final disposition = _xmlVal(block, 'transactionAcquiredDisposedCode');
 
       if (dateStr.isEmpty || code.isEmpty) continue;
-      final shares = int.tryParse(sharesStr.replaceAll(',', ''));
-      if (shares == null || shares == 0) continue;
+      // EDGAR can report fractional shares (RSU vesting, ESPP, etc.)
+      // Parse as double first, then round to nearest int for storage.
+      final sharesDouble = double.tryParse(sharesStr.replaceAll(',', ''));
+      if (sharesDouble == null || sharesDouble == 0) continue;
+      final shares = sharesDouble.round();
 
       DateTime date;
       try {
@@ -198,16 +201,27 @@ class _ApiForm4SheetState extends ConsumerState<ApiForm4Sheet> {
     });
 
     try {
-      final res = await http.get(Uri.parse(xmlUrl));
-      if (res.statusCode != 200) {
+      final res = await Supabase.instance.client.functions.invoke(
+        'proxy-edgar-xml',
+        body: {'url': xmlUrl},
+      );
+      if (res.status != 200) {
         setState(() {
-          _loadError = 'Could not fetch filing XML (HTTP ${res.statusCode}).';
+          _loadError = 'Could not fetch filing XML (HTTP ${res.status}).';
+          _loadingXml = false;
+        });
+        return;
+      }
+      final xml = (res.data as Map<String, dynamic>)['xml'] as String? ?? '';
+      if (xml.isEmpty) {
+        setState(() {
+          _loadError = 'Empty XML response from EDGAR.';
           _loadingXml = false;
         });
         return;
       }
 
-      final parsed = _parseXml(res.body, filing);
+      final parsed = _parseXml(xml, filing);
       if (parsed.isEmpty) {
         setState(() {
           _loadError =
