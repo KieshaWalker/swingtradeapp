@@ -220,7 +220,7 @@ class _RvChart extends StatefulWidget {
 }
 
 class _RvChartState extends State<_RvChart> {
-  static const _defaultWindow = 90.0;
+  static const _defaultWindow = 30.0;
   static const _minWindow = 10.0;
 
   late double _minX;
