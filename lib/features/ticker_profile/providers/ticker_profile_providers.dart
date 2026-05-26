@@ -10,15 +10,13 @@
 //   tickerEarningsReactionsProvider → table: ticker_earnings_reactions
 //   tickerTradesProvider         → derived from tradesProvider (table: trades)
 //
-//   ── SEC EDGAR via secfilingdata.com ─────────────────────────────────────
-//   secFilingsForTickerProvider  → POST /live-query-api
-//                                  ticker:{symbol} AND formType:(10-K OR 10-Q OR 8-K OR 4)
-//                                  feeds into Timeline tab (secFiling events)
+//   SEC filings are NOT included in the timeline — they load lazily via the
+//   Overview tab's _LazySecFilingsSection (secFilingsForTickerProvider).
 //
 
 // Tier 1 — Raw Supabase fetchers (FutureProvider.family)
 // Tier 2 — Derived (Provider.family, no new fetches)
-// Tier 3 — Timeline assembly (merges all 6 sources chronologically)
+// Tier 3 — Timeline assembly (merges 5 Supabase sources chronologically)
 //
 // All providers are invalidated by TickerProfileNotifier after mutations.
 // =============================================================================
@@ -26,7 +24,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../trades/models/trade.dart';
 import '../../trades/providers/trades_provider.dart';
-import '../../../services/sec/sec_providers.dart';
 import '../models/ticker_profile_models.dart';
 
 // ─── Watched tickers ─────────────────────────────────────────────────────────
@@ -155,33 +152,18 @@ final tickerTimelineProvider =
         (ref, symbol) {
   final tradesAsync = ref.watch(tickerTradesProvider(symbol));
   final notesAsync = ref.watch(tickerNotesProvider(symbol));
-  final secAsync = ref.watch(secFilingsForTickerProvider(symbol));
   final earningsAsync = ref.watch(tickerEarningsReactionsProvider(symbol));
   final srAsync = ref.watch(tickerSRLevelsProvider(symbol));
   final insiderAsync = ref.watch(tickerInsiderBuysProvider(symbol));
 
   // Surface the first error encountered
-  for (final a in [
-    tradesAsync,
-    notesAsync,
-    secAsync,
-    earningsAsync,
-    srAsync,
-    insiderAsync
-  ]) {
+  for (final a in [tradesAsync, notesAsync, earningsAsync, srAsync, insiderAsync]) {
     if (a is AsyncError) {
       return AsyncError(a.error as Object, a.stackTrace ?? StackTrace.empty);
     }
   }
   // Still loading any source → loading
-  for (final a in [
-    tradesAsync,
-    notesAsync,
-    secAsync,
-    earningsAsync,
-    srAsync,
-    insiderAsync
-  ]) {
+  for (final a in [tradesAsync, notesAsync, earningsAsync, srAsync, insiderAsync]) {
     if (a is AsyncLoading) return const AsyncLoading();
   }
 
@@ -217,18 +199,6 @@ final tickerTimelineProvider =
       type: TimelineEventType.note,
       summary: n.body.length > 80 ? '${n.body.substring(0, 80)}…' : n.body,
       note: n,
-    ));
-  }
-
-  // SOURCE: SEC EDGAR via secfilingdata.com — POST /live-query-api
-  //         query: ticker:{symbol} AND formType:(10-K OR 10-Q OR 8-K OR 4)
-  //         auth: Authorization header (SecConfig.apiKey)
-  for (final f in secAsync.valueOrNull ?? []) {
-    events.add(TickerTimelineEvent(
-      timestamp: f.filedAt,
-      type: TimelineEventType.secFiling,
-      summary: '${f.formLabel} · ${f.companyName}',
-      secFiling: f,
     ));
   }
 

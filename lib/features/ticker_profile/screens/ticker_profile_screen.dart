@@ -26,9 +26,9 @@
 //   S/R levels        Supabase  ticker_support_resistance (tickerSRLevelsProvider)
 //
 //   ── Timeline ────────────────────────────────────────────────────────────
-//   Merged feed from all 6 sources (tickerTimelineProvider):
-//     Supabase  trades / notes / insider buys / earnings reactions / S/R levels
-//     SEC EDGAR secfilingdata.com  POST /live-query-api  (secFilingsForTickerProvider)
+//   Merged feed from 5 Supabase sources (tickerTimelineProvider):
+//     trades / notes / insider buys / earnings reactions / S/R levels
+//     SEC filings NOT included in timeline (lazy-loaded via Overview tab)
 
 // FAB per tab:
 //   Overview  → add note sheet (saves to Supabase)
@@ -471,7 +471,7 @@ class _OverviewTab extends ConsumerWidget {
             Expanded(
               child: _OverviewGridCell(
                 title: 'SEC Filings',
-                child: _SecFilingsSection(symbol: symbol),
+                child: _LazySecFilingsSection(symbol: symbol),
               ),
             ),
             const SizedBox(width: 12),
@@ -1641,6 +1641,38 @@ class _MonthlyPnlChart extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ─── Lazy SEC Filings Section ─────────────────────────────────────────────────
+// Renders a "Load filings" button until tapped; only then builds _SecFilingsSection
+// which activates secFilingsForTickerProvider and fires the API call.
+
+class _LazySecFilingsSection extends StatefulWidget {
+  final String symbol;
+  const _LazySecFilingsSection({required this.symbol});
+
+  @override
+  State<_LazySecFilingsSection> createState() => _LazySecFilingsSectionState();
+}
+
+class _LazySecFilingsSectionState extends State<_LazySecFilingsSection> {
+  bool _revealed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_revealed) {
+      return TextButton.icon(
+        onPressed: () => setState(() => _revealed = true),
+        icon: const Icon(Icons.download_outlined, size: 14),
+        label: const Text('Load filings'),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      );
+    }
+    return _SecFilingsSection(symbol: widget.symbol);
   }
 }
 

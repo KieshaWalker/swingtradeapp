@@ -12,7 +12,7 @@
 //   secFilingsForTickerProvider(ticker)  POST /live-query-api
 //     query: ticker:{t} AND formType:("10-K" OR "10-Q" OR "8-K" OR "4")
 //     → TradeDetailScreen   _SecFilingsSection  (5 most recent filings)
-//     → TickerProfileScreen Timeline tab        (secFiling events in feed)
+//     → TickerProfileScreen Overview tab        (lazy — fires only on user tap)
 //
 //   secSearchProvider(query)             POST /live-query-api
 //     query: <free text>  (company name, form type, accession #, etc.)
@@ -33,7 +33,7 @@ final secServiceProvider = Provider<SecService>((_) => SecService());
 final secFilingsForTickerProvider =
     FutureProvider.family<List<SecFiling>, String>((ref, ticker) async {
   final link  = ref.keepAlive();
-  final timer = Timer(const Duration(hours: 4), link.close);
+  final timer = Timer(const Duration(hours: 24), link.close);
   ref.onDispose(timer.cancel);
   return ref.watch(secServiceProvider).getFilingsForTicker(ticker);
 });
@@ -52,7 +52,10 @@ final secRecentEventsProvider = FutureProvider<List<SecFiling>>((ref) {
 
 /// Form 4 insider filings for a specific ticker (used by ApiForm4Sheet)
 final secForm4FilingsProvider =
-    FutureProvider.family<List<SecFiling>, String>((ref, ticker) {
+    FutureProvider.family<List<SecFiling>, String>((ref, ticker) async {
+  final link  = ref.keepAlive();
+  final timer = Timer(const Duration(hours: 24), link.close);
+  ref.onDispose(timer.cancel);
   return ref
       .watch(secServiceProvider)
       .getFilingsForTicker(ticker, formTypes: ['4'], limit: 20);
