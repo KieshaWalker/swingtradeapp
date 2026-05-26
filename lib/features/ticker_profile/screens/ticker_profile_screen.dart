@@ -431,106 +431,176 @@ class _OverviewTab extends ConsumerWidget {
         RealizedVolChart(ticker: symbol),
         const SizedBox(height: 30),
 
-        // Next earnings card
-        SectionHeader('Next Earnings'),
-        nextEarnings.when(
-          loading: () => const LoadingCard(),
-          error: (e, _) => const ErrorCard('Could not load earnings date'),
-          data: (e) => e == null
-              ? const EmptyCard('No earnings data available (index or ETF)')
-              : EarningsDateCard(e),
-        ),
-        const SizedBox(height: 20),
-
-        // Fundamentals
-        SectionHeader('Fundamentals'),
-        fundamentals.when(
-          loading: () => const LoadingCard(),
-          error: (e, _) => const ErrorCard('Could not load fundamentals'),
-          data: (f) => f == null
-              ? const EmptyCard('No fundamental data available')
-              : FundamentalsCard(f),
-        ),
-        const SizedBox(height: 20),
-
-        // SEC filings
-        SectionHeader('SEC Filings'),
-        _SecFilingsSection(symbol: symbol),
-        const SizedBox(height: 20),
-
-        // Insider transactions
+        // Grid row 1: Next Earnings | Fundamentals
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SectionHeader('Insider Transactions'),
-            TextButton.icon(
-              onPressed: onAddInsider,
-              icon: const Icon(Icons.upload_file_outlined, size: 16),
-              label: const Text('Import Form 4'),
+            Expanded(
+              child: _OverviewGridCell(
+                title: 'Next Earnings',
+                child: nextEarnings.when(
+                  loading: () => const LoadingCard(),
+                  error: (e, _) => const ErrorCard('Could not load earnings date'),
+                  data: (e) => e == null
+                      ? const EmptyCard('No earnings data available')
+                      : EarningsDateCard(e),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _OverviewGridCell(
+                title: 'Fundamentals',
+                child: fundamentals.when(
+                  loading: () => const LoadingCard(),
+                  error: (e, _) => const ErrorCard('Could not load fundamentals'),
+                  data: (f) => f == null
+                      ? const EmptyCard('No fundamental data available')
+                      : FundamentalsCard(f),
+                ),
+              ),
             ),
           ],
         ),
-        insiders.when(
-          loading: () => const LoadingCard(),
-          error: (e, _) =>
-              const ErrorCard('Could not load insider transactions'),
-          data: (list) => list.isEmpty
-              ? EmptyCard('No insider transactions logged yet')
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ...list
-                        .take(3)
-                        .map((b) => InsiderBuyCard(symbol: symbol, buy: b)),
-                    TextButton(
-                      onPressed: onSeeAllInsiders,
-                      child: Text(
-                        'See all ${list.length} transaction${list.length == 1 ? '' : 's'} →',
-                      ),
-                    ),
-                  ],
-                ),
-        ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
 
-        // Earnings history
+        // Grid row 2: SEC Filings | Insider Transactions
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SectionHeader('Earnings History'),
-            TextButton.icon(
-              onPressed: onAddEarnings,
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Log Reaction'),
+            Expanded(
+              child: _OverviewGridCell(
+                title: 'SEC Filings',
+                child: _SecFilingsSection(symbol: symbol),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _OverviewGridCell(
+                title: 'Insider Transactions',
+                action: IconButton(
+                  onPressed: onAddInsider,
+                  icon: const Icon(Icons.upload_file_outlined, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: 'Import Form 4',
+                ),
+                child: insiders.when(
+                  loading: () => const LoadingCard(),
+                  error: (e, _) => const ErrorCard('Could not load insider transactions'),
+                  data: (list) => list.isEmpty
+                      ? EmptyCard('No insider transactions yet')
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ...list.take(3).map((b) => InsiderBuyCard(symbol: symbol, buy: b)),
+                            TextButton(
+                              onPressed: onSeeAllInsiders,
+                              child: Text('See all ${list.length} →'),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
             ),
           ],
         ),
-        earningsHistory.when(
-          loading: () => const LoadingCard(),
-          error: (e, _) =>const ErrorCard('Could not load earnings history'),
-          data: (list) => list.isEmpty
-              ? EmptyCard('No earnings reactions logged yet')
-              : Column(
-                  children: list
-                      .map((e) => EarningsReactionCard(symbol: symbol, reaction: e))
-                      .toList(),
-                ),
-        ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
 
-        // Notes
-        SectionHeader('Notes'),
-        notes.when(
-          loading: () => const LoadingCard(),
-          error: (e, _) =>const ErrorCard('Could not load notes'),
-          data: (list) => list.isEmpty
-              ? EmptyCard('No notes yet — tap + to add one')
-              : Column(
-                  children: list.map((n) => NoteCard(symbol: symbol, note: n)).toList(),
+        // Grid row 3: Earnings History | Notes
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _OverviewGridCell(
+                title: 'Earnings History',
+                action: IconButton(
+                  onPressed: onAddEarnings,
+                  icon: const Icon(Icons.add, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: 'Log Reaction',
                 ),
+                child: earningsHistory.when(
+                  loading: () => const LoadingCard(),
+                  error: (e, _) => const ErrorCard('Could not load earnings history'),
+                  data: (list) => list.isEmpty
+                      ? EmptyCard('No earnings reactions logged yet')
+                      : Column(
+                          children: list
+                              .map((e) => EarningsReactionCard(symbol: symbol, reaction: e))
+                              .toList(),
+                        ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _OverviewGridCell(
+                title: 'Notes',
+                child: notes.when(
+                  loading: () => const LoadingCard(),
+                  error: (e, _) => const ErrorCard('Could not load notes'),
+                  data: (list) => list.isEmpty
+                      ? EmptyCard('No notes yet — tap + to add one')
+                      : Column(
+                          children: list.map((n) => NoteCard(symbol: symbol, note: n)).toList(),
+                        ),
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 80),
       ],
+    );
+  }
+}
+
+// ─── Overview grid cell ───────────────────────────────────────────────────────
+
+class _OverviewGridCell extends StatelessWidget {
+  final String title;
+  final Widget? action;
+  final Widget child;
+
+  const _OverviewGridCell({
+    required this.title,
+    required this.child,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.borderColor.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                title.toUpperCase(),
+                style: const TextStyle(
+                  color: AppTheme.neutralColor,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              if (action case final a?) a,
+            ],
+          ),
+          const SizedBox(height: 8),
+          child,
+        ],
+      ),
     );
   }
 }
