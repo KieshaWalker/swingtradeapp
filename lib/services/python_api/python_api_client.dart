@@ -27,6 +27,7 @@
 //   /macro/score             -> api/routers/macro.py
 //   /greek-grid/interpret-grid  -> api/routers/greek_grid.py
 //   /greek-grid/interpret-chart -> api/routers/greek_grid.py
+//   /fetch/ticker-dtes          -> api/routers/fetch_dtes.py
 //
 // If a new Python backend feature is added, expose a Dart method here and
 // update the calling widget/provider to use the new response shape.
@@ -418,6 +419,39 @@ class PythonApiClient {
   /// Returns {total, regime, has_enough_data, used_z_scores, weights_source, components: [...]}
   static Future<Map<String, dynamic>> macroScore() =>
       _post('/macro/score', {});
+
+  // ── Fetch DTEs ─────────────────────────────────────────────────────────────
+
+  /// Fetches selected expiration dates at high strikeCount for one ticker and
+  /// runs the full pipeline, writing to all Supabase snapshot tables.
+  /// Returns { status, ticker, date, results: { vol_surface, greek_grid, ... } }
+  static Future<Map<String, dynamic>> fetchTickerDtes({
+    required String ticker,
+    required String userId,
+    required List<String> expirationDates,
+    int strikeCount = 100,
+  }) async {
+    final uri = Uri.parse('$_base/fetch/ticker-dtes');
+    final response = await _http
+        .post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'ticker':           ticker,
+            'user_id':          userId,
+            'expiration_dates': expirationDates,
+            'strike_count':     strikeCount,
+          }),
+        )
+        .timeout(
+          const Duration(seconds: 120),
+          onTimeout: () => throw PythonApiException('Request timed out', statusCode: 408),
+        );
+    if (response.statusCode != 200) {
+      throw PythonApiException(response.body, statusCode: response.statusCode);
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
 
   // ── Greek Grid ─────────────────────────────────────────────────────────────
 

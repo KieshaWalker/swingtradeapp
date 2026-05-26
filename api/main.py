@@ -15,6 +15,7 @@
 #   /jobs      -> api/routers/scheduler_trigger.py
 #   /regime    -> api/routers/regime.py
 #   /macro     -> api/routers/macro.py
+#   /fetch     -> api/routers/fetch_dtes.py
 #
 # Note: add a new router here when introducing a new backend feature.
 #       The router file should define request/response Pydantic models,
@@ -29,7 +30,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routers import black_scholes, sabr, heston, fair_value, iv_analytics, realized_vol, arb, scoring, decision, greek_grid, scheduler_trigger, regime, macro
+from routers import black_scholes, sabr, heston, fair_value, iv_analytics, realized_vol, arb, scoring, decision, greek_grid, scheduler_trigger, regime, macro, fetch_dtes
 
 
 @asynccontextmanager
@@ -94,6 +95,7 @@ app.include_router(greek_grid.router, prefix="/greek-grid", tags=["Greek Grid"])
 app.include_router(scheduler_trigger.router, prefix="/jobs", tags=["Scheduled Jobs"])
 app.include_router(regime.router, prefix="/regime", tags=["Regime"])
 app.include_router(macro.router, prefix="/macro", tags=["Macro"])
+app.include_router(fetch_dtes.router, prefix="/fetch", tags=["Fetch"])
 
 
 @app.get("/health")

@@ -39,13 +39,23 @@ def get_tickers(db) -> list[dict]:
 
 
 async def fetch_schwab_chain(
-    client: httpx.AsyncClient, ticker: str, strike_count: int = 40
-) ->Optional[dict]:
-    """Fetch options chain via the Supabase edge function. Returns None on failure."""
+    client: httpx.AsyncClient,
+    ticker: str,
+    strike_count: int = 40,
+    expiration_date: Optional[str] = None,
+) -> Optional[dict]:
+    """Fetch options chain via the Supabase edge function. Returns None on failure.
+
+    Pass expiration_date ("YYYY-MM-DD") to fetch a single expiry with a higher
+    strike_count without blowing the Apigee payload limit.
+    """
+    body: dict = {"symbol": ticker, "contractType": "ALL", "strikeCount": strike_count}
+    if expiration_date:
+        body["expirationDate"] = expiration_date
     try:
         resp = await client.post(
             f"{settings.edge_function_base}/get-schwab-chains",
-            json={"symbol": ticker, "contractType": "ALL", "strikeCount": strike_count},
+            json=body,
             headers=_headers(),
             timeout=60.0,
         )

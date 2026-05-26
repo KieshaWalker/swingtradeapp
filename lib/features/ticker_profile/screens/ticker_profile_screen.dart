@@ -54,6 +54,7 @@ import '../models/ticker_profile_models.dart';
 import '../providers/ticker_profile_notifier.dart';
 import '../providers/ticker_profile_providers.dart';
 import '../widgets/add_earnings_reaction_sheet.dart';
+import '../widgets/fetch_dtes_sheet.dart';
 import '../widgets/api_form4_sheet.dart';
 import '../widgets/add_sr_level_sheet.dart';
 import '../widgets/add_ticker_note_sheet.dart';
@@ -162,6 +163,14 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.download_for_offline_outlined),
+            tooltip: 'Fetch Snapshot',
+            onPressed: () => _showSheet(FetchDtesSheet(
+              symbol: _sym,
+              onFetchComplete: () => ref.invalidate(_tickerIvSnapshotProvider(_sym)),
+            )),
+          ),
           IconButton(
             icon: const Icon(Icons.candlestick_chart_rounded),
             tooltip: 'Options Chain',
