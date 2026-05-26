@@ -476,36 +476,44 @@ class _RvChartState extends State<_RvChart> {
             ),
           );
 
-          // Mouse scroll wheel: ctrl+scroll zooms, plain scroll pans
-          return Listener(
-            onPointerSignal: (event) {
-              if (event is! PointerScrollEvent) return;
-              final dy = event.scrollDelta.dy;
-              if (event.kind == PointerDeviceKind.mouse &&
-                  HardwareKeyboard.instance.isControlPressed) {
-                // Zoom: scroll up = zoom in, scroll down = zoom out
-                final windowSize = _maxX - _minX;
-                final maxN = widget.rvSnaps.length.toDouble() - 1;
-                final zoomFactor = dy > 0 ? 1.12 : 0.89;
-                final newWindow = (windowSize * zoomFactor).clamp(_minWindow, maxN);
-                const leftPad = 40.0;
-                final focalFrac = ((event.localPosition.dx - leftPad) / _contentWidth).clamp(0.0, 1.0);
-                final focalDataX = _minX + focalFrac * windowSize;
-                final newMin = (focalDataX - focalFrac * newWindow).clamp(0.0, maxN - newWindow);
-                setState(() {
-                  _minX = newMin;
-                  _maxX = newMin + newWindow;
-                });
-              } else {
-                // Pan
-                _scroll(-dy * 2);
-              }
-            },
-            child: GestureDetector(
-              onScaleStart: _onScaleStart,
-              onScaleUpdate: _onScaleUpdate,
-              onDoubleTap: () => setState(_initWindow),
-              child: chart,
+          // Outer GestureDetector consumes vertical drags so the parent
+          // ScrollView doesn't scroll the page while the user pans the chart.
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragStart: (_) {},
+            onVerticalDragUpdate: (_) {},
+            onVerticalDragEnd: (_) {},
+            // Mouse scroll wheel: ctrl+scroll zooms, plain scroll pans
+            child: Listener(
+              onPointerSignal: (event) {
+                if (event is! PointerScrollEvent) return;
+                final dy = event.scrollDelta.dy;
+                if (event.kind == PointerDeviceKind.mouse &&
+                    HardwareKeyboard.instance.isControlPressed) {
+                  // Zoom: scroll up = zoom in, scroll down = zoom out
+                  final windowSize = _maxX - _minX;
+                  final maxN = widget.rvSnaps.length.toDouble() - 1;
+                  final zoomFactor = dy > 0 ? 1.12 : 0.89;
+                  final newWindow = (windowSize * zoomFactor).clamp(_minWindow, maxN);
+                  const leftPad = 40.0;
+                  final focalFrac = ((event.localPosition.dx - leftPad) / _contentWidth).clamp(0.0, 1.0);
+                  final focalDataX = _minX + focalFrac * windowSize;
+                  final newMin = (focalDataX - focalFrac * newWindow).clamp(0.0, maxN - newWindow);
+                  setState(() {
+                    _minX = newMin;
+                    _maxX = newMin + newWindow;
+                  });
+                } else {
+                  // Pan
+                  _scroll(-dy * 2);
+                }
+              },
+              child: GestureDetector(
+                onScaleStart: _onScaleStart,
+                onScaleUpdate: _onScaleUpdate,
+                onDoubleTap: () => setState(_initWindow),
+                child: chart,
+              ),
             ),
           );
         },
