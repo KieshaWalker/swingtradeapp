@@ -82,7 +82,9 @@ class FundamentalsCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _section('Valuation', [
-              _row('P/E',        f.peRatio,          fmt: _x),
+              _row('52W High',   f.high52,            fmt: _dollar),
+              _row('52W Low',    f.low52,             fmt: _dollar),
+              _row('P/E',        f.peRatio,           fmt: _x),
               _row('PEG',        f.pegRatio,          fmt: _x),
               _row('P/B',        f.pbRatio,           fmt: _x),
               _row('P/S',        f.prRatio,           fmt: _x),
@@ -132,6 +134,8 @@ class FundamentalsCard extends StatelessWidget {
                 _row('Pay Amount',    f.dividendPayAmount, fmt: _dollar),
                 _row('3Y Growth',     f.divGrowthRate3Year,fmt: _pct),
                 _row('Frequency',     f.dividendFreq.toDouble(), fmt: (v) => _freqLabel(v.toInt())),
+                if (f.declarationDate != null)
+                  _row('Declared', 0, label2: EarningsDateCard._fmt(f.declarationDate!)),
                 if (f.nextDividendDate != null)
                   _row('Ex-Date', 0, label2: EarningsDateCard._fmt(f.nextDividendDate!)),
                 if (f.nextDividendPayDate != null)

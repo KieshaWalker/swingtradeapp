@@ -112,16 +112,13 @@ class SchwabService {
   Future<SchwabFundamentals?> getFundamentals(String symbol) async {
     try {
       final res = await _invoke(
-        'get-schwab-quotes',
-        body: {'symbols': [symbol]},
+        'get-schwab-instruments',
+        body: {'symbol': symbol, 'projection': 'fundamental'},
       );
       if (res.status != 200) return null;
-      final data = res.data as Map<String, dynamic>?;
-      if (data == null || data.containsKey('error')) return null;
-      final entry = data[symbol] as Map<String, dynamic>?;
-      if (entry == null) return null;
-      final f = entry['fundamental'] as Map<String, dynamic>?;
-      return f != null ? SchwabFundamentals.fromJson(f) : null;
+      final f = res.data as Map<String, dynamic>?;
+      if (f == null || f.containsKey('error')) return null;
+      return SchwabFundamentals.fromJson(f);
     } catch (e) {
       if (e is FunctionException && e.status == 401) throw const SchwabReauthRequiredException();
       debugPrint('SchwabService.getFundamentals error: $e');
@@ -132,8 +129,8 @@ class SchwabService {
   // ── Earnings date ────────────────────────────────────────────────────────────
 
   /// Returns the next earnings date for [symbol] from Schwab fundamentals,
-  /// or null if unavailable. Uses the same quotes endpoint (fields=fundamental)
-  /// — no extra network call or edge function needed.
+  /// or null if unavailable. Uses the quotes endpoint (fields=fundamental)
+  /// — separate from getFundamentals which uses the instruments endpoint.
   Future<EarningsDate?> getEarningsDate(String symbol) async {
     try {
       final res = await _invoke(

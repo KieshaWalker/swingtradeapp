@@ -305,8 +305,8 @@ class SchwabFundamentals {
     this.fundStrategy          = '',
   });
 
-  static DateTime? _parseDate(Map<String, dynamic> f, String key) {
-    final raw = f[key] as String? ?? '';
+  static DateTime? _parseDate(Map<String, dynamic> f, String key, [String? altKey]) {
+    final raw = (f[key] ?? (altKey != null ? f[altKey] : null)) as String? ?? '';
     if (raw.isEmpty || raw.startsWith('0001-01-01')) return null;
     return DateTime.tryParse(raw.replaceFirst(' ', 'T'));
   }
@@ -354,15 +354,15 @@ class SchwabFundamentals {
         shortIntToFloat:       _d(f, 'shortIntToFloat'),
         shortIntDayToCover:    _d(f, 'shortIntDayToCover'),
         beta:                  _d(f, 'beta'),
-        dividendYield:         _d(f, 'dividendYield'),
-        dividendAmount:        _d(f, 'dividendAmount'),
-        dividendPayAmount:     _d(f, 'dividendPayAmount'),
+        dividendYield:         _d(f, 'dividendYield',     'divYield'),
+        dividendAmount:        _d(f, 'dividendAmount',    'divAmount'),
+        dividendPayAmount:     _d(f, 'dividendPayAmount', 'divPayAmount'),
         divGrowthRate3Year:    _d(f, 'divGrowthRate3Year'),
-        dividendFreq:          (f['dividendFreq'] as num? ?? 0).toInt(),
-        dividendDate:          _parseDate(f, 'dividendDate'),
-        dividendPayDate:       _parseDate(f, 'dividendPayDate'),
-        nextDividendDate:      _parseDate(f, 'nextDividendDate'),
-        nextDividendPayDate:   _parseDate(f, 'nextDividendPayDate'),
+        dividendFreq:          ((f['dividendFreq'] ?? f['divFreq']) as num? ?? 0).toInt(),
+        dividendDate:          _parseDate(f, 'dividendDate',        'divExDate'),
+        dividendPayDate:       _parseDate(f, 'dividendPayDate',     'divPayDate'),
+        nextDividendDate:      _parseDate(f, 'nextDividendDate',    'nextDivExDate'),
+        nextDividendPayDate:   _parseDate(f, 'nextDividendPayDate', 'nextDivPayDate'),
         declarationDate:       _parseDate(f, 'declarationDate'),
         // Schwab exposes volume under two key names depending on context
         vol1DayAvg:            _d(f, 'vol1DayAvg',   'avg1DayVolume'),
