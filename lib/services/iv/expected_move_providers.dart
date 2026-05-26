@@ -16,5 +16,5 @@ final expectedMoveDailyProvider =
 /// Last 24 monthly EOD snapshots for a ticker (ordered oldest → newest).
 final expectedMoveMonthlyProvider =
     FutureProvider.family<List<ExpectedMoveSnapshot>, String>(
-  (ref, ticker) => _repo.getHistory(ticker, periodType: 'monthly', limit: 48),
+  (ref, ticker) => _repo.getHistory(ticker, periodType: 'monthly', limit: 252),
 );

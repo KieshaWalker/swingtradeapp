@@ -241,7 +241,11 @@ class _RvChartState extends State<_RvChart> {
   @override
   void didUpdateWidget(_RvChart old) {
     super.didUpdateWidget(old);
-    if (old.rvSnaps.length != widget.rvSnaps.length) _initWindow();
+    if (old.rvSnaps.length != widget.rvSnaps.length ||
+        (old.rvSnaps.isNotEmpty && widget.rvSnaps.isNotEmpty &&
+         old.rvSnaps.first.date != widget.rvSnaps.first.date)) {
+      _initWindow();
+    }
   }
 
   void _initWindow() {
@@ -280,8 +284,8 @@ class _RvChartState extends State<_RvChart> {
       final maxN = widget.rvSnaps.length.toDouble() - 1;
       final newWindow = (windowAtStart / scale).clamp(_minWindow, maxN);
 
-      // y-axis reservedSize(40) + left padding(4) = 44px offset to chart area
-      const leftPad = 44.0;
+      // y-axis reservedSize(40); outer padding already excluded by LayoutBuilder
+      const leftPad = 40.0;
       final focalFrac = ((_focalAtScaleStart.dx - leftPad) / _contentWidth).clamp(0.0, 1.0);
       final focalDataX = _minXAtScaleStart + focalFrac * windowAtStart;
       final newMin = (focalDataX - focalFrac * newWindow).clamp(0.0, maxN - newWindow);
@@ -372,8 +376,8 @@ class _RvChartState extends State<_RvChart> {
       padding: const EdgeInsets.fromLTRB(4, 12, 12, 8),
       child: LayoutBuilder(
         builder: (ctx, constraints) {
-          // left padding(4) + y-axis reservedSize(40) + right padding(12)
-          _contentWidth = (constraints.maxWidth - 56).clamp(
+          // y-axis reservedSize(40); outer padding already excluded by LayoutBuilder
+          _contentWidth = (constraints.maxWidth - 40).clamp(
             1.0,
             double.infinity,
           );
@@ -484,7 +488,7 @@ class _RvChartState extends State<_RvChart> {
                 final maxN = widget.rvSnaps.length.toDouble() - 1;
                 final zoomFactor = dy > 0 ? 1.12 : 0.89;
                 final newWindow = (windowSize * zoomFactor).clamp(_minWindow, maxN);
-                const leftPad = 44.0;
+                const leftPad = 40.0;
                 final focalFrac = ((event.localPosition.dx - leftPad) / _contentWidth).clamp(0.0, 1.0);
                 final focalDataX = _minX + focalFrac * windowSize;
                 final newMin = (focalDataX - focalFrac * newWindow).clamp(0.0, maxN - newWindow);

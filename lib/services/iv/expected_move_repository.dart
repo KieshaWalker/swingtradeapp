@@ -18,9 +18,9 @@ class ExpectedMoveRepository {
         .select()
         .eq('ticker', ticker.toUpperCase())
         .eq('period_type', periodType)
-        .order('date', ascending: true)
+        .order('date', ascending: false)
         .limit(limit);
-    return (rows as List)
+    return (rows as List).reversed
         .map((r) => ExpectedMoveSnapshot.fromJson(r as Map<String, dynamic>))
         .toList();
   }
