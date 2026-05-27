@@ -97,6 +97,9 @@ class TickerDashboardScreen extends ConsumerWidget {
             );
           }
 
+          // Watch-only symbols can be removed; trade-derived ones cannot.
+          final tradeSymbolSet = tradeSymbols.toSet();
+
           // Responsive column count: 2 on phones, 3 on medium, 4 on wide.
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -115,7 +118,10 @@ class TickerDashboardScreen extends ConsumerWidget {
                 ),
                 padding: const EdgeInsets.all(12),
                 itemCount: symbols.length,
-                itemBuilder: (_, i) => _TickerCard(symbol: symbols[i]),
+                itemBuilder: (_, i) => _TickerCard(
+                  symbol: symbols[i],
+                  isWatchedOnly: !tradeSymbolSet.contains(symbols[i]),
+                ),
               );
             },
           );
@@ -133,7 +139,36 @@ class TickerDashboardScreen extends ConsumerWidget {
 
 class _TickerCard extends ConsumerWidget {
   final String symbol;
-  const _TickerCard({required this.symbol});
+  final bool isWatchedOnly;
+  const _TickerCard({required this.symbol, required this.isWatchedOnly});
+
+  Future<void> _confirmRemove(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove from watchlist?'),
+        content: Text('$symbol will be removed from your watchlist.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Remove',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ref
+          .read(tickerProfileNotifierProvider.notifier)
+          .removeWatchedTicker(symbol);
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -153,6 +188,7 @@ class _TickerCard extends ConsumerWidget {
       clipBehavior: Clip.hardEdge,
       child: InkWell(
         onTap: () => context.push('/ticker/$symbol'),
+        onLongPress: isWatchedOnly ? () => _confirmRemove(context, ref) : null,
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Column(
