@@ -181,9 +181,11 @@ class _TickerCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final quoteAsync = ref.watch(quoteProvider(symbol));
-    final analytics  = ref.watch(tickerAnalyticsProvider(symbol));
+    final quoteAsync  = ref.watch(quoteProvider(symbol));
+    final analytics   = ref.watch(tickerAnalyticsProvider(symbol));
     final tradesAsync = ref.watch(tradesProvider);
+    final floatMap    = ref.watch(tickerFloatMapProvider).valueOrNull ?? {};
+    final floatShares = floatMap[symbol] ?? 0.0;
 
     final openCount =
         tradesAsync.valueOrNull
@@ -262,6 +264,14 @@ class _TickerCard extends ConsumerWidget {
                                   : null,
                             ) ??
                             const SizedBox.shrink(),
+                        if (floatShares > 0)
+                          Text(
+                            '${_formatFloat(floatShares)} float',
+                            style: const TextStyle(
+                              color: AppTheme.neutralColor,
+                              fontSize: 9,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -369,6 +379,13 @@ class _TickerCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+String _formatFloat(double shares) {
+  if (shares >= 1e9) return '${(shares / 1e9).toStringAsFixed(1)}B';
+  if (shares >= 1e6) return '${(shares / 1e6).toStringAsFixed(1)}M';
+  if (shares >= 1e3) return '${(shares / 1e3).toStringAsFixed(1)}K';
+  return shares.toStringAsFixed(0);
 }
 
 // ─── Stat label + value column (no box — card boundary is sufficient) ─────────
