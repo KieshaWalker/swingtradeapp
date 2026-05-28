@@ -49,20 +49,17 @@ class IvStorageService {
   }
 
   /// Returns latest snapshot for each ticker in [tickers] (for watchlist view).
-  /// Single query + client-side dedup (rows already ordered newest-first).
+  /// Fires all per-ticker queries concurrently — each fetches exactly 1 row so
+  /// the unbounded inFilter approach (which returns up to 252 rows × N tickers
+  /// including large gex_by_strike JSONB blobs) does not blow the response limit.
   Future<Map<String, IvSnapshot>> getLatestBatch(List<String> tickers) async {
     if (tickers.isEmpty) return {};
 
-    final rows = await _db
-        .from('iv_snapshots')
-        .select()
-        .inFilter('ticker', tickers)
-        .order('date', ascending: false);
-
+    final snapshots = await Future.wait(tickers.map(getLatest));
     final result = <String, IvSnapshot>{};
-    for (final r in (rows as List)) {
-      final snap = IvSnapshot.fromJson(r as Map<String, dynamic>);
-      result.putIfAbsent(snap.ticker, () => snap);
+    for (var i = 0; i < tickers.length; i++) {
+      final snap = snapshots[i];
+      if (snap != null) result[tickers[i]] = snap;
     }
     return result;
   }
