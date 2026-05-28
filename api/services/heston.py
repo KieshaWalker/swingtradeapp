@@ -132,8 +132,8 @@ def heston_price(F: float, K: float, T: float, r: float,
         cf = _cf_scalar(u - 1j, T, kappa, theta, xi, rho, V0)
         return (cmath.exp(-1j * u * k) * cf / (1j * u)).real
 
-    I1, _ = quad(_p1_integrand, 1e-6, 500.0, limit=500, epsabs=1e-8, epsrel=1e-6)
-    I2, _ = quad(_p2_integrand, 1e-6, 500.0, limit=500, epsabs=1e-8, epsrel=1e-6)
+    I1, _ = quad(_p1_integrand, 1e-3, 500.0, limit=500, epsabs=1e-8, epsrel=1e-6)
+    I2, _ = quad(_p2_integrand, 1e-3, 500.0, limit=500, epsabs=1e-8, epsrel=1e-6)
 
     P1 = 0.5 + I1 / math.pi
     P2 = 0.5 + I2 / math.pi

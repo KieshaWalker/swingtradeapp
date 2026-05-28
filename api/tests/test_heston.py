@@ -34,11 +34,12 @@ import numpy as np
 # These values serve as regression anchors — they pin the pricer output.
 HESTON_CASES = [
     # ATM call, rho=0 (no skew, only vol-of-vol effect)
-    (100.0, 100.0, 1.0, 0.02, 2.0, 0.04, 0.5,  0.0, 0.04, 8.43792),
+    # Updated after integration lower-bound change 1e-6→1e-3 (avoids 1/(iu) singularity noise)
+    (100.0, 100.0, 1.0, 0.02, 2.0, 0.04, 0.5,  0.0, 0.04, 8.43665),
     # OTM call, rho=-0.5 (negative skew → cheaper call vs symmetric)
-    (100.0, 110.0, 1.0, 0.02, 2.0, 0.04, 0.5, -0.5, 0.04, 3.89574),
+    (100.0, 110.0, 1.0, 0.02, 2.0, 0.04, 0.5, -0.5, 0.04, 3.89428),
     # ITM call, rho=+0.5 (positive skew → more expensive call)
-    (100.0,  90.0, 1.0, 0.02, 2.0, 0.04, 0.5,  0.5, 0.04, 14.01299),
+    (100.0,  90.0, 1.0, 0.02, 2.0, 0.04, 0.5,  0.5, 0.04, 14.01127),
     # Short-dated ATM, negative skew (equity-like parameters)
     (500.0, 500.0, 30/365, 0.0433, 3.0, 0.04, 0.6, -0.7, 0.04, None),
 ]

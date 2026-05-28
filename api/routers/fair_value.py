@@ -48,7 +48,7 @@ class FairValueRequest(BaseModel):
     spot: float = Field(..., gt=0)
     strike: float = Field(..., gt=0)
     implied_vol: float = Field(..., gt=0, description="IV as decimal (e.g. 0.21)")
-    days_to_expiry: int = Field(..., ge=1)
+    days_to_expiry: int = Field(..., ge=1, le=1095)
     is_call: bool = True
     broker_mid: float = Field(..., ge=0)
     r: float = DEFAULT_R

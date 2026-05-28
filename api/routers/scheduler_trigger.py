@@ -16,14 +16,21 @@ log = logging.getLogger(__name__)
 
 
 def _verify_scheduler(request: Request) -> None:
-    """Verify request came from Cloud Scheduler (or local dev)."""
-    # Cloud Scheduler sets X-CloudScheduler-JobName header
+    """Verify request came from Cloud Scheduler (or local dev).
+
+    When python_api_secret is configured, it is always required regardless of
+    source IP or Cloud Scheduler headers (both are trivially forgeable).
+    Without a secret (local dev), localhost IP or the Cloud Scheduler header suffices.
+    """
+    secret = request.headers.get("X-Job-Secret", "")
+    if settings.python_api_secret:
+        if secret != settings.python_api_secret:
+            raise HTTPException(status_code=403, detail="Unauthorized scheduler call")
+        return
+    # No secret configured — allow localhost or Cloud Scheduler header (dev mode only)
     is_scheduler = request.headers.get("X-CloudScheduler-JobName") is not None
     is_local = request.client and request.client.host in ("127.0.0.1", "::1")
-    secret = request.headers.get("X-Job-Secret", "")
-    has_secret = secret == settings.python_api_secret and settings.python_api_secret
-
-    if not (is_scheduler or is_local or has_secret):
+    if not (is_scheduler or is_local):
         raise HTTPException(status_code=403, detail="Unauthorized scheduler call")
 
 

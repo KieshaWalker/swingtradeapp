@@ -63,6 +63,9 @@ async def run_greek_grid_pull() -> dict:
     return {"status": "complete", "tickers": results, "date": today}
 
 
+_UPSERT_BATCH_SIZE = 200
+
+
 def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float, user_id: str) -> None:
     rows = [
         {
@@ -88,7 +91,8 @@ def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float, user_id:
         }
         for cell in cells
     ]
-    db.table("greek_grid_snapshots").upsert(
-        rows,
-        on_conflict="user_id,ticker,obs_date,strike_band,expiry_bucket",
-    ).execute()
+    for i in range(0, len(rows), _UPSERT_BATCH_SIZE):
+        db.table("greek_grid_snapshots").upsert(
+            rows[i : i + _UPSERT_BATCH_SIZE],
+            on_conflict="user_id,ticker,obs_date,strike_band,expiry_bucket",
+        ).execute()

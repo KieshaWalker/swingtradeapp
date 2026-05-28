@@ -12,6 +12,7 @@ from __future__ import annotations
 # =============================================================================
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 from core.constants import SCORE_GRADE_A, SCORE_GRADE_B, SCORE_GRADE_C, SHORT_GAMMA_CAP, IV_DEEP_LONG_GEX
 from services.iv_analytics import GammaRegime, GammaSlope, VannaRegime
@@ -96,7 +97,7 @@ def score(
         dte_score = 0
         flags.append("Expiring today")
     elif dte <= 7:
-        dte_score = round(20.0 * dte / 7)
+        dte_score = round(10.0 * dte / 7)
         flags.append("DTE < 7 — pin risk")
     elif dte <= 21:
         dte_score = round(10.0 + 10.0 * (dte - 7) / 14)

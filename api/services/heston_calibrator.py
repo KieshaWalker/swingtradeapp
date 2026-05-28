@@ -79,7 +79,7 @@ def _bs_iv_batch(
         hi = np.where(p_mid >= prices, mid, hi)
 
     result = 0.5 * (lo + hi)
-    return np.where(valid & (result < 9.99), result, np.nan)
+    return np.where(valid & (result < 10.0 - 1e-4), result, np.nan)
 
 
 # ── Surface parsing (same format as SABR calibrator) ─────────────────────────

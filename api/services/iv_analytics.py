@@ -40,6 +40,7 @@ from core.constants import (
     IV_MIN_HISTORY_SKEW,
     IV_GEX_ELEVATED_PCT,
     IV_DEEP_LONG_GEX,
+    MIN_MEANINGFUL_TOTAL_GEX_USD,
 )
 
 
@@ -230,7 +231,7 @@ def analyse(
     chain = normalize_chain(chain)
 
     raw_rate = risk_free_rate if risk_free_rate is not None else DEFAULT_R
-    r = raw_rate / 100 if raw_rate > 0.5 else raw_rate
+    r = raw_rate / 100 if raw_rate > 0.1 else raw_rate
 
     ticker = chain.get("symbol", "")
     spot = float(chain.get("underlyingPrice", 0))
@@ -299,7 +300,7 @@ def analyse(
         gex_strikes_0dte = _compute_gex(exp_0dte, spot)
         if gex_strikes_0dte:
             gex_0dte = sum(g.dealer_gex(spot) for g in gex_strikes_0dte)
-            if total_gex is not None and abs(total_gex) > 0:
+            if total_gex is not None and abs(total_gex) >= MIN_MEANINGFUL_TOTAL_GEX_USD:
                 gex_0dte_pct = gex_0dte / abs(total_gex) * 100
 
     # ── Second-order Greeks ────────────────────────────────────────────────────

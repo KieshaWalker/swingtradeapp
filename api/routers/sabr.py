@@ -28,11 +28,18 @@ class SabrIvResponse(BaseModel):
     sabr_vol: float
 
 
+class SabrPoint(BaseModel):
+    strike: float = Field(..., gt=0)
+    dte: int = Field(..., ge=1, le=1095)
+    callIv: Optional[float] = Field(default=None, gt=0)
+    putIv: Optional[float] = Field(default=None, gt=0)
+
+
 class SabrCalibrateRequest(BaseModel):
     ticker: str
     obs_date: Optional[str] = None
     spot_price: float = Field(..., gt=0)
-    points: list[dict]  # [{strike, dte, callIv?, putIv?}]
+    points: list[SabrPoint] = Field(..., min_length=1)
     r: float = DEFAULT_R
 
 
@@ -49,5 +56,6 @@ def sabr_iv_endpoint(req: SabrIvRequest):
 
 @router.post("/calibrate", response_model=SabrCalibrateResponse)
 def sabr_calibrate_endpoint(req: SabrCalibrateRequest):
-    slices = calibrate_snapshot(spot=req.spot_price, points=req.points, r=req.r)
+    points = [p.model_dump(exclude_none=True) for p in req.points]
+    slices = calibrate_snapshot(spot=req.spot_price, points=points, r=req.r)
     return SabrCalibrateResponse(slices=[s.to_dict() for s in slices])

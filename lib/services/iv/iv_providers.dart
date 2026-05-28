@@ -15,6 +15,7 @@
 //    — Batch latest-snapshot map for the watchlist summary row.
 // =============================================================================
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/schwab/schwab_models.dart';
 import '../../services/schwab/schwab_providers.dart';
@@ -81,7 +82,8 @@ Future<void> autoIngestIv(SchwabOptionsChain chain) async {
       ticker:  chain.symbol,
       history: historyMaps,
     );
-  } catch (_) {
-    // Silent — IV ingestion should never crash the chain screen
+  } catch (e, st) {
+    // Non-fatal: IV ingestion should never crash the chain screen
+    debugPrint('autoIngestIv failed for ${chain.symbol}: $e\n$st');
   }
 }

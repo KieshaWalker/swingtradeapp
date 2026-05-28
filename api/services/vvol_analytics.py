@@ -38,7 +38,7 @@ def compute(nu_current: float, nu_history: list[float]) -> Optional[VvolResult]:
         vvol_rank = (nu_current - nu_52w_low) / (nu_52w_high - nu_52w_low) * 100.0
         vvol_rank = max(0.0, min(100.0, vvol_rank))
 
-    vvol_percentile = sum(1 for n in nu_history if n < nu_current) / len(nu_history) * 100.0
+    vvol_percentile = sum(1 for n in nu_history if n <= nu_current) / len(nu_history) * 100.0
 
     if vvol_rank >= 80:
         rating = "extreme"

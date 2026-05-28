@@ -99,9 +99,11 @@ def fetch_nu_history(db, ticker: str, user_id: str, dte_target: int = 30) -> lis
         by_date[r["obs_date"]].append(r)
 
     series: list[float] = []
+    today_iso = date.today().isoformat()
     for obs_date in sorted(by_date):
-        if obs_date == date.today().isoformat():
-            continue  # exclude today
+        # Normalize to string for safe comparison regardless of Supabase return type
+        if str(obs_date)[:10] >= today_iso:
+            continue  # exclude today and any future-dated rows
         best = min(by_date[obs_date], key=lambda s: abs(s["dte"] - dte_target))
         if best["nu"] is not None:
             series.append(float(best["nu"]))

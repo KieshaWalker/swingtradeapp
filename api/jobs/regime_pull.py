@@ -139,6 +139,10 @@ async def run_regime_pull() -> dict:
                 if std > 1e-6:
                     breadth_proxy = (ratios[-1] - mean) / std
 
+        if vix_current is None:
+            log.warning("regime_pull: VIX data unavailable (FRED error); aborting to avoid incomplete snapshots")
+            return {"status": "no_vix_data"}
+
         log.info(
             "regime_pull: vix=%.2f 10ma=%s dev_pct=%s ts_ratio=%s vvix=%s breadth_z=%s hmm=%s",
             vix_current or 0,

@@ -49,13 +49,21 @@ class IvStorageService {
   }
 
   /// Returns latest snapshot for each ticker in [tickers] (for watchlist view).
+  /// Single query + client-side dedup (rows already ordered newest-first).
   Future<Map<String, IvSnapshot>> getLatestBatch(List<String> tickers) async {
     if (tickers.isEmpty) return {};
 
-    final snapshots = await Future.wait(tickers.map(getLatest));
-    return {
-      for (var i = 0; i < tickers.length; i++)
-        if (snapshots[i] != null) tickers[i]: snapshots[i]!,
-    };
+    final rows = await _db
+        .from('iv_snapshots')
+        .select()
+        .inFilter('ticker', tickers)
+        .order('date', ascending: false);
+
+    final result = <String, IvSnapshot>{};
+    for (final r in (rows as List)) {
+      final snap = IvSnapshot.fromJson(r as Map<String, dynamic>);
+      result.putIfAbsent(snap.ticker, () => snap);
+    }
+    return result;
   }
 }

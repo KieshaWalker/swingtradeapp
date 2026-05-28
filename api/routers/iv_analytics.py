@@ -24,7 +24,7 @@ from typing import Optional
 
 from datetime import date
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from services.iv_analytics import analyse
 from core.supabase_client import get_supabase
@@ -34,7 +34,7 @@ router = APIRouter()
 
 class IvAnalyticsRequest(BaseModel):
     chain: dict          # Schwab options chain JSON
-    history: list[dict] = []
+    history: list[dict] = Field(default_factory=list, max_length=500)
     risk_free_rate:Optional[float] = None
 
 

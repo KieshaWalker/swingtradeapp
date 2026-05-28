@@ -115,7 +115,7 @@ def calibrate_slice(
             sse += diff * diff
         return sse
     
-    bounds = [(1e-6, 5.0), (-0.999, 0.999), (1e-6, 5.0)]
+    bounds = [(1e-6, 5.0), (-0.999, -0.01), (1e-6, 5.0)]
 
     result = minimize(
         objective,
@@ -131,20 +131,19 @@ def calibrate_slice(
 
     best_alpha, best_rho, best_nu = result.x
 
-    # Compute RMSE — mirror the objective's 1e4 penalty for invalid points
+    # Compute RMSE over valid (non-penalized) points only
     sse = 0.0
+    n_valid = 0
     for K, iv_mkt in clean:
         try:
             iv_model = sabr_iv(F=F, K=K, T=T, alpha=best_alpha, beta=beta, rho=best_rho, nu=best_nu)
         except (ValueError, ZeroDivisionError):
-            sse += 1e4
             continue
         if iv_model <= 0 or math.isnan(iv_model):
-            sse += 1e4
             continue
-        diff = iv_model - iv_mkt
-        sse += diff * diff
-    rmse = math.sqrt(sse / len(clean))
+        sse += (iv_model - iv_mkt) ** 2
+        n_valid += 1
+    rmse = math.sqrt(sse / n_valid) if n_valid > 0 else float("inf")
 
     dte = round(T * 365)
     return SabrSlice(

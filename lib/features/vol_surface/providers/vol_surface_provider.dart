@@ -1,6 +1,7 @@
 // =============================================================================
 // vol_surface/providers/vol_surface_provider.dart
 // =============================================================================
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/schwab/schwab_models.dart';
@@ -70,7 +71,8 @@ Future<void> autoIngestVolSurface(
     } else {
       await VolSurfaceRepository(Supabase.instance.client).save(snap);
     }
-  } catch (_) {
-    // Never disrupt the options chain UI on ingestion failure.
+  } catch (e, st) {
+    // Non-fatal: vol surface ingestion should never crash the options chain UI
+    debugPrint('autoIngestVolSurface failed: $e\n$st');
   }
 }

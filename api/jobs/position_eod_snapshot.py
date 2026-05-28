@@ -147,6 +147,8 @@ async def run_position_eod_snapshot() -> dict:
 
                     # Compute fair-value model prices via direct function call.
                     fv_result = None
+                    if dte <= 0:
+                        log.warning("position_eod: missing daysToExpiration for leg=%s ticker=%s; skipping fv_compute", leg.get("id"), ticker)
                     if iv and dte > 0 and mark is not None and spot > 0:
                         try:
                             fv_result = fv_compute(

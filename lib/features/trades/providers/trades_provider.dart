@@ -132,8 +132,8 @@ class TradesNotifier extends AsyncNotifier<void> {
         'exit_price': exitPrice,
         'status': 'closed',
         'closed_at': DateTime.now().toIso8601String(),
-        'implied_vol_exit': ?impliedVolExit,
-        'time_of_exit': ?timeOfExit,
+        if (impliedVolExit != null) 'implied_vol_exit': impliedVolExit,
+        if (timeOfExit != null) 'time_of_exit': timeOfExit,
       };
       await _client.from('trades').update(patch).eq('id', tradeId);
       ref.invalidate(tradesProvider);

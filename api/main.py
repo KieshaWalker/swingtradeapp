@@ -23,10 +23,13 @@
 #       to reflect any request or response schema changes.
 # =============================================================================
 
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
+
+log = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -47,8 +50,8 @@ async def lifespan(app: FastAPI):
         from core.supabase_client import get_supabase
         from services.regime_ml_service import load_trained_model
         load_trained_model(get_supabase())
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("regime_ml_load_failed at startup (heuristic fallback active): %r", exc)
     yield
 
 

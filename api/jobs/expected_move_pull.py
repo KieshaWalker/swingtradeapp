@@ -67,15 +67,18 @@ async def run_expected_move_pull() -> dict:
                     )
 
                     # Write RV regardless of whether the chain succeeded
-                    clean_closes = [c for c in closes if c and c > 0]
+                    clean_closes = [c for c in closes if c and 0.01 < c < 1_000_000]
                     if len(clean_closes) >= 2:
                         rv1d  = abs(math.log(clean_closes[-1] / clean_closes[-2])) * math.sqrt(252)
                         rv5d  = compute_rv(clean_closes[-5:]  if len(clean_closes) >= 5  else clean_closes)
                         rv21d = compute_rv(clean_closes[-21:] if len(clean_closes) >= 21 else clean_closes)
                         rv63d = compute_rv(clean_closes[-63:] if len(clean_closes) >= 63 else clean_closes)
-                        _upsert_rv(db, ticker, today, rv1d, rv5d, rv21d, rv63d)
-                        log.info("rv_ok ticker=%s rv1d=%.3f rv5d=%.3f rv21d=%.3f rv63d=%.3f",
-                                 ticker, rv1d, rv5d, rv21d, rv63d)
+                        try:
+                            _upsert_rv(db, ticker, today, rv1d, rv5d, rv21d, rv63d)
+                            log.info("rv_ok ticker=%s rv1d=%.3f rv5d=%.3f rv21d=%.3f rv63d=%.3f",
+                                     ticker, rv1d, rv5d, rv21d, rv63d)
+                        except Exception as exc:
+                            log.error("rv_upsert_failed ticker=%s error=%r", ticker, exc)
                     else:
                         log.warning("rv_skip ticker=%s closes=%d", ticker, len(clean_closes))
 
@@ -135,23 +138,26 @@ def _upsert_rv(db, ticker: str, today: str, rv1d: float, rv5d: float, rv21d: flo
 
 
 def _upsert(db, ticker: str, today: str, spot: float, period_type: str, result) -> None:
-    db.table("expected_move_snapshots").upsert(
-        {
-            "ticker":      ticker,
-            "date":        today,
-            "period_type": period_type,
-            "spot":        spot,
-            "iv":          result.iv,
-            "dte":         result.dte,
-            "em_dollars":  result.em_dollars,
-            "em_pct":      result.em_pct,
-            "upper_1s":    result.upper_1s,
-            "lower_1s":    result.lower_1s,
-            "upper_2s":    result.upper_2s,
-            "lower_2s":    result.lower_2s,
-            "upper_3s":    result.upper_3s,
-            "lower_3s":    result.lower_3s,
-            "computed_at": datetime.now(timezone.utc).isoformat(),
-        },
-        on_conflict="ticker,date,period_type",
-    ).execute()
+    try:
+        db.table("expected_move_snapshots").upsert(
+            {
+                "ticker":      ticker,
+                "date":        today,
+                "period_type": period_type,
+                "spot":        spot,
+                "iv":          result.iv,
+                "dte":         result.dte,
+                "em_dollars":  result.em_dollars,
+                "em_pct":      result.em_pct,
+                "upper_1s":    result.upper_1s,
+                "lower_1s":    result.lower_1s,
+                "upper_2s":    result.upper_2s,
+                "lower_2s":    result.lower_2s,
+                "upper_3s":    result.upper_3s,
+                "lower_3s":    result.lower_3s,
+                "computed_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="ticker,date,period_type",
+        ).execute()
+    except Exception as exc:
+        log.error("expected_move_upsert_failed ticker=%s period=%s error=%r", ticker, period_type, exc)

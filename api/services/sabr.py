@@ -62,7 +62,12 @@ def sabr_iv(
     chi_z = math.log(
         (math.sqrt(1 - 2 * rho * z + z * z) + z - rho) / (1 - rho)
     )
-    zx = 1.0 if abs(chi_z) < SABR_CHIZ_THRESHOLD else z / chi_z
+    if abs(chi_z) < SABR_CHIZ_THRESHOLD:
+        zx = 1.0
+    else:
+        zx = z / chi_z
+        # Clamp: z/chi_z → 1 analytically as z→0; large ratio means near-singular rho
+        zx = max(0.01, min(100.0, zx))
 
     t1 = ((1 - beta) ** 2) / 24 * alpha * alpha / ((F * K) ** (1 - beta))
     t2 = rho * beta * nu * alpha / (4 * fk_beta)

@@ -160,6 +160,12 @@ def compute_rnd_slice(
 
     mean = float(_trapz(grid * q_norm, grid))
 
+    if F > 0 and abs(mean / F - 1.0) > 0.10:
+        _log.warning(
+            "rnd: mean/F = %.3f for DTE=%d — possible truncation or poor SABR fit; aborting",
+            mean / F, sabr_slice.dte,
+        )
+        return None
     if F > 0 and abs(mean / F - 1.0) > 0.03:
         _log.warning(
             "rnd: mean/F = %.3f for DTE=%d — possible truncation or poor SABR fit",

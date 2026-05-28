@@ -58,7 +58,7 @@ def compute_rv(prices: list[float]) -> float:
     sum_sq = 0.0
     n_valid = 0
     for i in range(1, len(prices)):
-        if prices[i - 1] <= 0:
+        if prices[i - 1] <= 0 or prices[i] <= 0:
             continue
         log_ret = math.log(prices[i] / prices[i - 1])
         sum_sq += log_ret * log_ret
