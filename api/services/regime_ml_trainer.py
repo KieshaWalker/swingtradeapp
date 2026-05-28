@@ -420,9 +420,16 @@ def _train(
         C = 1.0 if not is_early else 0.1
         model, model_json = _train_logistic(X_train_sc, y_train, C=C)
 
-    # Evaluate on the held-out test set; fall back to train only if too small
-    if len(X_test) < 5 or len(np.unique(y_test)) < 2:
+    # Evaluate on the held-out test set; fall back to train only if too small.
+    # Track the fallback so we can reject acceptance based on inflated train AUC.
+    is_eval_fallback = len(X_test) < 5 or len(np.unique(y_test)) < 2
+    if is_eval_fallback:
         X_eval, y_eval = X_train_sc, y_train
+        log.warning(
+            "regime_ml_eval_fallback mode=%s — metrics computed on training data (inflated); "
+            "model will not be accepted for production use",
+            "early" if is_early else "full",
+        )
     else:
         X_eval, y_eval = X_test_sc, y_test
 
@@ -436,7 +443,8 @@ def _train(
 
     # Best available AUC for the acceptance gate:
     #   Full mode  → walk-forward OOS AUC (leakage-free across multiple folds)
-    #   Early mode → single-split test AUC (best we can do with few samples)
+    #   Early mode, has test set → single-split test AUC
+    #   Early mode, no test set → metrics on training data; reject regardless of AUC
     best_auc = oos_auc if wf_ran else test_auc
 
     # Embed scaler + AUC metrics + training mode into model_json
@@ -447,7 +455,8 @@ def _train(
     model_json["test_auc"]      = round(test_auc, 4)  # single-split AUC
     model_json["training_mode"] = "early" if is_early else "full"
 
-    model_accepted = best_auc >= MIN_OOS_AUC
+    # Reject when eval was forced onto training data — AUC is inflated and unreliable.
+    model_accepted = (best_auc >= MIN_OOS_AUC) and (wf_ran or not is_eval_fallback)
 
     n_pos = int(y_sorted.sum())
     log.info(

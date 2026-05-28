@@ -23,6 +23,24 @@ class TickerProfileNotifier extends AsyncNotifier<void> {
   @override
   Future<void> build() async {}
 
+  // ─── Ticker metadata ───────────────────────────────────────────────────────
+
+  Future<void> upsertTickerFloat(String ticker, double sharesOutstanding) async {
+    if (sharesOutstanding <= 0) return;
+    final client = ref.read(supabaseClientProvider);
+    final user = client.auth.currentUser;
+    if (user == null) return;
+    await client.from('ticker_metadata').upsert(
+      {
+        'user_id': user.id,
+        'ticker': ticker.toUpperCase(),
+        'shares_outstanding': sharesOutstanding.toInt(),
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      onConflict: 'user_id,ticker',
+    );
+  }
+
   // ─── Watched tickers ───────────────────────────────────────────────────────
 
   Future<void> addWatchedTicker(String ticker) async {

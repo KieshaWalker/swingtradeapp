@@ -143,6 +143,12 @@ async def run_regime_pull() -> dict:
             log.warning("regime_pull: VIX data unavailable (FRED error); aborting to avoid incomplete snapshots")
             return {"status": "no_vix_data"}
 
+        if vvix_current is None:
+            log.warning(
+                "regime_pull: VVIX data unavailable (FRED error) — "
+                "Gate 0 (VVIX spike override) disabled for this run"
+            )
+
         log.info(
             "regime_pull: vix=%.2f 10ma=%s dev_pct=%s ts_ratio=%s vvix=%s breadth_z=%s hmm=%s",
             vix_current or 0,
@@ -258,37 +264,41 @@ def _attempt_ml_retrain(db) -> None:
 
 
 def _upsert_regime_snapshot(db, today: str, regime) -> None:
-    db.table("regime_snapshots").upsert(
-        {
-            "ticker":                   regime.ticker,
-            "obs_date":                 today,
-            "gamma_regime":             regime.gamma_regime,
-            "iv_gex_signal":            regime.iv_gex_signal,
-            "sma10":                    regime.sma10,
-            "sma50":                    regime.sma50,
-            "sma_crossed":              regime.sma_crossed,
-            "vix_current":              regime.vix_current,
-            "vix_10ma":                 regime.vix_10ma,
-            "vix_dev_pct":              regime.vix_dev_pct,
-            "vix_rsi":                  regime.vix_rsi,
-            "spot_to_zgl_pct":          regime.spot_to_zgl_pct,
-            "iv_percentile":            regime.iv_percentile,
-            "hmm_state":                regime.hmm_state,
-            "hmm_probability":          regime.hmm_probability,
-            "strategy_bias":            regime.strategy_bias.value,
-            "signals":                  regime.signals,
-            "vol_sma3":                 regime.vol_sma3,
-            "vol_sma20":                regime.vol_sma20,
-            "delta_gex":                regime.delta_gex,
-            "spot_to_vt_pct":           regime.spot_to_vt_pct,
-            "breadth_proxy":            regime.breadth_proxy,
-            "gex_0dte":                 regime.gex_0dte,
-            "gex_0dte_pct":             regime.gex_0dte_pct,
-            "price_roc5":               regime.price_roc5,
-            "total_gex":                regime.total_gex,
-            "vix_term_structure_ratio": regime.vix_term_structure_ratio,
-            "vvix_current":             regime.vvix_current,
-            "vvix_10ma":                regime.vvix_10ma,
-        },
-        on_conflict="ticker,obs_date",
-    ).execute()
+    try:
+        db.table("regime_snapshots").upsert(
+            {
+                "ticker":                   regime.ticker,
+                "obs_date":                 today,
+                "gamma_regime":             regime.gamma_regime,
+                "iv_gex_signal":            regime.iv_gex_signal,
+                "sma10":                    regime.sma10,
+                "sma50":                    regime.sma50,
+                "sma_crossed":              regime.sma_crossed,
+                "vix_current":              regime.vix_current,
+                "vix_10ma":                 regime.vix_10ma,
+                "vix_dev_pct":              regime.vix_dev_pct,
+                "vix_rsi":                  regime.vix_rsi,
+                "spot_to_zgl_pct":          regime.spot_to_zgl_pct,
+                "iv_percentile":            regime.iv_percentile,
+                "hmm_state":                regime.hmm_state,
+                "hmm_probability":          regime.hmm_probability,
+                "strategy_bias":            regime.strategy_bias.value,
+                "signals":                  regime.signals,
+                "vol_sma3":                 regime.vol_sma3,
+                "vol_sma20":                regime.vol_sma20,
+                "delta_gex":                regime.delta_gex,
+                "spot_to_vt_pct":           regime.spot_to_vt_pct,
+                "breadth_proxy":            regime.breadth_proxy,
+                "gex_0dte":                 regime.gex_0dte,
+                "gex_0dte_pct":             regime.gex_0dte_pct,
+                "price_roc5":               regime.price_roc5,
+                "total_gex":                regime.total_gex,
+                "vix_term_structure_ratio": regime.vix_term_structure_ratio,
+                "vvix_current":             regime.vvix_current,
+                "vvix_10ma":                regime.vvix_10ma,
+            },
+            on_conflict="ticker,obs_date",
+        ).execute()
+    except Exception as exc:
+        log.error("regime_snapshot_upsert_failed ticker=%s error=%r", regime.ticker, exc)
+        raise

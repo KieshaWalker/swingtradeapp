@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Optional
 import logging
 from dataclasses import dataclass
@@ -46,7 +47,9 @@ def classify_vix_regime(vix_closes: list[float]) ->Optional[HmmRegimeResult]:
 
     Returns None if hmmlearn is unavailable or there is insufficient data.
     """
-    if len(vix_closes) < _MIN_OBSERVATIONS:
+    # Strip None and NaN before any numeric work
+    clean = [v for v in vix_closes if v is not None and not math.isnan(float(v))]
+    if len(clean) < _MIN_OBSERVATIONS:
         return None
 
     try:
@@ -56,14 +59,25 @@ def classify_vix_regime(vix_closes: list[float]) ->Optional[HmmRegimeResult]:
         return None
 
     try:
-        closes = np.array(vix_closes, dtype=float)
+        closes = np.array(clean, dtype=float)
 
         # Features: [log-return, level] — log-returns capture regime transitions;
         # level anchors the state to absolute VIX magnitude.
         log_returns = np.diff(np.log(np.maximum(closes, 1e-6)))
         levels      = closes[1:]   # align with log-returns (drop first close)
 
-        X = np.column_stack([log_returns, levels])  # (N-1, 2)
+        # Standardize before fitting — log-returns (~0.02) and VIX levels (~15–80)
+        # differ by ~1000x; without scaling the emission model is dominated by the
+        # level feature and log-returns carry no signal.
+        lr_mean, lr_std = float(np.mean(log_returns)), float(np.std(log_returns))
+        lv_mean, lv_std = float(np.mean(levels)),     float(np.std(levels))
+        lr_scale = lr_std if lr_std > 1e-8 else 1.0
+        lv_scale = lv_std if lv_std > 1e-8 else 1.0
+
+        X = np.column_stack([
+            (log_returns - lr_mean) / lr_scale,
+            (levels      - lv_mean) / lv_scale,
+        ])
 
         model = GaussianHMM(
             n_components=_N_STATES,
@@ -73,9 +87,14 @@ def classify_vix_regime(vix_closes: list[float]) ->Optional[HmmRegimeResult]:
         )
         model.fit(X)
 
-        # Identify which state is "high vol" by the mean VIX level feature (col 1)
-        means = model.means_[:, 1]   # VIX level means per state
-        high_state_idx = int(np.argmax(means))
+        if hasattr(model, "monitor_") and not model.monitor_.converged:
+            log.warning("hmm_not_converged n_iter=%d — regime result may be unreliable", model.n_iter)
+
+        # Identify which state is "high vol" by unscaling the level means back to
+        # original VIX units (scaled_mean * std + mean).
+        means_scaled = model.means_[:, 1]
+        means_level  = means_scaled * lv_scale + lv_mean
+        high_state_idx = int(np.argmax(means_level))
         low_state_idx  = 1 - high_state_idx
 
         # Decode current state — use most recent observation
@@ -94,8 +113,8 @@ def classify_vix_regime(vix_closes: list[float]) ->Optional[HmmRegimeResult]:
         return HmmRegimeResult(
             state=state,
             state_probability=current_prob,
-            low_vol_mean=float(means[low_state_idx]),
-            high_vol_mean=float(means[high_state_idx]),
+            low_vol_mean=float(means_level[low_state_idx]),
+            high_vol_mean=float(means_level[high_state_idx]),
             n_observations=len(closes),
             sufficient_data=True,
         )

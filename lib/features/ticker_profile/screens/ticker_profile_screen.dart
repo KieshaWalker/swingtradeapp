@@ -416,6 +416,16 @@ class _OverviewTab extends ConsumerWidget {
     final earningsHistory = ref.watch(tickerEarningsReactionsProvider(symbol));
     final notes          = ref.watch(tickerNotesProvider(symbol));
 
+    // Cache float to Supabase so dashboard can sort without extra API calls.
+    ref.listen(schwabFundamentalsProvider(symbol), (_, next) {
+      final f = next.valueOrNull;
+      if (f != null && f.sharesOutstanding > 0) {
+        ref
+            .read(tickerProfileNotifierProvider.notifier)
+            .upsertTickerFloat(symbol, f.sharesOutstanding);
+      }
+    });
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [

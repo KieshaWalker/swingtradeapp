@@ -64,6 +64,15 @@ class TickerDashboardScreen extends ConsumerWidget {
             ...watchedSymbols.map((s) => s.toUpperCase()).where(seen.add),
           ];
 
+          // Sort highest float first using cached Supabase values (no extra API calls).
+          // Tickers not yet cached sort to the end.
+          final floatMap = ref.watch(tickerFloatMapProvider).valueOrNull ?? {};
+          symbols.sort((a, b) {
+            final fa = floatMap[a] ?? 0.0;
+            final fb = floatMap[b] ?? 0.0;
+            return fb.compareTo(fa);
+          });
+
           if (symbols.isEmpty) {
             return Center(
               child: Column(

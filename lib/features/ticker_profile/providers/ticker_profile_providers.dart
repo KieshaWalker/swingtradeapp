@@ -26,6 +26,24 @@ import '../../trades/models/trade.dart';
 import '../../trades/providers/trades_provider.dart';
 import '../models/ticker_profile_models.dart';
 
+// ─── Ticker float map ────────────────────────────────────────────────────────
+// One query for all tickers — used by TickerDashboardScreen to sort by float.
+// Populated by _OverviewTab whenever Schwab fundamentals resolve.
+
+final tickerFloatMapProvider = FutureProvider<Map<String, double>>((ref) async {
+  final client = ref.watch(supabaseClientProvider);
+  final user = client.auth.currentUser;
+  if (user == null) return {};
+  final rows = await client
+      .from('ticker_metadata')
+      .select('ticker,shares_outstanding')
+      .eq('user_id', user.id);
+  return {
+    for (final r in rows as List)
+      (r['ticker'] as String): ((r['shares_outstanding'] as num?)?.toDouble() ?? 0.0),
+  };
+});
+
 // ─── Watched tickers ─────────────────────────────────────────────────────────
 // Tickers saved via search (independent of trades table).
 // Merged with trade-derived symbols in TickerDashboardScreen.
