@@ -29,8 +29,10 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
+import '../models/macro_indicator.dart';
 import '../models/trade.dart';
 import '../providers/live_marks_provider.dart';
+import '../providers/macro_indicator_provider.dart';
 import '../providers/trade_block_provider.dart';
 import '../providers/trades_provider.dart';
 import 'csv_import_screen.dart';
@@ -109,6 +111,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen>
               MaterialPageRoute(builder: (_) => const TradeBlocksScreen()),
             ),
           ),
+          const _MacroScoreBadge(),
           const AppMenuButton(),
         ],
         bottom: TabBar(
@@ -132,6 +135,7 @@ class _TradesScreenState extends ConsumerState<TradesScreen>
       body: Column(
         children: [
           _EdgeWarningBanner(),
+          const _MacroBanner(),
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -562,6 +566,460 @@ class _InfoChip extends StatelessWidget {
             style:
                 const TextStyle(color: AppTheme.neutralColor, fontSize: 13)),
       ],
+    );
+  }
+}
+
+// ── Macro score badge (AppBar) ────────────────────────────────────────────────
+
+class _MacroScoreBadge extends ConsumerWidget {
+  const _MacroScoreBadge();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final indicators = ref.watch(macroIndicatorsProvider).valueOrNull;
+    if (indicators == null || indicators.isEmpty) return const SizedBox.shrink();
+    final score = ref.watch(macroNetScoreProvider);
+    if (score == 0) return const SizedBox.shrink();
+    final isPositive = score > 0;
+    final color = isPositive ? AppTheme.profitColor : AppTheme.lossColor;
+    return Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Center(
+        child: Text(
+          '${isPositive ? '▲' : '▼'} ${isPositive ? '+' : ''}$score%',
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Macro collapsible banner ──────────────────────────────────────────────────
+
+class _MacroBanner extends ConsumerStatefulWidget {
+  const _MacroBanner();
+
+  @override
+  ConsumerState<_MacroBanner> createState() => _MacroBannerState();
+}
+
+class _MacroBannerState extends ConsumerState<_MacroBanner> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final asyncIndicators = ref.watch(macroIndicatorsProvider);
+    final indicators = asyncIndicators.valueOrNull ?? [];
+    final score = ref.watch(macroNetScoreProvider);
+    final scoreColor = score >= 0 ? AppTheme.profitColor : AppTheme.lossColor;
+    // Map score to 0–1: 0 at center, ±100 at edges.
+    final barValue = ((score / 100) * 0.5 + 0.5).clamp(0.0, 1.0);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.elevatedColor,
+        border: Border(
+          bottom: BorderSide(color: AppTheme.borderColor.withValues(alpha: 0.4)),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Collapsed row ────────────────────────────────────────────────
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  const Text(
+                    'MACRO',
+                    style: TextStyle(
+                      color: AppTheme.neutralColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: barValue,
+                        minHeight: 5,
+                        backgroundColor: AppTheme.lossColor.withValues(alpha: 0.25),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          scoreColor.withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '${score >= 0 ? '+' : ''}$score%',
+                    style: TextStyle(
+                      color: scoreColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${indicators.length} factor${indicators.length == 1 ? '' : 's'}',
+                    style: const TextStyle(
+                      color: AppTheme.neutralColor,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                    color: AppTheme.neutralColor,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Expanded list ────────────────────────────────────────────────
+          if (_expanded) ...[
+            Divider(height: 1, color: AppTheme.borderColor.withValues(alpha: 0.4)),
+            if (asyncIndicators.isLoading)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else ...[
+              ...indicators.map((ind) => _IndicatorRow(
+                    indicator: ind,
+                    onTap: () => _showSheet(context, indicator: ind),
+                  )),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: TextButton.icon(
+                  onPressed: () => _showSheet(context),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Add factor'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppTheme.neutralColor,
+                    textStyle: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _showSheet(BuildContext context, {MacroIndicator? indicator}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.elevatedColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _IndicatorSheet(indicator: indicator),
+    );
+  }
+}
+
+// ── Single indicator row ──────────────────────────────────────────────────────
+
+class _IndicatorRow extends StatelessWidget {
+  final MacroIndicator indicator;
+  final VoidCallback onTap;
+  const _IndicatorRow({required this.indicator, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        indicator.isBullish ? AppTheme.profitColor : AppTheme.lossColor;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        child: Row(
+          children: [
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                indicator.name,
+                style: const TextStyle(fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: color.withValues(alpha: 0.35)),
+              ),
+              child: Text(
+                '${indicator.weight >= 0 ? '+' : ''}${indicator.weight}%',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.edit_outlined,
+                size: 14, color: AppTheme.neutralColor),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Add / edit sheet ──────────────────────────────────────────────────────────
+
+class _IndicatorSheet extends ConsumerStatefulWidget {
+  final MacroIndicator? indicator;
+  const _IndicatorSheet({this.indicator});
+
+  @override
+  ConsumerState<_IndicatorSheet> createState() => _IndicatorSheetState();
+}
+
+class _IndicatorSheetState extends ConsumerState<_IndicatorSheet> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _pctCtrl;
+  late bool _isBullish;
+
+  @override
+  void initState() {
+    super.initState();
+    final ind = widget.indicator;
+    _nameCtrl = TextEditingController(text: ind?.name ?? '');
+    _pctCtrl = TextEditingController(
+      text: ind != null ? ind.weight.abs().toString() : '',
+    );
+    _isBullish = ind?.isBullish ?? true;
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _pctCtrl.dispose();
+    super.dispose();
+  }
+
+  int get _signedWeight {
+    final abs = (int.tryParse(_pctCtrl.text) ?? 0).clamp(1, 100);
+    return _isBullish ? abs : -abs;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEdit = widget.indicator != null;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: AppTheme.borderColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Text(
+            isEdit ? 'Edit Factor' : 'Add Macro Factor',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 16),
+
+          // Name field
+          TextField(
+            controller: _nameCtrl,
+            autofocus: !isEdit,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Factor name'),
+          ),
+          const SizedBox(height: 16),
+
+          // Direction toggle
+          Row(
+            children: [
+              Expanded(
+                child: _DirectionButton(
+                  label: 'Bullish',
+                  selected: _isBullish,
+                  color: AppTheme.profitColor,
+                  onTap: () => setState(() => _isBullish = true),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _DirectionButton(
+                  label: 'Bearish',
+                  selected: !_isBullish,
+                  color: AppTheme.lossColor,
+                  onTap: () => setState(() => _isBullish = false),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Percentage field
+          TextField(
+            controller: _pctCtrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Weight',
+              suffixText: '%',
+              helperText: '1 – 100',
+              prefixText:
+                  _isBullish ? '+' : '-',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 24),
+
+          // Save button
+          FilledButton(
+            onPressed: () async {
+              final name = _nameCtrl.text.trim();
+              final pct = int.tryParse(_pctCtrl.text);
+              if (name.isEmpty || pct == null || pct < 1 || pct > 100) return;
+              final notifier =
+                  ref.read(macroIndicatorNotifierProvider.notifier);
+              if (isEdit) {
+                await notifier.edit(
+                    widget.indicator!.id, name, _signedWeight);
+              } else {
+                await notifier.add(name, _signedWeight);
+              }
+              if (context.mounted) Navigator.pop(context);
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor:
+                  _isBullish ? AppTheme.profitColor : AppTheme.lossColor,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('Save'),
+          ),
+
+          // Delete button (edit mode only)
+          if (isEdit) ...[
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: AppTheme.elevatedColor,
+                    title: const Text('Delete factor?'),
+                    content: Text(
+                        '"${widget.indicator!.name}" will be removed.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: Text('Delete',
+                            style: TextStyle(
+                                color: Theme.of(ctx).colorScheme.error)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await ref
+                      .read(macroIndicatorNotifierProvider.notifier)
+                      .delete(widget.indicator!.id);
+                  if (context.mounted) Navigator.pop(context);
+                }
+              },
+              style:
+                  TextButton.styleFrom(foregroundColor: AppTheme.lossColor),
+              child: const Text('Delete factor'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DirectionButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+  const _DirectionButton({
+    required this.label,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.15) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? color : AppTheme.borderColor,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? color : AppTheme.neutralColor,
+              fontWeight:
+                  selected ? FontWeight.w700 : FontWeight.w400,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
