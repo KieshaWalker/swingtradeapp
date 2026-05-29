@@ -148,6 +148,61 @@ class TradesNotifier extends AsyncNotifier<void> {
     });
   }
 
+  // Records a partial (or full) close leg.
+  // When the sum of all closed contracts reaches trade.contracts, the trade
+  // is automatically marked closed with the weighted-average exit price.
+  Future<void> addPartialClose({
+    required Trade trade,
+    required int contractsClosed,
+    required double exitPrice,
+  }) async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final pnl = (exitPrice - trade.entryPrice) * contractsClosed * 100;
+
+      await _client.from('trade_partial_closes').insert({
+        'trade_id': trade.id,
+        'user_id': user.id,
+        'contracts_closed': contractsClosed,
+        'exit_price': exitPrice,
+        'pnl': pnl,
+        'closed_at': DateTime.now().toIso8601String(),
+      });
+
+      // Sum all legs to check if the position is fully closed.
+      final rows = await _client
+          .from('trade_partial_closes')
+          .select('contracts_closed,exit_price')
+          .eq('trade_id', trade.id);
+
+      final legs = rows as List;
+      final totalClosed =
+          legs.fold<int>(0, (s, r) => s + (r['contracts_closed'] as int));
+
+      if (totalClosed >= trade.contracts) {
+        final weightedAvg = legs.fold<double>(
+              0,
+              (s, r) =>
+                  s +
+                  (r['exit_price'] as num).toDouble() *
+                      (r['contracts_closed'] as int),
+            ) /
+            trade.contracts;
+
+        await _client.from('trades').update({
+          'exit_price': weightedAvg,
+          'status': 'closed',
+          'closed_at': DateTime.now().toIso8601String(),
+        }).eq('id', trade.id);
+      }
+
+      ref.invalidate(tradesProvider);
+      ref.invalidate(partialClosesProvider(trade.id));
+    });
+  }
+
   // Tag or untag a trade to a strategy setup.
   // Pass null for strategySetupId to remove the tag.
   Future<void> tagStrategy(String tradeId, String? strategySetupId) async {
@@ -164,6 +219,25 @@ class TradesNotifier extends AsyncNotifier<void> {
 
 final tradesNotifierProvider =
     AsyncNotifierProvider<TradesNotifier, void>(TradesNotifier.new);
+
+// ── Partial closes ────────────────────────────────────────────────────────────
+// All close events for a single trade (one row per partial close leg).
+
+final partialClosesProvider =
+    FutureProvider.family<List<PartialClose>, String>((ref, tradeId) async {
+  final client = ref.watch(supabaseClientProvider);
+  final user = client.auth.currentUser;
+  if (user == null) return [];
+  final rows = await client
+      .from('trade_partial_closes')
+      .select()
+      .eq('trade_id', tradeId)
+      .eq('user_id', user.id)
+      .order('closed_at', ascending: true);
+  return (rows as List)
+      .map((r) => PartialClose.fromJson(r as Map<String, dynamic>))
+      .toList();
+});
 
 // ── Live mark overlay ─────────────────────────────────────────────────────────
 // In-session map of tradeId → current option mid-price.

@@ -26,6 +26,42 @@
 // =============================================================================
 import 'package:intl/intl.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PARTIAL CLOSE
+// Records a single leg closed on an open position.
+// Stored in trade_partial_closes table (one row per close event).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class PartialClose {
+  final String id;
+  final String tradeId;
+  final String userId;
+  final int contractsClosed;
+  final double exitPrice;
+  final double pnl;
+  final DateTime closedAt;
+
+  const PartialClose({
+    required this.id,
+    required this.tradeId,
+    required this.userId,
+    required this.contractsClosed,
+    required this.exitPrice,
+    required this.pnl,
+    required this.closedAt,
+  });
+
+  factory PartialClose.fromJson(Map<String, dynamic> json) => PartialClose(
+        id: json['id'] as String,
+        tradeId: json['trade_id'] as String,
+        userId: json['user_id'] as String,
+        contractsClosed: json['contracts_closed'] as int,
+        exitPrice: (json['exit_price'] as num).toDouble(),
+        pnl: (json['pnl'] as num).toDouble(),
+        closedAt: DateTime.parse(json['closed_at'] as String),
+      );
+}
+
 enum OptionType { call, put }
 
 enum TradeStrategy {

@@ -56,6 +56,12 @@ class TradeDetailScreen extends ConsumerWidget {
             ? AppTheme.profitColor
             : AppTheme.lossColor;
 
+    final partialCloses =
+        ref.watch(partialClosesProvider(trade.id)).valueOrNull ?? [];
+    final closedContracts =
+        partialCloses.fold<int>(0, (s, c) => s + c.contractsClosed);
+    final remainingContracts = trade.contracts - closedContracts;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('${trade.ticker} ${trade.strategy.label}'),
@@ -67,7 +73,7 @@ class TradeDetailScreen extends ConsumerWidget {
           ),
           if (trade.status == TradeStatus.open)
             TextButton.icon(
-              onPressed: () => _showCloseDialog(context, ref),
+              onPressed: () => _showCloseDialog(context, remainingContracts),
               icon: const Icon(Icons.check_circle_outline),
               label: const Text('Close'),
               style: TextButton.styleFrom(foregroundColor: AppTheme.profitColor),
@@ -153,7 +159,12 @@ class TradeDetailScreen extends ConsumerWidget {
                       DateFormat('MMM d, yyyy').format(trade.expiration)),
                   _DetailRow('DTE at Entry',
                       trade.dteAtEntry != null ? '${trade.dteAtEntry} days' : '—'),
-                  _DetailRow('Contracts', '${trade.contracts}'),
+                  _DetailRow(
+                    'Contracts',
+                    closedContracts > 0
+                        ? '${trade.contracts} total · $remainingContracts remaining'
+                        : '${trade.contracts}',
+                  ),
                   _DetailRow('Entry Premium',
                       '\$${trade.entryPrice.toStringAsFixed(4)} / share'),
                   _DetailRow('Cost Basis',
@@ -194,6 +205,16 @@ class TradeDetailScreen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 12),
+
+          // Partial close history — shown whenever any legs have been closed
+          if (partialCloses.isNotEmpty) ...[
+            _PartialClosesCard(
+              trade: trade,
+              partialCloses: partialCloses,
+              remainingContracts: remainingContracts,
+            ),
+            const SizedBox(height: 12),
+          ],
 
           // Live Greeks card (recomputed from current spot + IV)
           if (trade.status == TradeStatus.open)
@@ -263,39 +284,12 @@ class TradeDetailScreen extends ConsumerWidget {
     );
   }
 
-  void _showCloseDialog(BuildContext context, WidgetRef ref) {
-    final exitCtrl = TextEditingController();
+  void _showCloseDialog(BuildContext context, int remainingContracts) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppTheme.elevatedColor,
-        title: const Text('Close Trade'),
-        content: TextField(
-          controller: exitCtrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Exit Premium (per share)',
-            prefixText: '\$',
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () async {
-              final price = double.tryParse(exitCtrl.text);
-              if (price == null) return;
-              await ref.read(tradesNotifierProvider.notifier).closeTrade(
-                    tradeId: trade.id,
-                    exitPrice: price,
-                  );
-              if (context.mounted) {
-                Navigator.pop(context);
-                context.pop();
-              }
-            },
-            child: const Text('Close Trade'),
-          ),
-        ],
+      builder: (_) => _CloseTradeDialog(
+        trade: trade,
+        remainingContracts: remainingContracts,
       ),
     );
   }
@@ -806,6 +800,225 @@ class _SecFilingRow extends StatelessWidget {
                 size: 16, color: AppTheme.neutralColor),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// _CloseTradeDialog — handles both full and partial closes.
+// Shows a contracts field (prefilled with remaining) when trade has >1 contract.
+// Calls addPartialClose which auto-closes the trade when all contracts are filled.
+// =============================================================================
+
+class _CloseTradeDialog extends ConsumerStatefulWidget {
+  final Trade trade;
+  final int remainingContracts;
+  const _CloseTradeDialog({required this.trade, required this.remainingContracts});
+
+  @override
+  ConsumerState<_CloseTradeDialog> createState() => _CloseTradeDialogState();
+}
+
+class _CloseTradeDialogState extends ConsumerState<_CloseTradeDialog> {
+  late final TextEditingController _contractsCtrl;
+  final TextEditingController _exitCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _contractsCtrl =
+        TextEditingController(text: widget.remainingContracts.toString());
+  }
+
+  @override
+  void dispose() {
+    _contractsCtrl.dispose();
+    _exitCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMulti = widget.trade.contracts > 1;
+    return AlertDialog(
+      backgroundColor: AppTheme.elevatedColor,
+      title: Text(widget.remainingContracts == widget.trade.contracts
+          ? 'Close Trade'
+          : 'Close Position (${widget.remainingContracts} remaining)'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isMulti) ...[
+            TextField(
+              controller: _contractsCtrl,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Contracts to close',
+                helperText: 'Max ${widget.remainingContracts}',
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          TextField(
+            controller: _exitCtrl,
+            autofocus: !isMulti,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Exit Premium (per share)',
+              prefixText: '\$',
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () async {
+            final price = double.tryParse(_exitCtrl.text);
+            if (price == null) return;
+            final contracts = isMulti
+                ? (int.tryParse(_contractsCtrl.text) ??
+                        widget.remainingContracts)
+                    .clamp(1, widget.remainingContracts)
+                : widget.remainingContracts;
+            await ref.read(tradesNotifierProvider.notifier).addPartialClose(
+                  trade: widget.trade,
+                  contractsClosed: contracts,
+                  exitPrice: price,
+                );
+            if (context.mounted) {
+              Navigator.pop(context);
+              if (contracts >= widget.remainingContracts) context.pop();
+            }
+          },
+          child: const Text('Confirm'),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// _PartialClosesCard — close history with per-leg P&L and running totals.
+// =============================================================================
+
+class _PartialClosesCard extends StatelessWidget {
+  final Trade trade;
+  final List<PartialClose> partialCloses;
+  final int remainingContracts;
+
+  const _PartialClosesCard({
+    required this.trade,
+    required this.partialCloses,
+    required this.remainingContracts,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final totalPnl = partialCloses.fold<double>(0, (s, c) => s + c.pnl);
+    final totalClosed =
+        partialCloses.fold<int>(0, (s, c) => s + c.contractsClosed);
+    final pnlColor =
+        totalPnl >= 0 ? AppTheme.profitColor : AppTheme.lossColor;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text(
+                  'Partial Closes',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+                const Spacer(),
+                Text(
+                  '$totalClosed of ${trade.contracts} contracts',
+                  style: const TextStyle(
+                      color: AppTheme.neutralColor, fontSize: 12),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...partialCloses.map((c) => _PartialCloseRow(c, trade.entryPrice)),
+            const Divider(height: 20),
+            Row(
+              children: [
+                Text(
+                  remainingContracts > 0
+                      ? '$remainingContracts contracts remaining'
+                      : 'Fully closed',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: remainingContracts > 0
+                        ? AppTheme.neutralColor
+                        : AppTheme.profitColor,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${totalPnl >= 0 ? '+' : ''}\$${totalPnl.toStringAsFixed(2)} realized',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: pnlColor,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PartialCloseRow extends StatelessWidget {
+  final PartialClose close;
+  final double entryPrice;
+  const _PartialCloseRow(this.close, this.entryPrice);
+
+  @override
+  Widget build(BuildContext context) {
+    final pnlColor =
+        close.pnl >= 0 ? AppTheme.profitColor : AppTheme.lossColor;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Text(
+            DateFormat('MMM d').format(close.closedAt),
+            style: const TextStyle(
+                color: AppTheme.neutralColor, fontSize: 12),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '${close.contractsClosed} contract${close.contractsClosed > 1 ? 's' : ''}',
+            style: const TextStyle(fontSize: 12),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '@ \$${close.exitPrice.toStringAsFixed(4)}',
+            style: const TextStyle(
+                color: AppTheme.neutralColor, fontSize: 12),
+          ),
+          const Spacer(),
+          Text(
+            '${close.pnl >= 0 ? '+' : ''}\$${close.pnl.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              color: pnlColor,
+            ),
+          ),
+        ],
       ),
     );
   }
