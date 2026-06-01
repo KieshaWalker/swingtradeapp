@@ -1360,7 +1360,7 @@ class _VolSurfaceCardState extends State<_VolSurfaceCard> {
             : 'No data';
 
     // Term structure from snap
-    final atmByDte = _buildAtmByDte(snap);
+    final atmByDte  = _buildAtmByDte(snap);
     final termSlope = _termSlope(atmByDte);
     final termLabel = termSlope > 0.030
         ? 'Backwardation'
@@ -1372,6 +1372,63 @@ class _VolSurfaceCardState extends State<_VolSurfaceCard> {
         : termSlope < -0.005
             ? AppTheme.profitColor
             : AppTheme.neutralColor;
+
+    // IV interpretation (based on historical IVP when available)
+    final ivp = iv?.ivPercentile;
+    final ivInterpret = ivp == null ? null
+        : ivp < 30 ? 'Very low IVP — premium historically cheap; favor buying outright'
+        : ivp < 60 ? 'Normal IVP — balanced buyer/seller value'
+        : ivp < 80 ? 'Elevated IVP — above-average cost; IV crush risk after catalyst'
+        : 'High IVP — strong crush risk; prefer selling premium or defined-risk spreads';
+
+    // Smile skew at closest DTE
+    String smileLabel = 'Symmetric';
+    Color  smileColor = AppTheme.neutralColor;
+    String skewNote   = 'Balanced skew — no directional bias from surface';
+    if (snap != null && snap.spotPrice != null) {
+      final spot      = snap.spotPrice!;
+      final closestDte = snap.dtes.isEmpty ? widget.dte
+          : snap.dtes.reduce((a, b) =>
+              (a - widget.dte).abs() < (b - widget.dte).abs() ? a : b);
+      final row      = snap.points.where((p) => p.dte == closestDte).toList();
+      final otmCalls = row.where((p) => p.strike > spot * 1.02 && p.callIv != null)
+                          .map((p) => p.callIv!).toList();
+      final otmPuts  = row.where((p) => p.strike < spot * 0.98 && p.putIv  != null)
+                          .map((p) => p.putIv!).toList();
+      if (otmCalls.isNotEmpty && otmPuts.isNotEmpty) {
+        final avgPut  = otmPuts.reduce((a, b) => a + b)  / otmPuts.length;
+        final avgCall = otmCalls.reduce((a, b) => a + b) / otmCalls.length;
+        final ratio   = avgCall > 0 ? avgPut / avgCall : 1.0;
+        if (ratio > 1.10) {
+          smileLabel = 'Put Skew  ${ratio.toStringAsFixed(2)}';
+          smileColor = widget.isCall ? const Color(0xFFFBBF24) : AppTheme.profitColor;
+          skewNote   = widget.isCall
+              ? 'Put skew is normal equity structure — calls are relatively cheap vs puts'
+              : '✓ Put bid supports bearish position';
+        } else if (ratio < 0.90) {
+          smileLabel = 'Call Skew  ${ratio.toStringAsFixed(2)}';
+          smileColor = widget.isCall ? AppTheme.profitColor : const Color(0xFFFBBF24);
+          skewNote   = widget.isCall
+              ? '✓ Call bid — market chasing upside; surface supports bullish thesis'
+              : 'Call skew opposes bearish position';
+        } else {
+          smileLabel = 'Symmetric  ${ratio.toStringAsFixed(2)}';
+          skewNote   = 'Balanced skew — no directional bias from surface';
+        }
+      }
+    }
+
+    // Crush estimate — backwardation × vega tells you the $ drag per contract
+    String? crushNote;
+    final vega = widget.vega;
+    if (vega != null && vega != 0 && termSlope > 0.010) {
+      final crushPp      = (termSlope * 100).clamp(0.0, 40.0);
+      final crushDollars = crushPp * vega * 100;
+      if (crushDollars > 30) {
+        crushNote = 'Crush drag ≈ \$${crushDollars.toStringAsFixed(0)}/contract'
+            '  (${crushPp.toStringAsFixed(1)}pp backwardation × vega)';
+      }
+    }
 
     // Earnings
     final today    = DateTime.now();
@@ -1394,7 +1451,7 @@ class _VolSurfaceCardState extends State<_VolSurfaceCard> {
             _SectionLabel('Vol Surface'),
             const SizedBox(height: 12),
 
-            // IV percentile + term structure row
+            // IV percentile + term structure + smile skew row
             Row(
               children: [
                 _SurfaceStat(
@@ -1412,13 +1469,33 @@ class _VolSurfaceCardState extends State<_VolSurfaceCard> {
                 ),
                 const SizedBox(width: 8),
                 _SurfaceStat(
-                  label: 'Surface slope',
-                  value: snap != null
-                      ? '${(termSlope * 100) >= 0 ? '+' : ''}${(termSlope * 100).toStringAsFixed(1)}%'
-                      : '—',
-                  color: AppTheme.neutralColor,
+                  label: 'Smile Skew',
+                  value: smileLabel,
+                  color: smileColor,
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+
+            // IV interpretation
+            if (ivInterpret != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(ivInterpret,
+                    style: const TextStyle(
+                        color: AppTheme.neutralColor, fontSize: 11, height: 1.4)),
+              ),
+
+            // Smile skew direction alignment
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color:        smileColor.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(6),
+                border:       Border.all(color: smileColor.withValues(alpha: 0.25)),
+              ),
+              child: Text(skewNote,
+                  style: TextStyle(color: smileColor, fontSize: 11)),
             ),
             const SizedBox(height: 10),
 
@@ -1457,6 +1534,29 @@ class _VolSurfaceCardState extends State<_VolSurfaceCard> {
                 ),
               ),
               const SizedBox(height: 10),
+            ],
+
+            // Crush estimate
+            if (crushNote != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color:        AppTheme.lossColor.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(6),
+                  border:       Border.all(color: AppTheme.lossColor.withValues(alpha: 0.25)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.compress_rounded,
+                        size: 13, color: AppTheme.lossColor),
+                    const SizedBox(width: 7),
+                    Text(crushNote,
+                        style: const TextStyle(
+                            color: AppTheme.lossColor, fontSize: 11)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
 
             // Vol heatmap
