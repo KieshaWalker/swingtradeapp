@@ -242,8 +242,11 @@ def analyse(
     ticker = chain.get("symbol", "")
     spot = float(chain.get("underlyingPrice", 0))
     expirations = chain.get("expirations", [])
-    chain_vol = float(chain.get("volatility") or 0)
-    atm_iv = chain_vol if chain_vol > 0 else _compute_atm_iv_from_chain(expirations, spot)
+    # Contract-derived ATM IV is authoritative; Schwab's chain-level volatility
+    # field is a stale HV estimate that must not override real option prices.
+    atm_iv = _compute_atm_iv_from_chain(expirations, spot)
+    if atm_iv <= 0:
+        atm_iv = float(chain.get("volatility") or 0)
 
     # ── IVR & IVP (52w / 26w / 4w) ────────────────────────────────────────────
     iv_rank:Optional[float] = None

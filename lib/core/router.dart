@@ -54,7 +54,7 @@ import '../features/trades/screens/trade_journal_screen.dart';
 import '../features/trades/screens/trades_screen.dart';
 import '../features/summary/screens/summary_screen.dart';
 import '../features/iv/screens/iv_screen.dart';
-import '../features/blotter/screens/five_phase_blotter_screen.dart';
+import '../features/blotter/screens/trade_eval_screen.dart';
 import '../features/options/screens/greek_chart_screen.dart';
 import '../features/vol_surface/screens/vol_surface_screen.dart';
 import '../features/ideas/screens/trade_ideas_screen.dart';
@@ -193,7 +193,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/blotter/evaluate',
-        builder: (_, state) => FivePhaseBlotterScreen(
+        builder: (_, state) => TradeEvalScreen(
           initialTicker: state.uri.queryParameters['ticker'],
         ),
       ),
