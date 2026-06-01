@@ -129,6 +129,38 @@ class RealizedVolChart extends ConsumerWidget {
                   tooltip: 'About IV vs RV',
                   onPressed: () => _showVolNote(context),
                 ),
+                rvAsync.whenOrNull(
+                      data: (snaps) {
+                        final ivSnaps = ivAsync.valueOrNull ?? [];
+                        final valid = snaps
+                            .where((s) =>
+                                s.rv1d != null ||
+                                s.rv5d != null ||
+                                s.rv21d != null)
+                            .toList();
+                        if (valid.length < 2) return null;
+                        return IconButton(
+                          icon: const Icon(
+                            Icons.fullscreen,
+                            size: 18,
+                            color: AppTheme.neutralColor,
+                          ),
+                          padding: const EdgeInsets.only(left: 4),
+                          constraints: const BoxConstraints(),
+                          tooltip: 'Expand chart',
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => _RvFullScreenPage(
+                                ticker: ticker,
+                                rvSnaps: valid,
+                                ivSnaps: ivSnaps,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ) ??
+                    const SizedBox.shrink(),
               ],
             ),
           ),
@@ -213,14 +245,19 @@ class RealizedVolChart extends ConsumerWidget {
 class _RvChart extends StatefulWidget {
   final List<RealizedVolSnapshot> rvSnaps;
   final List<ExpectedMoveSnapshot> ivSnaps;
-  const _RvChart({required this.rvSnaps, required this.ivSnaps});
+  final bool showZoomButtons;
+  const _RvChart({
+    required this.rvSnaps,
+    required this.ivSnaps,
+    this.showZoomButtons = false,
+  });
 
   @override
   State<_RvChart> createState() => _RvChartState();
 }
 
 class _RvChartState extends State<_RvChart> {
-  static const _defaultWindow = 30.0;
+  static const _defaultWindow = 15.0;
   static const _minWindow = 10.0;
 
   late double _minX;
@@ -252,6 +289,28 @@ class _RvChartState extends State<_RvChart> {
     final n = widget.rvSnaps.length.toDouble();
     _maxX = n - 1;
     _minX = (_maxX - _defaultWindow + 1).clamp(0.0, _maxX);
+  }
+
+  void _zoomIn() {
+    final windowSize = _maxX - _minX;
+    final maxN = widget.rvSnaps.length.toDouble() - 1;
+    final newWindow = (windowSize * 0.7).clamp(_minWindow, maxN);
+    final center = (_minX + _maxX) / 2;
+    setState(() {
+      _minX = (center - newWindow / 2).clamp(0.0, maxN - newWindow);
+      _maxX = _minX + newWindow;
+    });
+  }
+
+  void _zoomOut() {
+    final windowSize = _maxX - _minX;
+    final maxN = widget.rvSnaps.length.toDouble() - 1;
+    final newWindow = (windowSize * 1.43).clamp(_minWindow, maxN);
+    final center = (_minX + _maxX) / 2;
+    setState(() {
+      _minX = (center - newWindow / 2).clamp(0.0, maxN - newWindow);
+      _maxX = _minX + newWindow;
+    });
   }
 
   void _scroll(double dxPixels) {
@@ -509,7 +568,22 @@ class _RvChartState extends State<_RvChart> {
                 onScaleStart: _onScaleStart,
                 onScaleUpdate: _onScaleUpdate,
                 onDoubleTap: () => setState(_initWindow),
-                child: chart,
+                child: widget.showZoomButtons
+                    ? Stack(
+                        children: [
+                          chart,
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: _ZoomButtons(
+                              onZoomIn: _zoomIn,
+                              onZoomOut: _zoomOut,
+                              onReset: () => setState(_initWindow),
+                            ),
+                          ),
+                        ],
+                      )
+                    : chart,
               ),
             ),
           );
@@ -520,6 +594,138 @@ class _RvChartState extends State<_RvChart> {
 
   String _fmtPct(double? v) =>
       v == null ? '—' : '${(v * 100).toStringAsFixed(1)}%';
+}
+
+// ── Zoom buttons overlay ──────────────────────────────────────────────────────
+
+class _ZoomButtons extends StatelessWidget {
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onReset;
+  const _ZoomButtons({
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.elevatedColor.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ZoomBtn(icon: Icons.add, onTap: onZoomIn, tooltip: 'Zoom in'),
+          Container(width: 1, height: 24, color: AppTheme.borderColor),
+          _ZoomBtn(icon: Icons.remove, onTap: onZoomOut, tooltip: 'Zoom out'),
+          Container(width: 1, height: 24, color: AppTheme.borderColor),
+          _ZoomBtn(icon: Icons.fit_screen, onTap: onReset, tooltip: 'Reset'),
+        ],
+      ),
+    );
+  }
+}
+
+class _ZoomBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final String tooltip;
+  const _ZoomBtn({required this.icon, required this.onTap, required this.tooltip});
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Icon(icon, size: 16, color: AppTheme.neutralColor),
+      ),
+    ),
+  );
+}
+
+// ── Full-screen page ──────────────────────────────────────────────────────────
+
+class _RvFullScreenPage extends StatelessWidget {
+  final String ticker;
+  final List<RealizedVolSnapshot> rvSnaps;
+  final List<ExpectedMoveSnapshot> ivSnaps;
+  const _RvFullScreenPage({
+    required this.ticker,
+    required this.rvSnaps,
+    required this.ivSnaps,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.cardColor,
+      appBar: AppBar(
+        backgroundColor: AppTheme.cardColor,
+        title: Text(
+          '$ticker — Realized Volatility',
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text(
+              'Pinch or use buttons to zoom · Double-tap to reset',
+              style: const TextStyle(color: AppTheme.neutralColor, fontSize: 10),
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          const Divider(height: 1, color: AppTheme.borderColor),
+          Expanded(
+            child: _RvChart(
+              rvSnaps: rvSnaps,
+              ivSnaps: ivSnaps,
+              showZoomButtons: true,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _legendItem(_white, 'RV 1d'),
+                const SizedBox(width: 14),
+                _legendItem(_yellow, 'RV 5d'),
+                const SizedBox(width: 14),
+                _legendItem(_green, 'RV 21d'),
+                const SizedBox(width: 14),
+                _legendItem(_indigo, 'IV'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _legendItem(Color color, String label) => Row(
+    children: [
+      Container(
+        width: 12,
+        height: 4,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+      const SizedBox(width: 5),
+      Text(label, style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11)),
+    ],
+  );
 }
 
 // ── Note point ────────────────────────────────────────────────────────────────
