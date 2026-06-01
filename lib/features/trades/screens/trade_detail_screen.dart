@@ -172,6 +172,10 @@ class TradeDetailScreen extends ConsumerWidget {
                   if (trade.exitPrice != null)
                     _DetailRow('Exit Premium',
                         '\$${trade.exitPrice!.toStringAsFixed(4)} / share'),
+                  if (trade.stopLoss != null)
+                    _DetailRow('Stop Loss', '\$${trade.stopLoss!.toStringAsFixed(2)}'),
+                  if (trade.takeProfit != null)
+                    _DetailRow('Take Profit', '\$${trade.takeProfit!.toStringAsFixed(2)}'),
                   if (trade.maxLoss != null)
                     _DetailRow('Max Loss', '\$${trade.maxLoss!.toStringAsFixed(2)}'),
                   if (trade.entryPointType != null)
@@ -180,8 +184,12 @@ class TradeDetailScreen extends ConsumerWidget {
                     _DetailRow('Time of Entry', trade.timeOfEntry!),
                   if (trade.timeOfExit != null)
                     _DetailRow('Time of Exit', trade.timeOfExit!),
-                  if (trade.impliedVolEntry != null)
-                    _DetailRow('IV at Entry', '${trade.impliedVolEntry!.toStringAsFixed(1)}%'),
+                  _DetailRow(
+                    'IV at Entry',
+                    trade.impliedVolEntry != null
+                        ? '${trade.impliedVolEntry!.toStringAsFixed(1)}%'
+                        : '—',
+                  ),
                   if (trade.impliedVolExit != null)
                     _DetailRow('IV at Exit', '${trade.impliedVolExit!.toStringAsFixed(1)}%'),
                   if (trade.priceRangeHigh != null && trade.priceRangeLow != null)
@@ -221,16 +229,15 @@ class TradeDetailScreen extends ConsumerWidget {
             _LiveGreeksCard(trade: trade),
           if (trade.status == TradeStatus.open) const SizedBox(height: 12),
 
-          // Static entry Greeks (closed/expired trades only)
-          if (trade.status != TradeStatus.open &&
-              (trade.ivRank != null || trade.delta != null))
+          // Static entry Greeks
+          if (trade.ivRank != null || trade.delta != null)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Greeks at Entry',
+                    const Text('Entry Greeks',
                         style: TextStyle(
                             fontWeight: FontWeight.w700, fontSize: 15)),
                     const SizedBox(height: 12),

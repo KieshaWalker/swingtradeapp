@@ -165,9 +165,20 @@ class _TradeList extends ConsumerWidget {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
       data: (allTrades) {
-        final trades = filter == TradeStatus.open
-            ? allTrades.where((t) => t.status == TradeStatus.open).toList()
-            : allTrades.where((t) => t.status != TradeStatus.open).toList();
+        List<Trade> trades;
+        if (filter == TradeStatus.open) {
+          trades = allTrades.where((t) => t.status == TradeStatus.open).toList();
+        } else {
+          trades = allTrades.where((t) => t.status != TradeStatus.open).toList()
+            ..sort((a, b) {
+              final aDate = a.closedAt;
+              final bDate = b.closedAt;
+              if (aDate == null && bDate == null) return 0;
+              if (aDate == null) return 1;
+              if (bDate == null) return -1;
+              return bDate.compareTo(aDate);
+            });
+        }
 
         if (trades.isEmpty) {
           return Center(
@@ -185,6 +196,23 @@ class _TradeList extends ConsumerWidget {
                   style: const TextStyle(color: AppTheme.neutralColor),
                 ),
               ],
+            ),
+          );
+        }
+
+        if (filter != TradeStatus.open) {
+          return RefreshIndicator(
+            onRefresh: () => ref.refresh(tradesProvider.future),
+            child: GridView.builder(
+              padding: const EdgeInsets.all(12),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 1.1,
+              ),
+              itemCount: trades.length,
+              itemBuilder: (context, i) => _TradeGridCard(trade: trades[i]),
             ),
           );
         }
@@ -386,6 +414,104 @@ class _TradeCard extends ConsumerWidget {
                   entryPrice: trade.entryPrice,
                 ),
               ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Closed trade grid card ────────────────────────────────────────────────────
+
+class _TradeGridCard extends StatelessWidget {
+  final Trade trade;
+  const _TradeGridCard({required this.trade});
+
+  @override
+  Widget build(BuildContext context) {
+    final pnl = trade.realizedPnl;
+    final pnlPct = trade.pnlPercent;
+    final pnlColor = pnl == null
+        ? AppTheme.neutralColor
+        : pnl >= 0
+            ? AppTheme.profitColor
+            : AppTheme.lossColor;
+    final closedLabel = trade.closedAt != null
+        ? DateFormat('MMM d').format(trade.closedAt!)
+        : '';
+
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => context.push('/trades/${trade.id}', extra: trade),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Ticker + type badge
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      trade.ticker,
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w800),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  _Badge(
+                    label: trade.optionType.name.toUpperCase(),
+                    color: trade.optionType == OptionType.call
+                        ? AppTheme.profitColor
+                        : AppTheme.lossColor,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              // Strategy + closed date
+              Row(
+                children: [
+                  _Badge(
+                    label: trade.strategy.label,
+                    color: AppTheme.neutralColor,
+                  ),
+                  const Spacer(),
+                  Text(
+                    closedLabel,
+                    style: const TextStyle(
+                        color: AppTheme.neutralColor, fontSize: 11),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              // P&L
+              if (pnl != null) ...[
+                Text(
+                  '${pnl >= 0 ? '+' : ''}\$${pnl.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    color: pnlColor,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (pnlPct != null)
+                  Text(
+                    '${pnlPct >= 0 ? '+' : ''}${pnlPct.toStringAsFixed(1)}%',
+                    style: TextStyle(
+                        color: pnlColor.withValues(alpha: 0.75), fontSize: 12),
+                  ),
+              ],
+              const SizedBox(height: 4),
+              // Entry → exit
+              Text(
+                '\$${trade.entryPrice.toStringAsFixed(2)} → \$${trade.exitPrice?.toStringAsFixed(2) ?? '—'}',
+                style: const TextStyle(
+                    color: AppTheme.neutralColor, fontSize: 11),
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ),
         ),
