@@ -73,6 +73,8 @@ IV_ZERO_GAMMA_NEAR_PCT: float = 0.10  # ±10% for zero-gamma fallback
 IV_PUT_WALL_BAND_PCT: float = 0.05    # ±5% for put wall density
 IV_MIN_HISTORY_IVR: int = 10     # Minimum history days for IVR/IVP
 IV_MIN_HISTORY_SKEW: int = 5     # Minimum history days for skew z-score
+IV_WINDOW_4W: int = 21           # 4-week window (21 trading days)
+IV_WINDOW_26W: int = 130         # 26-week window (130 trading days)
 IV_GEX_ELEVATED_PCT: float = 67.0  # IVR >= 67 → "elevated" (top third of 52w range; matches "vol expansion" language)
 IV_DEEP_LONG_GEX: float = 1000.0   # totalGex >= $1B → Deep Long Gamma (Gm=1.2)
 
@@ -82,9 +84,12 @@ RND_NUM_GRID_POINTS: int = 200           # 200-pt grid → ~0.3% spacing
 RND_FD_STEP_PCT: float = 0.005          # Central-diff h = 0.5% of spot
 
 # ── Realized vol ───────────────────────────────────────────────────────────────
-RV_WINDOW_20D: int = 20
-RV_WINDOW_60D: int = 60
-RV_MIN_HISTORY_PCT: int = 10   # Minimum history for percentile ranking
+# Price-count conventions match DB column names (rv_21d, rv_63d):
+#   21 closes → 20 log-returns  (≈ 1-month HV)
+#   63 closes → 62 log-returns  (≈ 1-quarter HV)
+RV_PRICES_20D: int = 21
+RV_PRICES_60D: int = 63
+RV_MIN_HISTORY_PCT: int = 10   # Minimum history days for percentile ranking
 RV_TRADING_DAYS_YEAR: int = 252
 
 # ── Option scoring ─────────────────────────────────────────────────────────────

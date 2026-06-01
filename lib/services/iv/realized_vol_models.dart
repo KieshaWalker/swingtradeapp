@@ -119,9 +119,12 @@ extension RealizedVolRatingX on RealizedVolRating {
 class RealizedVolSnapshot {
   final String symbol;
   final DateTime date;
-  final double? rv1d;   // daily: |ln(P_t/P_{t-1})| × √252
-  final double? rv5d;   // weekly: 5-day rolling annualized RV
-  final double? rv21d;  // monthly: 21-day rolling annualized RV
+  final double? rv1d;       // daily: |ln(P_t/P_{t-1})| × √252
+  final double? rv5d;       // weekly: 5-day rolling annualized RV
+  final double? rv21d;      // monthly: 21-day rolling annualized RV (21 closes → 20 returns)
+  final double? rv63d;      // quarterly: 63-day rolling annualized RV (63 closes → 62 returns)
+  final double? rv21dPct;   // percentile of rv21d within 52-week history (0–100)
+  final double? rv63dPct;   // percentile of rv63d within 52-week history (0–100)
   final DateTime persistedAt;
 
   const RealizedVolSnapshot({
@@ -130,6 +133,9 @@ class RealizedVolSnapshot {
     this.rv1d,
     this.rv5d,
     this.rv21d,
+    this.rv63d,
+    this.rv21dPct,
+    this.rv63dPct,
     required this.persistedAt,
   });
 
@@ -139,6 +145,9 @@ class RealizedVolSnapshot {
     'rv_1d':        rv1d,
     'rv_5d':        rv5d,
     'rv_21d':       rv21d,
+    'rv_63d':       rv63d,
+    'rv_21d_pct':   rv21dPct,
+    'rv_63d_pct':   rv63dPct,
     'persisted_at': persistedAt.toIso8601String(),
   };
 
@@ -146,9 +155,12 @@ class RealizedVolSnapshot {
       RealizedVolSnapshot(
         symbol:      j['symbol'] as String,
         date:        DateTime.parse(j['date'] as String),
-        rv1d:        (j['rv_1d']  as num?)?.toDouble(),
-        rv5d:        (j['rv_5d']  as num?)?.toDouble(),
-        rv21d:       (j['rv_21d'] as num?)?.toDouble(),
+        rv1d:        (j['rv_1d']      as num?)?.toDouble(),
+        rv5d:        (j['rv_5d']      as num?)?.toDouble(),
+        rv21d:       (j['rv_21d']     as num?)?.toDouble(),
+        rv63d:       (j['rv_63d']     as num?)?.toDouble(),
+        rv21dPct:    (j['rv_21d_pct'] as num?)?.toDouble(),
+        rv63dPct:    (j['rv_63d_pct'] as num?)?.toDouble(),
         persistedAt: DateTime.parse(j['persisted_at'] as String),
       );
 }

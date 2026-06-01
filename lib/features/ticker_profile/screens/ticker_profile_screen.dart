@@ -266,11 +266,12 @@ class _TickerInsightsOverview extends ConsumerWidget {
         children: [
           if (ivSnap != null) _buildIvSection(ivSnap),
           if (regime != null) ...[
-            if (ivSnap != null) const SizedBox(height: 12),
+            if (ivSnap != null && _ivSectionHasContent(ivSnap)) const SizedBox(height: 12),
             _buildRegimeSection(regime),
           ],
           if (latestAtm != null) ...[
-            if (ivSnap != null || regime != null) const SizedBox(height: 12),
+            if ((ivSnap != null && _ivSectionHasContent(ivSnap)) || regime != null)
+              const SizedBox(height: 12),
             _buildGreekSection(latestAtm),
           ],
         ],
@@ -279,10 +280,9 @@ class _TickerInsightsOverview extends ConsumerWidget {
   }
 
   Widget _buildIvSection(IvSnapshot snap) {
+    final hasAnyWindow = snap.ivRank4w != null || snap.ivRank26w != null || snap.ivRank != null;
+
     final chips = <Widget>[];
-    if (snap.ivRank != null) {
-      chips.add(_chip('IVR ${snap.ivRank!.toStringAsFixed(0)}%', _ivRatingColor(snap.ivRating)));
-    }
     if (snap.gammaRegime != null) {
       final isPos = snap.gammaRegime == GammaRegime.positive;
       chips.add(_chip(isPos ? '+GEX' : '−GEX', isPos ? AppTheme.profitColor : AppTheme.lossColor));
@@ -297,15 +297,74 @@ class _TickerInsightsOverview extends ConsumerWidget {
           vr == VannaRegime.bullishOnVolCrush || vr == VannaRegime.bullishOnVolSpike;
       chips.add(_chip(vr.label, isBullish ? AppTheme.profitColor : AppTheme.lossColor));
     }
-    if (chips.isEmpty) return const SizedBox.shrink();
+
+    if (!hasAnyWindow && chips.isEmpty) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _label('IV ANALYTICS'),
-        const SizedBox(height: 6),
-        Wrap(spacing: 5, runSpacing: 4, children: chips),
+        const SizedBox(height: 8),
+        if (hasAnyWindow) _buildIvWindowTable(snap),
+        if (hasAnyWindow && chips.isNotEmpty) const SizedBox(height: 8),
+        if (chips.isNotEmpty) Wrap(spacing: 5, runSpacing: 4, children: chips),
       ],
     );
+  }
+
+  Widget _buildIvWindowTable(IvSnapshot snap) {
+    return Row(
+      children: [
+        _windowCol('4w',  snap.ivRank4w,  snap.ivPercentile4w),
+        _windowCol('26w', snap.ivRank26w, snap.ivPercentile26w),
+        _windowCol('52w', snap.ivRank,    snap.ivPercentile),
+      ],
+    );
+  }
+
+  static Widget _windowCol(String window, double? ivr, double? ivp) {
+    final color = _ivRankColor(ivr);
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            window,
+            style: const TextStyle(
+              color: AppTheme.neutralColor,
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            ivr != null ? 'IVR  ${ivr.toStringAsFixed(0)}%' : 'IVR  —',
+            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          Text(
+            ivp != null ? 'IVP  ${ivp.toStringAsFixed(0)}%' : 'IVP  —',
+            style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static bool _ivSectionHasContent(IvSnapshot snap) {
+    final hasAnyWindow = snap.ivRank4w != null || snap.ivRank26w != null || snap.ivRank != null;
+    final hasChips = snap.gammaRegime != null ||
+        (snap.ivGexSignal != null && snap.ivGexSignal != IvGexSignal.unknown) ||
+        (snap.vannaRegime != null && snap.vannaRegime != VannaRegime.unknown);
+    return hasAnyWindow || hasChips;
+  }
+
+  static Color _ivRankColor(double? ivr) {
+    if (ivr == null) return AppTheme.neutralColor;
+    if (ivr >= 80) return AppTheme.lossColor;
+    if (ivr >= 50) return const Color(0xFFFFAB40);
+    if (ivr >= 25) return const Color(0xFF60A5FA);
+    return AppTheme.profitColor;
   }
 
   Widget _buildRegimeSection(TickerRegimeResult r) {
@@ -384,13 +443,6 @@ class _TickerInsightsOverview extends ConsumerWidget {
             style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
       );
 
-  static Color _ivRatingColor(IvRating? rating) => switch (rating) {
-        IvRating.extreme   => AppTheme.lossColor,
-        IvRating.expensive => const Color(0xFFFFAB40),
-        IvRating.fair      => AppTheme.neutralColor,
-        IvRating.cheap     => AppTheme.profitColor,
-        _                  => AppTheme.neutralColor,
-      };
 }
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────

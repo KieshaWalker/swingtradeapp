@@ -314,6 +314,10 @@ class IvSnapshot {
   // Extended fields (migration 027)
   final double? ivRank;
   final double? ivPercentile;
+  final double? ivRank4w;
+  final double? ivPercentile4w;
+  final double? ivRank26w;
+  final double? ivPercentile26w;
   final IvRating? ivRating;
   final GammaRegime? gammaRegime;
   final GammaSlope? gammaSlope;
@@ -345,6 +349,10 @@ class IvSnapshot {
     this.underlyingPrice,
     this.ivRank,
     this.ivPercentile,
+    this.ivRank4w,
+    this.ivPercentile4w,
+    this.ivRank26w,
+    this.ivPercentile26w,
     this.ivRating,
     this.gammaRegime,
     this.gammaSlope,
@@ -408,8 +416,12 @@ class IvSnapshot {
       maxGexStrike:       (j['max_gex_strike'] as num?)?.toDouble(),
       putCallRatio:       (j['put_call_ratio'] as num?)?.toDouble(),
       underlyingPrice:    (j['underlying_price'] as num?)?.toDouble(),
-      ivRank:             (j['iv_rank'] as num?)?.toDouble(),
-      ivPercentile:       (j['iv_percentile'] as num?)?.toDouble(),
+      ivRank:             (j['iv_rank']          as num?)?.toDouble(),
+      ivPercentile:       (j['iv_percentile']    as num?)?.toDouble(),
+      ivRank4w:           (j['iv_rank_4w']       as num?)?.toDouble(),
+      ivPercentile4w:     (j['iv_percentile_4w'] as num?)?.toDouble(),
+      ivRank26w:          (j['iv_rank_26w']      as num?)?.toDouble(),
+      ivPercentile26w:    (j['iv_percentile_26w'] as num?)?.toDouble(),
       ivRating:           parseRating(j['iv_rating'] as String?),
       gammaRegime:        parseGammaRegime(j['gamma_regime'] as String?),
       gammaSlope:         parseGammaSlope(j['gamma_slope'] as String?),
@@ -614,8 +626,12 @@ class IvAnalysis {
   final double currentIv;       // ATM IV today (%)
   final double? iv52wHigh;
   final double? iv52wLow;
-  final double? ivRank;         // 0–100 (IVR)
-  final double? ivPercentile;   // 0–100 (IVP)
+  final double? ivRank;           // 0–100 (IVR, 52w)
+  final double? ivPercentile;     // 0–100 (IVP, 52w)
+  final double? ivRank4w;         // 0–100 (IVR, 4w)
+  final double? ivPercentile4w;   // 0–100 (IVP, 4w)
+  final double? ivRank26w;        // 0–100 (IVR, 26w)
+  final double? ivPercentile26w;  // 0–100 (IVP, 26w)
   final IvRating rating;
   final int historyDays;        // days of data available
 
@@ -701,6 +717,10 @@ class IvAnalysis {
     this.iv52wLow,
     this.ivRank,
     this.ivPercentile,
+    this.ivRank4w,
+    this.ivPercentile4w,
+    this.ivRank26w,
+    this.ivPercentile26w,
     this.historyDays = 0,
     this.skew,
     this.skewAvg52w,
@@ -783,6 +803,10 @@ class IvAnalysis {
       iv52wLow:           (j['iv52w_low']           as num?)?.toDouble(),
       ivRank:             (j['iv_rank']             as num?)?.toDouble(),
       ivPercentile:       (j['iv_percentile']       as num?)?.toDouble(),
+      ivRank4w:           (j['iv_rank_4w']          as num?)?.toDouble(),
+      ivPercentile4w:     (j['iv_percentile_4w']    as num?)?.toDouble(),
+      ivRank26w:          (j['iv_rank_26w']         as num?)?.toDouble(),
+      ivPercentile26w:    (j['iv_percentile_26w']   as num?)?.toDouble(),
       rating:             rating,
       historyDays:        (j['history_days']        as num? ?? 0).toInt(),
       skew:               (j['skew']                as num?)?.toDouble(),

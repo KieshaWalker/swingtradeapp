@@ -40,6 +40,22 @@ async def run_iv_pull() -> dict:
 
     results: dict[str, str] = {}
 
+    # Prefetch all DB reads before the concurrent HTTP section so synchronous
+    # Supabase calls don't block the event loop mid-gather.
+    unique_tickers = list({r["ticker"] for r in rows})
+    iv_history_map: dict[str, list[dict]] = {
+        t: _fetch_iv_history(db, t) for t in unique_tickers
+    }
+    sabr_map: dict[tuple[str, str], list[dict]] = {
+        (r["ticker"], r["user_id"]): _fetch_today_sabr(db, r["ticker"], r["user_id"], today)
+        for r in rows
+    }
+    nu_map: dict[tuple[str, str], list[float]] = {
+        (r["ticker"], r["user_id"]): fetch_nu_history(db, r["ticker"], r["user_id"])
+        for r in rows
+        if sabr_map.get((r["ticker"], r["user_id"]))
+    }
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         async def _process(row: dict) -> tuple[str, str]:
             ticker  = row["ticker"]
@@ -52,14 +68,14 @@ async def run_iv_pull() -> dict:
                 if spot <= 0:
                     return ticker, "zero_spot"
 
-                history    = _fetch_iv_history(db, ticker)
-                iv_result  = iv_analyse(chain, history)
+                history   = iv_history_map.get(ticker, [])
+                iv_result = iv_analyse(chain, history)
 
                 # vvol rank uses the SABR ν series written by sabr_pull
                 vvol = None
-                slices = _fetch_today_sabr(db, ticker, user_id, today)
+                slices = sabr_map.get((ticker, user_id), [])
                 if slices:
-                    nu_history = fetch_nu_history(db, ticker, user_id)
+                    nu_history = nu_map.get((ticker, user_id), [])
                     if nu_history:
                         atm_slice = min(slices, key=lambda s: abs(s["dte"] - 30))
                         if atm_slice["nu"] is not None:
@@ -126,6 +142,10 @@ def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvo
         "underlying_price":       spot,
         "iv_rank":                iv_result.iv_rank,
         "iv_percentile":          iv_result.iv_percentile,
+        "iv_rank_4w":             iv_result.iv_rank_4w,
+        "iv_percentile_4w":       iv_result.iv_percentile_4w,
+        "iv_rank_26w":            iv_result.iv_rank_26w,
+        "iv_percentile_26w":      iv_result.iv_percentile_26w,
         "iv_rating":              iv_result.rating.value if iv_result.rating else None,
         "gamma_regime":           iv_result.gamma_regime.value if iv_result.gamma_regime else None,
         "gamma_slope":            iv_result.gamma_slope.value if iv_result.gamma_slope else None,

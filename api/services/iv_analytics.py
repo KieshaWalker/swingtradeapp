@@ -38,6 +38,8 @@ from core.constants import (
     IV_PUT_WALL_BAND_PCT,
     IV_MIN_HISTORY_IVR,
     IV_MIN_HISTORY_SKEW,
+    IV_WINDOW_4W,
+    IV_WINDOW_26W,
     IV_GEX_ELEVATED_PCT,
     IV_DEEP_LONG_GEX,
     MIN_MEANINGFUL_TOTAL_GEX_USD,
@@ -171,6 +173,10 @@ class IvAnalysisResult:
     iv52w_low:Optional[float]
     iv_rank:Optional[float]
     iv_percentile:Optional[float]
+    iv_rank_4w:Optional[float]
+    iv_percentile_4w:Optional[float]
+    iv_rank_26w:Optional[float]
+    iv_percentile_26w:Optional[float]
     rating: IvRating
     history_days: int
     skew:Optional[float]
@@ -239,9 +245,13 @@ def analyse(
     chain_vol = float(chain.get("volatility") or 0)
     atm_iv = chain_vol if chain_vol > 0 else _compute_atm_iv_from_chain(expirations, spot)
 
-    # ── IVR & IVP ──────────────────────────────────────────────────────────────
+    # ── IVR & IVP (52w / 26w / 4w) ────────────────────────────────────────────
     iv_rank:Optional[float] = None
     iv_percentile:Optional[float] = None
+    iv_rank_4w:Optional[float] = None
+    iv_percentile_4w:Optional[float] = None
+    iv_rank_26w:Optional[float] = None
+    iv_percentile_26w:Optional[float] = None
     iv52w_high:Optional[float] = None
     iv52w_low:Optional[float] = None
     rating = IvRating.no_data
@@ -250,10 +260,9 @@ def analyse(
         ivs = [float(s.get("atm_iv", 0)) for s in history]
         iv52w_high = max(ivs)
         iv52w_low = min(ivs)
-        iv_range = iv52w_high - iv52w_low
-        iv_rank = 50.0 if iv_range < 0.001 else max(0.0, min(100.0, (atm_iv - iv52w_low) / iv_range * 100))
-        below = sum(1 for iv in ivs if iv < atm_iv)
-        iv_percentile = max(0.0, min(100.0, below / len(ivs) * 100))
+        iv_rank, iv_percentile = _ivr_ivp(ivs, atm_iv)
+        iv_rank_26w, iv_percentile_26w = _ivr_ivp(ivs[-IV_WINDOW_26W:], atm_iv)
+        iv_rank_4w,  iv_percentile_4w  = _ivr_ivp(ivs[-IV_WINDOW_4W:],  atm_iv)
         rating = _rating_from_rank(iv_rank)
 
     # ── Skew ───────────────────────────────────────────────────────────────────
@@ -268,7 +277,7 @@ def analyse(
         if len(skew_history) >= IV_MIN_HISTORY_SKEW:
             skew_avg_52w = sum(skew_history) / len(skew_history)
             if skew_val is not None:
-                variance = sum((s - skew_avg_52w) ** 2 for s in skew_history) / len(skew_history)
+                variance = sum((s - skew_avg_52w) ** 2 for s in skew_history) / (len(skew_history) - 1)
                 std = math.sqrt(variance)
                 skew_z_score = 0.0 if std < 0.001 else (skew_val - skew_avg_52w) / std
 
@@ -390,6 +399,10 @@ def analyse(
         iv52w_low=iv52w_low,
         iv_rank=iv_rank,
         iv_percentile=iv_percentile,
+        iv_rank_4w=iv_rank_4w,
+        iv_percentile_4w=iv_percentile_4w,
+        iv_rank_26w=iv_rank_26w,
+        iv_percentile_26w=iv_percentile_26w,
         rating=rating,
         history_days=len(history),
         skew=skew_val,
@@ -819,6 +832,22 @@ def _compute_second_order(
         ))
         
     return results
+
+
+# ── IVR / IVP helper ──────────────────────────────────────────────────────────
+
+def _ivr_ivp(ivs: list[float], current: float) -> tuple[Optional[float], Optional[float]]:
+    """Compute IV Rank and IV Percentile for the given slice of history.
+
+    Returns (None, None) when there is insufficient history.
+    """
+    if len(ivs) < IV_MIN_HISTORY_IVR:
+        return None, None
+    lo, hi = min(ivs), max(ivs)
+    iv_range = hi - lo
+    rank = 50.0 if iv_range < 0.001 else max(0.0, min(100.0, (current - lo) / iv_range * 100))
+    pct  = max(0.0, min(100.0, sum(1 for iv in ivs if iv <= current) / len(ivs) * 100))
+    return rank, pct
 
 
 # ── Rating helper ──────────────────────────────────────────────────────────────

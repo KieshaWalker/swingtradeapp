@@ -83,15 +83,31 @@ class IvRankGauge extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          // IVR / IVP / current IV row
+          // 52w row
           Row(
             children: [
               _statCell('Current IV', '${analysis.currentIv.toStringAsFixed(1)}%'),
-              _statCell('IVP', analysis.ivPercentileLabel),
+              _statCell('52w IVP', analysis.ivPercentileLabel),
               _statCell('52w High', analysis.iv52wHigh != null
                   ? '${analysis.iv52wHigh!.toStringAsFixed(1)}%' : '—'),
               _statCell('52w Low', analysis.iv52wLow != null
                   ? '${analysis.iv52wLow!.toStringAsFixed(1)}%' : '—'),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+
+          // 26w / 4w comparison row
+          Row(
+            children: [
+              _statCell('26w IVR', analysis.ivRank26w != null
+                  ? '${analysis.ivRank26w!.toStringAsFixed(0)}%' : '—'),
+              _statCell('26w IVP', analysis.ivPercentile26w != null
+                  ? '${analysis.ivPercentile26w!.toStringAsFixed(0)}%' : '—'),
+              _statCell('4w IVR', analysis.ivRank4w != null
+                  ? '${analysis.ivRank4w!.toStringAsFixed(0)}%' : '—'),
+              _statCell('4w IVP', analysis.ivPercentile4w != null
+                  ? '${analysis.ivPercentile4w!.toStringAsFixed(0)}%' : '—'),
             ],
           ),
 

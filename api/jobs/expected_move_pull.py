@@ -29,7 +29,8 @@ from core.supabase_client import get_supabase
 from core.chain_utils import parse_expirations
 from jobs.common import get_tickers, fetch_schwab_chain, fetch_schwab_closes
 from services.expected_move import compute as em_compute, atm_iv_from_chain
-from services.realized_vol import compute_rv
+from core.constants import RV_MIN_HISTORY_PCT
+from services.realized_vol import compute_rv, compute_percentile
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +58,12 @@ async def run_expected_move_pull() -> dict:
     results: dict[str, str] = {}
     sem = asyncio.Semaphore(_CONCURRENCY)
 
+    # Prefetch RV history for all tickers before the concurrent HTTP section so
+    # synchronous DB reads don't interleave with async HTTP calls.
+    rv_history: dict[str, tuple[list[float], list[float]]] = {
+        t: _fetch_rv_history(db, t) for t in unique_tickers
+    }
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         async def _process(ticker: str) -> tuple[str, str]:
             async with sem:
@@ -73,10 +80,17 @@ async def run_expected_move_pull() -> dict:
                         rv5d  = compute_rv(clean_closes[-5:]  if len(clean_closes) >= 5  else clean_closes)
                         rv21d = compute_rv(clean_closes[-21:] if len(clean_closes) >= 21 else clean_closes)
                         rv63d = compute_rv(clean_closes[-63:] if len(clean_closes) >= 63 else clean_closes)
+
+                        hist21, hist63 = rv_history.get(ticker, ([], []))
+                        rv21d_pct = compute_percentile(rv21d, hist21) if len(hist21) >= RV_MIN_HISTORY_PCT else None
+                        rv63d_pct = compute_percentile(rv63d, hist63) if len(hist63) >= RV_MIN_HISTORY_PCT else None
+
                         try:
-                            _upsert_rv(db, ticker, today, rv1d, rv5d, rv21d, rv63d)
-                            log.info("rv_ok ticker=%s rv1d=%.3f rv5d=%.3f rv21d=%.3f rv63d=%.3f",
-                                     ticker, rv1d, rv5d, rv21d, rv63d)
+                            _upsert_rv(db, ticker, today, rv1d, rv5d, rv21d, rv63d, rv21d_pct, rv63d_pct)
+                            log.info("rv_ok ticker=%s rv1d=%.3f rv5d=%.3f rv21d=%.3f rv63d=%.3f rv21d_pct=%s rv63d_pct=%s",
+                                     ticker, rv1d, rv5d, rv21d, rv63d,
+                                     f"{rv21d_pct:.1f}" if rv21d_pct is not None else "n/a",
+                                     f"{rv63d_pct:.1f}" if rv63d_pct is not None else "n/a")
                         except Exception as exc:
                             log.error("rv_upsert_failed ticker=%s error=%r", ticker, exc)
                     else:
@@ -122,7 +136,33 @@ async def run_expected_move_pull() -> dict:
     return {"status": "complete", "tickers": results, "date": today}
 
 
-def _upsert_rv(db, ticker: str, today: str, rv1d: float, rv5d: float, rv21d: float, rv63d: float) -> None:
+def _fetch_rv_history(db, ticker: str) -> tuple[list[float], list[float]]:
+    """Fetch historical rv_21d and rv_63d for percentile ranking (excludes today)."""
+    resp = (
+        db.table("realized_vol_snapshots")
+        .select("rv_21d,rv_63d")
+        .eq("symbol", ticker)
+        .order("date", desc=False)
+        .limit(252)
+        .execute()
+    )
+    rows = resp.data or []
+    hist21 = [float(r["rv_21d"]) for r in rows if r.get("rv_21d") is not None]
+    hist63 = [float(r["rv_63d"]) for r in rows if r.get("rv_63d") is not None]
+    return hist21, hist63
+
+
+def _upsert_rv(
+    db,
+    ticker: str,
+    today: str,
+    rv1d: float,
+    rv5d: float,
+    rv21d: float,
+    rv63d: float,
+    rv21d_pct: float | None,
+    rv63d_pct: float | None,
+) -> None:
     db.table("realized_vol_snapshots").upsert(
         {
             "symbol":       ticker,
@@ -130,7 +170,9 @@ def _upsert_rv(db, ticker: str, today: str, rv1d: float, rv5d: float, rv21d: flo
             "rv_1d":        rv1d,
             "rv_5d":        rv5d,
             "rv_21d":       rv21d,
-            "rv_63d":       rv63d,   # 63 trading days ≈ 3 calendar months
+            "rv_63d":       rv63d,
+            "rv_21d_pct":   rv21d_pct,
+            "rv_63d_pct":   rv63d_pct,
             "persisted_at": datetime.now(timezone.utc).isoformat(),
         },
         on_conflict="symbol,date",

@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from core.constants import (
-    RV_WINDOW_20D,
-    RV_WINDOW_60D,
+    RV_PRICES_20D,
+    RV_PRICES_60D,
     RV_MIN_HISTORY_PCT,
     RV_TRADING_DAYS_YEAR,
 )
@@ -115,8 +115,8 @@ def compute(
             rating=RealizedVolRating.no_data,
         )
 
-    rv20d = compute_rv(closes[-RV_WINDOW_20D:] if len(closes) >= RV_WINDOW_20D else closes)
-    rv60d = compute_rv(closes[-RV_WINDOW_60D:] if len(closes) >= RV_WINDOW_60D else closes)
+    rv20d = compute_rv(closes[-RV_PRICES_20D:] if len(closes) >= RV_PRICES_20D else closes)
+    rv60d = compute_rv(closes[-RV_PRICES_60D:] if len(closes) >= RV_PRICES_60D else closes)
 
     hist20 = history_rv20d or []
     hist60 = history_rv60d or []
