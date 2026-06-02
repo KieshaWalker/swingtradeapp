@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import math
+import statistics
 from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from core.constants import DEFAULT_R, SABR_BETA
+from core.constants import SABR_BETA
 from services.sabr import sabr_iv, sabr_alpha
 from services.sabr_calibrator import calibrate_snapshot, SabrSlice
-from core.supabase_client import get_supabase
-from datetime import date
+from services.rate_service import get_rate_for_dte
 
 router = APIRouter()
 
@@ -40,7 +39,7 @@ class SabrCalibrateRequest(BaseModel):
     obs_date: Optional[str] = None
     spot_price: float = Field(..., gt=0)
     points: list[SabrPoint] = Field(..., min_length=1)
-    r: float = DEFAULT_R
+    r: Optional[float] = Field(default=None, description="Risk-free rate as decimal; defaults to term-matched live rate")
 
 
 class SabrCalibrateResponse(BaseModel):
@@ -56,6 +55,11 @@ def sabr_iv_endpoint(req: SabrIvRequest):
 
 @router.post("/calibrate", response_model=SabrCalibrateResponse)
 def sabr_calibrate_endpoint(req: SabrCalibrateRequest):
+    if req.r is not None:
+        r = req.r
+    else:
+        median_dte = int(statistics.median(p.dte for p in req.points))
+        r = get_rate_for_dte(median_dte)[0]
     points = [p.model_dump(exclude_none=True) for p in req.points]
-    slices = calibrate_snapshot(spot=req.spot_price, points=points, r=req.r)
+    slices = calibrate_snapshot(spot=req.spot_price, points=points, r=r)
     return SabrCalibrateResponse(slices=[s.to_dict() for s in slices])

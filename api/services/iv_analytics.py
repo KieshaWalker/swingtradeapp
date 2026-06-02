@@ -237,7 +237,7 @@ def analyse(
     chain = normalize_chain(chain)
 
     raw_rate = risk_free_rate if risk_free_rate is not None else DEFAULT_R
-    r = raw_rate / 100 if raw_rate > 0.1 else raw_rate
+    r = raw_rate / 100 if raw_rate > 0.5 else raw_rate
 
     ticker = chain.get("symbol", "")
     spot = float(chain.get("underlyingPrice", 0))

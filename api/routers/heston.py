@@ -1,9 +1,10 @@
 import math
+from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from core.constants import DEFAULT_R
 from services.heston import HestonParams, heston_price
+from services.rate_service import get_rate_for_dte
 
 router = APIRouter()
 
@@ -12,7 +13,7 @@ class HestonPriceRequest(BaseModel):
     spot: float = Field(..., gt=0, description="Underlying price S")
     strike: float = Field(..., gt=0, description="Strike price K")
     days_to_expiry: int = Field(..., ge=1, description="Calendar days to expiry")
-    r: float = Field(DEFAULT_R, description="Risk-free rate as decimal")
+    r: Optional[float] = Field(default=None, description="Risk-free rate as decimal; defaults to term-matched live rate")
     is_call: bool = True
     kappa: float = Field(..., gt=0, description="Mean-reversion speed κ")
     theta: float = Field(..., gt=0, description="Long-run variance θ (long-run vol = √θ)")
@@ -31,8 +32,9 @@ class HestonPriceResponse(BaseModel):
 
 @router.post("/price", response_model=HestonPriceResponse)
 def heston_price_endpoint(req: HestonPriceRequest):
+    r = req.r if req.r is not None else get_rate_for_dte(req.days_to_expiry)[0]
     T = req.days_to_expiry / 365.0
-    F = req.spot * math.exp(req.r * T)
+    F = req.spot * math.exp(r * T)
     params = HestonParams(
         kappa=req.kappa,
         theta=req.theta,
@@ -40,7 +42,7 @@ def heston_price_endpoint(req: HestonPriceRequest):
         rho=req.rho,
         V0=req.v0,
     )
-    price = heston_price(F=F, K=req.strike, T=T, r=req.r, params=params, is_call=req.is_call)
+    price = heston_price(F=F, K=req.strike, T=T, r=r, params=params, is_call=req.is_call)
     return HestonPriceResponse(
         price=price,
         forward=F,

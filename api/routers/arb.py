@@ -1,8 +1,10 @@
+import statistics
+from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from core.constants import DEFAULT_R
 from services.arb_checker import check
+from services.rate_service import get_rate_for_dte
 
 router = APIRouter()
 
@@ -10,12 +12,18 @@ router = APIRouter()
 class ArbCheckRequest(BaseModel):
     points: list[dict]   # [{strike, dte, callIv?, putIv?}]
     spot_price: float = Field(..., gt=0)
-    r: float = DEFAULT_R
+    r: Optional[float] = Field(default=None, description="Risk-free rate as decimal; defaults to term-matched live rate")
 
 
 @router.post("/check")
 def arb_check(req: ArbCheckRequest):
-    result = check(req.points, req.spot_price, req.r)
+    if req.r is not None:
+        r = req.r
+    else:
+        dtes = [p["dte"] for p in req.points if "dte" in p]
+        median_dte = int(statistics.median(dtes)) if dtes else 30
+        r = get_rate_for_dte(median_dte)[0]
+    result = check(req.points, req.spot_price, r)
     return {
         "is_arbitrage_free": result.is_arbitrage_free,
         "total_violations": result.total_violations,

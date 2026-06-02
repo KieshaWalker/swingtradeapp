@@ -21,7 +21,6 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from core.constants import DEFAULT_R
 from core.supabase_client import get_supabase
 from services.fair_value_engine import compute
 from services.heston import HestonParams
@@ -51,7 +50,7 @@ class FairValueRequest(BaseModel):
     days_to_expiry: int = Field(..., ge=1, le=1095)
     is_call: bool = True
     broker_mid: float = Field(..., ge=0)
-    r: float = DEFAULT_R
+    r: Optional[float] = Field(default=None, description="Risk-free rate as decimal; defaults to term-matched live rate")
     calibrated_rho:Optional[float] = None
     calibrated_nu:Optional[float] = None
     ticker:Optional[str] = None   # when provided, Heston params are fetched from DB
