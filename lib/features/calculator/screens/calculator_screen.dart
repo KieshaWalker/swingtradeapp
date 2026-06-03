@@ -2294,9 +2294,7 @@ class _ImpliedVolTabState extends State<_ImpliedVolTab> {
       );
       setState(() => _result = res);
     } on PythonApiException catch (e) {
-      setState(() => _error = e.statusCode == 422
-          ? 'Price violates no-arbitrage bounds — check inputs.'
-          : 'API error: ${e.message}');
+      setState(() => _error = 'API error (${e.statusCode}): ${e.message}');
     } finally {
       if (mounted) setState(() => _loading = false);
     }

@@ -21,6 +21,7 @@ from typing import Optional
 import math
 from dataclasses import dataclass
 from scipy.stats import norm as _norm
+from scipy.optimize import brentq as _brentq
 
 from core.constants import DEFAULT_R, FV_SIGXT_GUARD
 
@@ -183,14 +184,25 @@ def bs_implied_vol(
         price = bs_price(F, K, T, r, sigma, is_call)
         vega = bs_vega(F, K, T, r, sigma)
         if vega < 1e-10:
-            return None
+            break
         diff = price - market_price
         if abs(diff) < tol:
             return sigma
         sigma -= diff / vega
         if sigma <= 0:
             sigma = 1e-6
-    return None  # did not converge
+    else:
+        return None  # hit max_iter without converging
+
+    # N-R diverged (vega collapsed). Fall back to brentq — guaranteed convergence
+    # because bounds check above confirmed price is strictly inside [intrinsic, upper].
+    try:
+        return _brentq(
+            lambda s: bs_price(F, K, T, r, s, is_call) - market_price,
+            1e-6, 20.0, xtol=tol, maxiter=200,
+        )
+    except (ValueError, RuntimeError):
+        return None
 
 
 # ── Convenience bundle ────────────────────────────────────────────────────────
