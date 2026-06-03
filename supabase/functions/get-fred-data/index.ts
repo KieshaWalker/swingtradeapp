@@ -6,22 +6,34 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+async function fetchOneSeries(
+  apiKey: string,
+  seriesId: string,
+  limit: string,
+): Promise<{ observations: unknown[] }> {
+  const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json&limit=${limit}&sort_order=desc`
+  try {
+    const resp = await fetch(url)
+    if (!resp.ok) {
+      console.error(`FRED ${seriesId} error ${resp.status}: ${await resp.text()}`)
+      return { observations: [] }
+    }
+    const data = await resp.json()
+    return { observations: data.observations ?? [] }
+  } catch (err) {
+    console.error(`FRED ${seriesId} fetch failed: ${err}`)
+    return { observations: [] }
+  }
+}
+
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
     const body = await req.json()
-    const { series_id, limit = '500' } = body
-    
-    if (!series_id) {
-      return new Response(JSON.stringify({ error: 'Missing series_id parameter' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      })
-    }
+    const { series_id, series_ids, limit = '500' } = body
 
     const apiKey = Deno.env.get('FRED_API_KEY')
     if (!apiKey) {
@@ -31,10 +43,27 @@ Deno.serve(async (req) => {
         status: 500,
       })
     }
-    
-    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series_id}&api_key=${apiKey}&file_type=json&limit=${limit}&sort_order=desc`
+
+    // Bulk mode: fetch multiple series sequentially to avoid rate-limit bursts
+    if (Array.isArray(series_ids) && series_ids.length > 0) {
+      console.log(`Bulk FRED fetch: ${series_ids.length} series, limit: ${limit}`)
+      const results: Record<string, { observations: unknown[] }> = {}
+      for (const id of series_ids) {
+        results[id] = await fetchOneSeries(apiKey, id, limit)
+      }
+      return jsonResponse(req, { results }, corsHeaders)
+    }
+
+    // Single-series mode (backwards-compatible — used by Python backend)
+    if (!series_id) {
+      return new Response(JSON.stringify({ error: 'Missing series_id or series_ids parameter' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      })
+    }
+
     console.log(`Fetching FRED series: ${series_id}, limit: ${limit}`)
-    
+    const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${series_id}&api_key=${apiKey}&file_type=json&limit=${limit}&sort_order=desc`
     const response = await fetch(url)
     const text = await response.text()
 
@@ -49,7 +78,7 @@ Deno.serve(async (req) => {
     let data
     try {
       data = JSON.parse(text)
-    } catch (parseErr) {
+    } catch {
       console.error(`Failed to parse FRED response: ${text}`)
       return new Response(JSON.stringify({ error: 'Invalid JSON from FRED API' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

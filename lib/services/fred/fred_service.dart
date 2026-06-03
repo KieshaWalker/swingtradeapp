@@ -54,6 +54,41 @@ Future<FredSeries> getSeries(String seriesId, {int limit = 500}) async {
   }
 }
 
+  /// Fetch multiple FRED series in one edge-function call (sequential on server).
+  /// Returns a map of seriesId → FredSeries; missing/errored series are empty.
+  Future<Map<String, FredSeries>> getSeriesBulk(
+    List<String> seriesIds, {
+    int limit = 500,
+  }) async {
+    try {
+      final response = await Supabase.instance.client.functions.invoke(
+        'get-fred-data',
+        body: {
+          'series_ids': seriesIds,
+          'limit': limit.toString(),
+        },
+      ).timeout(const Duration(seconds: 60));
+
+      if (response.status != 200) throw Exception('Function error ${response.status}');
+
+      final body = response.data as Map<String, dynamic>;
+      final raw = body['results'] as Map<String, dynamic>? ?? {};
+
+      return {
+        for (final entry in raw.entries)
+          entry.key: FredSeries(
+            seriesId: entry.key,
+            observations: ((entry.value as Map<String, dynamic>)['observations'] as List<dynamic>? ?? [])
+                .map((e) => _parse(e as Map<String, dynamic>))
+                .whereType<FredObservation>()
+                .toList(),
+          ),
+      };
+    } catch (e) {
+      return {for (final id in seriesIds) id: FredSeries(seriesId: id, observations: [])};
+    }
+  }
+
   FredObservation? _parse(Map<String, dynamic> e) {
     final dateStr = e['date'] as String?;
     final valueStr = e['value'] as String?;
