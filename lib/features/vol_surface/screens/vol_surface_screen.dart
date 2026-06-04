@@ -11,16 +11,9 @@ import '../providers/vol_surface_provider.dart';
 import '../services/vol_surface_repository.dart';
 import '../widgets/vol_heatmap.dart';
 import '../widgets/vol_smile_chart.dart';
+import '../widgets/vol_skew_delta_grid.dart';
 import '../widgets/vol_surface_guide.dart';
 import '../widgets/vol_surface_interpretation.dart';
-
-// ── IV mode options ────────────────────────────────────────────────────────────
-const _ivModes = [
-  ('otm', 'OTM'),
-  ('call', 'Call'),
-  ('put', 'Put'),
-  ('avg', 'Avg'),
-];
 
 class VolSurfaceScreen extends ConsumerStatefulWidget {
   /// When non-null the screen is scoped to a single ticker (pushed from
@@ -36,10 +29,11 @@ class VolSurfaceScreen extends ConsumerStatefulWidget {
 
 class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
     with SingleTickerProviderStateMixin {
-  String _ivMode = 'otm';
   VolSnapshot? _activeSnap;
-  VolSnapshot? _baseSnap;
+  VolSnapshot? _prevSnap;
   bool _pointsLoading = false;
+  bool _prevLoading   = false;
+  List<VolSnapshot> _snaps = [];
   late final TabController _tabs;
 
   @override
@@ -56,31 +50,28 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
 
   Future<void> _deleteSnap(VolSnapshot s) async {
     await ref.read(volSurfaceProvider.notifier).delete(s);
-    if (_activeSnap?.ticker == s.ticker &&
-        _activeSnap?.obsDateStr == s.obsDateStr) {
-      setState(() => _activeSnap = null);
+    if (_activeSnap?.ticker == s.ticker && _activeSnap?.obsDateStr == s.obsDateStr) {
+      setState(() { _activeSnap = null; _prevSnap = null; });
+    } else if (_prevSnap?.ticker == s.ticker && _prevSnap?.obsDateStr == s.obsDateStr) {
+      setState(() => _prevSnap = null);
     }
   }
 
   Future<void> _selectSnap(VolSnapshot s) async {
     setState(() {
-      _activeSnap = s;
+      _activeSnap    = s;
       _pointsLoading = s.points.isEmpty && s.id != null;
+      _prevSnap      = null;
+      _prevLoading   = false;
     });
     if (s.points.isEmpty && s.id != null) {
       try {
-        final pts = await VolSurfaceRepository(
-          Supabase.instance.client,
-        ).loadPoints(s.id!);
+        final pts = await VolSurfaceRepository(Supabase.instance.client).loadPoints(s.id!);
         if (!mounted) return;
         setState(() {
           _activeSnap = VolSnapshot(
-            id: s.id,
-            ticker: s.ticker,
-            obsDate: s.obsDate,
-            spotPrice: s.spotPrice,
-            points: pts,
-            parsedAt: s.parsedAt,
+            id: s.id, ticker: s.ticker, obsDate: s.obsDate,
+            spotPrice: s.spotPrice, points: pts, parsedAt: s.parsedAt,
           );
           _pointsLoading = false;
         });
@@ -89,27 +80,66 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
         if (mounted) setState(() => _pointsLoading = false);
       }
     }
+    _findAndLoadPrevSnap(s);
+  }
+
+  void _findAndLoadPrevSnap(VolSnapshot active) {
+    final prev = _snaps
+        .where((s) => s.ticker == active.ticker && s.obsDate.isBefore(active.obsDate))
+        .fold<VolSnapshot?>(null, (best, s) =>
+            best == null || s.obsDate.isAfter(best.obsDate) ? s : best);
+    if (prev == null) {
+      setState(() { _prevSnap = null; _prevLoading = false; });
+      return;
+    }
+    if (prev.points.isNotEmpty) {
+      setState(() { _prevSnap = prev; _prevLoading = false; });
+      return;
+    }
+    setState(() { _prevSnap = null; _prevLoading = prev.id != null; });
+    if (prev.id != null) _loadPrevPoints(prev);
+  }
+
+  Future<void> _loadPrevPoints(VolSnapshot s) async {
+    try {
+      final pts = await VolSurfaceRepository(Supabase.instance.client).loadPoints(s.id!);
+      if (!mounted) return;
+      setState(() {
+        _prevSnap = VolSnapshot(
+          id: s.id, ticker: s.ticker, obsDate: s.obsDate,
+          spotPrice: s.spotPrice, points: pts, parsedAt: s.parsedAt,
+        );
+        _prevLoading = false;
+      });
+    } catch (e) {
+      debugPrint('vol_surface: failed to load prev points for ${s.id}: $e');
+      if (mounted) setState(() { _prevSnap = null; _prevLoading = false; });
+    }
   }
 
   // ── Build ───────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final snapsAsync = ref.watch(volSurfaceProvider);
-    final allSnaps = snapsAsync.valueOrNull ?? [];
+    final allSnaps   = snapsAsync.valueOrNull ?? [];
 
-    // When scoped to a ticker, only show that ticker's snapshots.
     final snaps = widget.symbol != null
-        ? allSnaps
-            .where((s) => s.ticker == widget.symbol!.toUpperCase())
-            .toList()
+        ? allSnaps.where((s) => s.ticker == widget.symbol!.toUpperCase()).toList()
         : allSnaps;
+    _snaps = snaps;
 
-    // Auto-select the most recent snapshot on first data load.
+    // Auto-select most recent snapshot on first load.
     if (_activeSnap == null && snaps.isNotEmpty) {
-      final latest =
-          snaps.reduce((a, b) => a.obsDate.isAfter(b.obsDate) ? a : b);
+      final latest = snaps.reduce((a, b) => a.obsDate.isAfter(b.obsDate) ? a : b);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _selectSnap(latest);
+      });
+    }
+
+    // Re-find prev snap if active is set but prev isn't (e.g. after provider refresh).
+    if (_activeSnap != null && _prevSnap == null && !_prevLoading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _findAndLoadPrevSnap(_activeSnap!);
       });
     }
 
@@ -149,8 +179,7 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          // When scoped to a ticker, always skip the multi-ticker sidebar.
-        final showSidebar = !isTicker && constraints.maxWidth >= 700;
+          final showSidebar = !isTicker && constraints.maxWidth >= 700;
           if (showSidebar) {
             return Row(children: [
               _Sidebar(
@@ -162,29 +191,23 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
               Expanded(
                 child: _MainPanel(
                   tabs:               _tabs,
-                  ivMode:             _ivMode,
-                  onIvModeChanged:    (m) => setState(() => _ivMode = m),
                   snaps:              snaps,
                   activeSnap:         _activeSnap,
-                  baseSnap:           _baseSnap,
+                  prevSnap:           _prevSnap,
                   onActiveSnapChanged: _selectSnap,
-                  onBaseSnapChanged:   (s) => setState(() => _baseSnap = s),
                   loading:            snapsAsync.isLoading || _pointsLoading,
                 ),
               ),
             ]);
           }
           return _NarrowLayout(
-            snaps:            snaps,
-            activeSnap:       _activeSnap,
-            onSelectSnap:     _selectSnap,
-            onDeleteSnap:     _deleteSnap,
-            tabs:             _tabs,
-            ivMode:           _ivMode,
-            onIvModeChanged:  (m) => setState(() => _ivMode = m),
-            baseSnap:         _baseSnap,
-            onBaseSnapChanged:(s) => setState(() => _baseSnap = s),
-            loading:          snapsAsync.isLoading || _pointsLoading,
+            snaps:       snaps,
+            activeSnap:  _activeSnap,
+            prevSnap:    _prevSnap,
+            onSelectSnap: _selectSnap,
+            onDeleteSnap: _deleteSnap,
+            tabs:        _tabs,
+            loading:     snapsAsync.isLoading || _pointsLoading,
           );
         },
       ),
@@ -624,25 +647,19 @@ class _TickerHeader extends StatelessWidget {
 // Main panel (wide layout)
 // ═══════════════════════════════════════════════════════════════════════════════
 class _MainPanel extends StatefulWidget {
-  final TabController           tabs;
-  final String                  ivMode;
-  final ValueChanged<String>    onIvModeChanged;
-  final List<VolSnapshot>       snaps;
-  final VolSnapshot?            activeSnap;
-  final VolSnapshot?            baseSnap;
+  final TabController             tabs;
+  final List<VolSnapshot>         snaps;
+  final VolSnapshot?              activeSnap;
+  final VolSnapshot?              prevSnap;
   final ValueChanged<VolSnapshot> onActiveSnapChanged;
-  final ValueChanged<VolSnapshot> onBaseSnapChanged;
-  final bool                    loading;
+  final bool                      loading;
 
   const _MainPanel({
     required this.tabs,
-    required this.ivMode,
-    required this.onIvModeChanged,
     required this.snaps,
     required this.activeSnap,
-    required this.baseSnap,
+    required this.prevSnap,
     required this.onActiveSnapChanged,
-    required this.onBaseSnapChanged,
     required this.loading,
   });
 
@@ -659,20 +676,15 @@ class _MainPanelState extends State<_MainPanel> {
   Widget build(BuildContext context) {
     return Column(children: [
       _ControlsBar(
-        tabs:                widget.tabs,
-        ivMode:              widget.ivMode,
-        onIvModeChanged:     widget.onIvModeChanged,
-        snaps:               widget.snaps,
-        activeSnap:          widget.activeSnap,
-        baseSnap:            widget.baseSnap,
+        tabs:               widget.tabs,
+        snaps:              widget.snaps,
+        activeSnap:         widget.activeSnap,
         onActiveSnapChanged: widget.onActiveSnapChanged,
-        onBaseSnapChanged:   widget.onBaseSnapChanged,
       ),
       Expanded(child: _ChartArea(
         tabs:       widget.tabs,
         activeSnap: widget.activeSnap,
-        baseSnap:   widget.baseSnap,
-        ivMode:     widget.ivMode,
+        prevSnap:   widget.prevSnap,
         loading:    widget.loading,
       )),
       if (widget.activeSnap != null) ...[
@@ -700,7 +712,7 @@ class _MainPanelState extends State<_MainPanel> {
           height: _interpHeight,
           child: VolSurfaceInterpretation(
             snap:   widget.activeSnap!,
-            ivMode: widget.ivMode,
+            ivMode: 'otm',
           ),
         ),
       ],
@@ -712,24 +724,16 @@ class _MainPanelState extends State<_MainPanel> {
 // Controls bar
 // ═══════════════════════════════════════════════════════════════════════════════
 class _ControlsBar extends StatefulWidget {
-  final TabController           tabs;
-  final String                  ivMode;
-  final ValueChanged<String>    onIvModeChanged;
-  final List<VolSnapshot>       snaps;
-  final VolSnapshot?            activeSnap;
-  final VolSnapshot?            baseSnap;
+  final TabController             tabs;
+  final List<VolSnapshot>         snaps;
+  final VolSnapshot?              activeSnap;
   final ValueChanged<VolSnapshot> onActiveSnapChanged;
-  final ValueChanged<VolSnapshot> onBaseSnapChanged;
 
   const _ControlsBar({
     required this.tabs,
-    required this.ivMode,
-    required this.onIvModeChanged,
     required this.snaps,
     required this.activeSnap,
-    required this.baseSnap,
     required this.onActiveSnapChanged,
-    required this.onBaseSnapChanged,
   });
 
   @override
@@ -763,8 +767,6 @@ class _ControlsBarState extends State<_ControlsBar> {
   }
 
   void _onTabChanged() {
-    // tabs.index jumps to the target immediately when animateTo() is called;
-    // subsequent animation-tick notifications will find no change and skip.
     if (widget.tabs.index != _tabIndex) {
       setState(() => _tabIndex = widget.tabs.index);
     }
@@ -772,8 +774,8 @@ class _ControlsBarState extends State<_ControlsBar> {
 
   @override
   Widget build(BuildContext context) {
-    final selectedTicker =
-        widget.baseSnap?.ticker ?? widget.activeSnap?.ticker;
+    const tabKeys   = ['heatmap', 'smile', 'daily'];
+    const tabLabels = ['Heatmap', 'Smile',  'Daily Δ'];
 
     return Container(
       decoration: const BoxDecoration(
@@ -784,75 +786,27 @@ class _ControlsBarState extends State<_ControlsBar> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Row 1 — view selector + IV mode selector (height never changes)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-            child: Row(
-              children: [
-                _SegmentedControl(
-                  options: const [
-                    ('heatmap', 'Heatmap'),
-                    ('smile', 'Smile'),
-                    ('diff', 'Diff'),
-                  ],
-                  selected: ['heatmap', 'smile', 'diff'][_tabIndex],
-                  onSelected: (v) => widget.tabs
-                      .animateTo(['heatmap', 'smile', 'diff'].indexOf(v)),
-                ),
-                const SizedBox(width: 12),
-                _SegmentedControl(
-                  options: _ivModes,
-                  selected: widget.ivMode,
-                  onSelected: widget.onIvModeChanged,
-                ),
-              ],
+            child: _SegmentedControl(
+              options: List.generate(
+                  tabKeys.length, (i) => (tabKeys[i], tabLabels[i])),
+              selected: tabKeys[_tabIndex],
+              onSelected: (v) => widget.tabs.animateTo(tabKeys.indexOf(v)),
             ),
           ),
-          // Row 2 — snap selectors (always one row, content changes per tab)
           if (widget.snaps.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: Row(
-                children: [
-                  if (_tabIndex == 2) ...[
-                    _SnapSelect(
-                      label: 'Earlier',
-                      snaps: selectedTicker != null
-                          ? widget.snaps
-                              .where((s) => s.ticker == selectedTicker)
-                              .toList()
-                          : widget.snaps,
-                      selected: widget.baseSnap,
-                      onChanged: widget.onBaseSnapChanged,
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child: Icon(Icons.east_rounded,
-                          size: 12, color: Color(0xFF4b5563)),
-                    ),
-                    _SnapSelect(
-                      label: 'Later',
-                      snaps: selectedTicker != null
-                          ? widget.snaps
-                              .where((s) => s.ticker == selectedTicker)
-                              .toList()
-                          : widget.snaps,
-                      selected: widget.activeSnap,
-                      onChanged: widget.onActiveSnapChanged,
-                    ),
-                  ] else
-                    _SnapSelect(
-                      label: 'Date',
-                      snaps: widget.activeSnap != null
-                          ? widget.snaps
-                              .where((s) =>
-                                  s.ticker == widget.activeSnap!.ticker)
-                              .toList()
-                          : widget.snaps,
-                      selected: widget.activeSnap,
-                      onChanged: widget.onActiveSnapChanged,
-                    ),
-                ],
+              child: _SnapSelect(
+                label: 'Date',
+                snaps: widget.activeSnap != null
+                    ? widget.snaps
+                        .where((s) => s.ticker == widget.activeSnap!.ticker)
+                        .toList()
+                    : widget.snaps,
+                selected: widget.activeSnap,
+                onChanged: widget.onActiveSnapChanged,
               ),
             )
           else
@@ -996,15 +950,13 @@ class _SnapSelect extends StatelessWidget {
 class _ChartArea extends StatelessWidget {
   final TabController tabs;
   final VolSnapshot?  activeSnap;
-  final VolSnapshot?  baseSnap;
-  final String        ivMode;
+  final VolSnapshot?  prevSnap;
   final bool          loading;
 
   const _ChartArea({
     required this.tabs,
     required this.activeSnap,
-    required this.baseSnap,
-    required this.ivMode,
+    required this.prevSnap,
     required this.loading,
   });
 
@@ -1019,27 +971,27 @@ class _ChartArea extends StatelessWidget {
       children: [
         activeSnap != null
             ? VolHeatmap(
-                key:       ValueKey('heatmap_${activeSnap!.id}_$ivMode'),
+                key:       ValueKey('heatmap_${activeSnap!.id}'),
                 points:    activeSnap!.points,
                 spotPrice: activeSnap!.spotPrice,
-                ivMode:    ivMode,
+                ivMode:    'otm',
               )
             : _empty('Select a ticker and date to view the surface'),
         activeSnap != null
             ? VolSmileChart(
-                key:       ValueKey('smile_${activeSnap!.id}_$ivMode'),
+                key:       ValueKey('smile_${activeSnap!.id}'),
                 points:    activeSnap!.points,
                 spotPrice: activeSnap!.spotPrice,
-                ivMode:    ivMode,
+                ivMode:    'otm',
               )
             : _empty('Select a ticker and date to view the smile'),
-        (activeSnap != null && baseSnap != null)
-            ? _DiffHeatmap(
-                base:    baseSnap!,
-                compare: activeSnap!,
-                ivMode:  ivMode,
+        activeSnap != null
+            ? VolSkewDeltaGrid(
+                key:      ValueKey('daily_${activeSnap!.id}'),
+                snap:     activeSnap!,
+                prevSnap: prevSnap,
               )
-            : _empty('Select Earlier and Later datasets'),
+            : _empty('Select a ticker and date to view session changes'),
       ],
     );
   }
@@ -1049,113 +1001,28 @@ class _ChartArea extends StatelessWidget {
             style: const TextStyle(
                 color:     Color(0xFF4b5563),
                 fontSize:  13,
-                fontFamily: 'monospace')),
-      );
-}
-
-// ── Diff heatmap — computes IV(compare) − IV(base) ────────────────────────────
-class _DiffHeatmap extends StatelessWidget {
-  final VolSnapshot base;
-  final VolSnapshot compare;
-  final String      ivMode;
-
-  const _DiffHeatmap({
-    required this.base,
-    required this.compare,
-    required this.ivMode,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    Map<(int, double), double?> ivMap(VolSnapshot s) {
-      final m = <(int, double), double?>{};
-      for (final p in s.points) {
-        m[(p.dte, p.strike)] = p.iv(ivMode, s.spotPrice);
-      }
-      return m;
-    }
-
-    final baseMap = ivMap(base);
-    final cmpMap  = ivMap(compare);
-
-    final diffPoints = <VolPoint>[];
-    for (final entry in cmpMap.entries) {
-      final bv = baseMap[entry.key];
-      final cv = entry.value;
-      if (bv != null && cv != null) {
-        diffPoints.add(VolPoint(
-          strike: entry.key.$2,
-          dte:    entry.key.$1,
-          callIv: cv - bv,
-        ));
-      }
-    }
-
-    if (diffPoints.isEmpty) {
-      return const Center(
-          child: Text('No overlapping data between the two datasets',
-              style: TextStyle(
-                  color:     Color(0xFF4b5563),
-                  fontSize:  13,
-                  fontFamily: 'monospace')));
-    }
-
-    return Column(children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-        child: Row(children: [
-          Text('${base.obsDateStr}  →  ${compare.obsDateStr}',
-              style: const TextStyle(
-                  color:     Color(0xFF9ca3af),
-                  fontSize:  11,
-                  fontFamily: 'monospace')),
-          const SizedBox(width: 12),
-          const Text('Red = IV rose  ·  Blue = IV fell',
-              style: TextStyle(
-                  color:      Color(0xFF6b7280),
-                  fontSize:   10,
-                  fontStyle:  FontStyle.italic,
-                  fontFamily: 'monospace')),
-        ]),
-      ),
-      Expanded(
-        child: VolHeatmap(
-          points:       diffPoints,
-          spotPrice:    compare.spotPrice,
-          ivMode:       'call',
-          zeroCentered: true,
-          legendTitle:  'ΔIV',
-        ),
-      ),
-    ]);
-  }
+                fontFamily: 'monospace')));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Narrow layout — full-screen chart with FAB to open dataset picker
+// Narrow layout
 // ═══════════════════════════════════════════════════════════════════════════════
 class _NarrowLayout extends StatefulWidget {
-  final List<VolSnapshot>          snaps;
-  final VolSnapshot?               activeSnap;
-  final ValueChanged<VolSnapshot>  onSelectSnap;
-  final ValueChanged<VolSnapshot>  onDeleteSnap;
-  final TabController              tabs;
-  final String                     ivMode;
-  final ValueChanged<String>       onIvModeChanged;
-  final VolSnapshot?               baseSnap;
-  final ValueChanged<VolSnapshot>  onBaseSnapChanged;
-  final bool                       loading;
+  final List<VolSnapshot>         snaps;
+  final VolSnapshot?              activeSnap;
+  final VolSnapshot?              prevSnap;
+  final ValueChanged<VolSnapshot> onSelectSnap;
+  final ValueChanged<VolSnapshot> onDeleteSnap;
+  final TabController             tabs;
+  final bool                      loading;
 
   const _NarrowLayout({
     required this.snaps,
     required this.activeSnap,
+    required this.prevSnap,
     required this.onSelectSnap,
     required this.onDeleteSnap,
     required this.tabs,
-    required this.ivMode,
-    required this.onIvModeChanged,
-    required this.baseSnap,
-    required this.onBaseSnapChanged,
     required this.loading,
   });
 
@@ -1173,19 +1040,14 @@ class _NarrowLayoutState extends State<_NarrowLayout> {
     return Column(children: [
       _ControlsBar(
         tabs:               widget.tabs,
-        ivMode:             widget.ivMode,
-        onIvModeChanged:    widget.onIvModeChanged,
         snaps:              widget.snaps,
         activeSnap:         widget.activeSnap,
-        baseSnap:           widget.baseSnap,
         onActiveSnapChanged: widget.onSelectSnap,
-        onBaseSnapChanged:   widget.onBaseSnapChanged,
       ),
       Expanded(child: _ChartArea(
         tabs:       widget.tabs,
         activeSnap: widget.activeSnap,
-        baseSnap:   widget.baseSnap,
-        ivMode:     widget.ivMode,
+        prevSnap:   widget.prevSnap,
         loading:    widget.loading,
       )),
       if (widget.activeSnap != null) ...[
@@ -1213,7 +1075,7 @@ class _NarrowLayoutState extends State<_NarrowLayout> {
           height: _interpHeight,
           child: VolSurfaceInterpretation(
             snap:   widget.activeSnap!,
-            ivMode: widget.ivMode,
+            ivMode: 'otm',
           ),
         ),
       ],
