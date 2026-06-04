@@ -395,7 +395,7 @@ class _RvChartState extends State<_RvChart> {
     ].where((s) => s != FlSpot.nullSpot).map((s) => s.y).toList();
     if (allVals.isEmpty) return const _EmptyState();
     final minY = (allVals.reduce((a, b) => a < b ? a : b) * 0.9).clamp(0.0, double.infinity);
-    final maxY = (allVals.reduce((a, b) => a > b ? a : b) * 1.25).ceilToDouble();
+    final maxY = (allVals.reduce((a, b) => a > b ? a : b) * 1.08).ceilToDouble();
 
     LineChartBarData line(
       List<FlSpot> spots,

@@ -11,16 +11,13 @@
 //   • _StatusBadge       — OPEN/CLOSED/EXPIRED pill; color from AppTheme
 //   • _DetailRow         — label ↔ value row used in the details grid card
 //   • _GreekBox          — Delta / IV Rank box; shown only if values were entered
-//   • _SecFilingsSection (ConsumerWidget) — recent SEC filings for the trade's
-//                          ticker; powered by secFilingsForTickerProvider(ticker)
-//   • _SecFilingRow      — tappable row per filing; opens EDGAR link via url_launcher
+//   • _SecFilingsSection — SEC EDGAR link card for the trade's ticker
 //
 // Route: '/trades/:id' (child of /trades in router.dart)
 //        — reached by tapping a _TradeCard or _OpenTradeRow
 //
 // Providers consumed:
 //   • quoteProvider(trade.ticker)              — live stock price (_LiveQuoteCard)
-//   • secFilingsForTickerProvider(trade.ticker)— SEC filings feed (_SecFilingsSection)
 //   • tradesNotifierProvider                   — close / delete mutations
 //
 // AppBar actions:
@@ -34,8 +31,6 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme.dart';
 import '../../../services/schwab/schwab_providers.dart';
-import '../../../services/sec/sec_models.dart';
-import '../../../services/sec/sec_providers.dart';
 import '../../../services/iv/iv_providers.dart';
 import '../../../features/strategy_tracker/providers/strategy_tracker_provider.dart';
 import '../models/trade.dart';
@@ -684,128 +679,45 @@ class _GreekBox extends StatelessWidget {
 
 // ----------------------------------------------------------------
 // SEC filings mini-feed for this ticker
-// Watches secFilingsForTickerProvider(ticker) → SecService.getFilingsForTicker()
-// Renders up to 5 _SecFilingRow items with EDGAR link launching.
-// ----------------------------------------------------------------
-class _SecFilingsSection extends ConsumerWidget {
+class _SecFilingsSection extends StatelessWidget {
   final String ticker;
   const _SecFilingsSection({required this.ticker});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final filingsAsync = ref.watch(secFilingsForTickerProvider(ticker));
-
-    return filingsAsync.when(
-      loading: () => const Card(
+  Widget build(BuildContext context) {
+    final uri = Uri.parse(
+      'https://www.sec.gov/cgi-bin/browse-edgar'
+      '?action=getcompany&CIK=$ticker&type=&dateb=&owner=include&count=40',
+    );
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () async {
+          if (await canLaunchUrl(uri)) {
+            await launchUrl(uri, mode: LaunchMode.externalApplication);
+          }
+        },
         child: Padding(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-              SizedBox(width: 12),
-              Text('Loading SEC filings…',
-                  style: TextStyle(color: AppTheme.neutralColor)),
+              const Icon(Icons.article_outlined,
+                  size: 16, color: AppTheme.neutralColor),
+              const SizedBox(width: 6),
+              Text(
+                'SEC Filings — $ticker',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+              const Spacer(),
+              const Text('View on EDGAR',
+                  style: TextStyle(
+                      color: AppTheme.neutralColor, fontSize: 12)),
+              const SizedBox(width: 4),
+              const Icon(Icons.open_in_new,
+                  size: 14, color: AppTheme.neutralColor),
             ],
           ),
-        ),
-      ),
-      error: (e, _) => const SizedBox.shrink(),
-      data: (filings) {
-        if (filings.isEmpty) return const SizedBox.shrink();
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.article_outlined,
-                        size: 16, color: AppTheme.neutralColor),
-                    const SizedBox(width: 6),
-                    Text(
-                      'SEC Filings — $ticker',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 15),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                ...filings.take(5).map((f) => _SecFilingRow(filing: f)),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// _SecFilingRow: tappable row showing form-type badge, label, and date.
-// Color-coded by SecFiling.category: earnings=blue, event=yellow,
-// insider=green, holder=purple. Tap opens EDGAR HTML link.
-class _SecFilingRow extends StatelessWidget {
-  final SecFiling filing;
-  const _SecFilingRow({required this.filing});
-
-  Color get _typeColor => switch (filing.category) {
-        'earnings' => const Color(0xFF7EC8E3), // sky-blue
-        'event'    => const Color(0xFFFFD166), // golden-yellow
-        'insider'  => AppTheme.profitColor,    // teal-green
-        'holder'   => const Color(0xFFBBABFF), // bright lavender
-        _ => AppTheme.neutralColor,
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: () async {
-        final uri = Uri.parse(filing.htmlUrl);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                color: _typeColor.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: Text(
-                filing.formType,
-                style: TextStyle(
-                    color: _typeColor,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                filing.formLabel,
-                style: const TextStyle(fontSize: 13),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              DateFormat('MMM d, yy').format(filing.filedAt),
-              style: const TextStyle(
-                  color: AppTheme.neutralColor, fontSize: 11),
-            ),
-            const SizedBox(width: 4),
-            const Icon(Icons.chevron_right,
-                size: 16, color: AppTheme.neutralColor),
-          ],
         ),
       ),
     );
