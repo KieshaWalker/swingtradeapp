@@ -51,7 +51,8 @@ class VolSkewDeltaGrid extends StatelessWidget {
         dte: r.label, strike: r.todayAtmStrike,
         prevIv: r.prevAtm, todayIv: r.todayAtm, deltaIv: r.dAtm,
         callOI: r.atmCallOI, callVol: r.atmCallVol,
-        putOI:  r.atmPutOI,  putVol:  r.atmPutVol)).toList()));
+        putOI:  r.atmPutOI,  putVol:  r.atmPutVol,
+        prevCallOI: r.prevAtmCallOI, prevPutOI: r.prevAtmPutOI)).toList()));
 
     Widget putSection = _section('Put Wing  ·  −10% from spot', _SmileTable(
       prevDate: pd, todayDate: td, side: _TableSide.put,
@@ -151,10 +152,12 @@ class VolSkewDeltaGrid extends StatelessWidget {
       if ([tAtm, pAtm, tPut, pPut, tCall, pCall].any((v) => v == null)) continue;
 
       // Nearest actual point within this specific DTE for strike / OI / volume
-      final dtePoints = snap.points.where((p) => p.dte == td).toList();
-      final tAtmPt  = _nearestPoint(dtePoints, snap.spotPrice,   0.0);
-      final tPutPt  = _nearestPoint(dtePoints, snap.spotPrice, -10.0);
-      final tCallPt = _nearestPoint(dtePoints, snap.spotPrice,  10.0);
+      final dtePoints     = snap.points.where((p) => p.dte == td).toList();
+      final prevDtePoints = prevSnap!.points.where((p) => p.dte == pd).toList();
+      final tAtmPt  = _nearestPoint(dtePoints, snap.spotPrice,         0.0);
+      final tPutPt  = _nearestPoint(dtePoints, snap.spotPrice,       -10.0);
+      final tCallPt = _nearestPoint(dtePoints, snap.spotPrice,        10.0);
+      final pAtmPt  = _nearestPoint(prevDtePoints, prevSnap!.spotPrice, 0.0);
 
       rows.add(_SkewRow(
         label:          _dteLabel(td),
@@ -164,11 +167,14 @@ class VolSkewDeltaGrid extends StatelessWidget {
         todayAtmStrike:  tAtmPt?.strike,
         todayPutStrike:  tPutPt?.strike,
         todayCallStrike: tCallPt?.strike,
-        // ATM: both sides
+        // ATM: both sides (today)
         atmCallOI:  _toInt(tAtmPt?.callOI),
         atmPutOI:   _toInt(tAtmPt?.putOI),
         atmCallVol: _toInt(tAtmPt?.callVolume),
         atmPutVol:  _toInt(tAtmPt?.putVolume),
+        // ATM: yesterday OI
+        prevAtmCallOI: _toInt(pAtmPt?.callOI),
+        prevAtmPutOI:  _toInt(pAtmPt?.putOI),
         // Put wing: put side
         putOI:  _toInt(tPutPt?.putOI),
         putVol: _toInt(tPutPt?.putVolume),
@@ -283,8 +289,10 @@ class _SkewRow {
   final double  todayPut,  prevPut;
   final double  todayCall, prevCall;
   final double? todayAtmStrike, todayPutStrike, todayCallStrike;
-  // ATM: both sides
+  // ATM: both sides (today)
   final int? atmCallOI, atmPutOI, atmCallVol, atmPutVol;
+  // ATM: yesterday OI
+  final int? prevAtmCallOI, prevAtmPutOI;
   // Put wing: put side only
   final int? putOI, putVol;
   // Call wing: call side only
@@ -297,6 +305,7 @@ class _SkewRow {
     required this.todayCall, required this.prevCall,
     this.todayAtmStrike, this.todayPutStrike, this.todayCallStrike,
     this.atmCallOI, this.atmPutOI, this.atmCallVol, this.atmPutVol,
+    this.prevAtmCallOI, this.prevAtmPutOI,
     this.putOI,  this.putVol,
     this.callOI, this.callVol,
   });
@@ -315,6 +324,8 @@ class _SmileTableRow {
   final double  prevIv, todayIv, deltaIv;
   // Populated depending on side: ATM gets all four, wings get one side
   final int? callOI, callVol, putOI, putVol;
+  // ATM only: yesterday's OI
+  final int? prevCallOI, prevPutOI;
 
   const _SmileTableRow({
     required this.dte,
@@ -324,6 +335,7 @@ class _SmileTableRow {
     required this.deltaIv,
     this.callOI, this.callVol,
     this.putOI,  this.putVol,
+    this.prevCallOI, this.prevPutOI,
   });
 }
 
@@ -444,6 +456,7 @@ class _SmileTable extends StatelessWidget {
   static const double _wDelta  = 78;
   static const double _wOi     = 80;
   static const double _wVol    = 74;
+  static const double _wPrevOi = 80;
 
   const _SmileTable({
     required this.prevDate, required this.todayDate,
@@ -484,10 +497,12 @@ class _SmileTable extends StatelessWidget {
       _cell(todayDate,  _wIv,     TextAlign.right, _kMonoHdr),
       _cell('Δ IV',     _wDelta,  TextAlign.right, _kMonoHdr),
       if (side == _TableSide.atm || side == _TableSide.call) ...[
+        if (side == _TableSide.atm) _cell('PREV C.OI', _wPrevOi, TextAlign.right, _kMonoHdr),
         _cell('CALL OI',  _wOi,  TextAlign.right, _kMonoHdr),
         _cell('CALL VOL', _wVol, TextAlign.right, _kMonoHdr),
       ],
       if (side == _TableSide.atm || side == _TableSide.put) ...[
+        if (side == _TableSide.atm) _cell('PREV P.OI', _wPrevOi, TextAlign.right, _kMonoHdr),
         _cell('PUT OI',   _wOi,  TextAlign.right, _kMonoHdr),
         _cell('PUT VOL',  _wVol, TextAlign.right, _kMonoHdr),
       ],
@@ -508,10 +523,14 @@ class _SmileTable extends StatelessWidget {
             _kMono.copyWith(fontWeight: FontWeight.w600)),
         _deltaCell(r.deltaIv, hl),
         if (side == _TableSide.atm || side == _TableSide.call) ...[
+          if (side == _TableSide.atm)
+            _cell(r.prevCallOI != null ? _fmtInt(r.prevCallOI!) : '—', _wPrevOi, TextAlign.right, _kMono),
           _cell(r.callOI  != null ? _fmtInt(r.callOI!)  : '—', _wOi,  TextAlign.right, _kMono),
           _cell(r.callVol != null ? _fmtInt(r.callVol!) : '—', _wVol, TextAlign.right, _kMono),
         ],
         if (side == _TableSide.atm || side == _TableSide.put) ...[
+          if (side == _TableSide.atm)
+            _cell(r.prevPutOI != null ? _fmtInt(r.prevPutOI!) : '—', _wPrevOi, TextAlign.right, _kMono),
           _cell(r.putOI  != null ? _fmtInt(r.putOI!)  : '—', _wOi,  TextAlign.right, _kMono),
           _cell(r.putVol != null ? _fmtInt(r.putVol!) : '—', _wVol, TextAlign.right, _kMono),
         ],
