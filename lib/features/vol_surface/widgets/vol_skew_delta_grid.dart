@@ -32,10 +32,8 @@ class VolSkewDeltaGrid extends StatelessWidget {
     }
     if (prevSnap!.points.isEmpty) {
       return const Center(
-        child: SizedBox(
-          width: 20, height: 20,
-          child: CircularProgressIndicator(strokeWidth: 1.5),
-        ),
+        child: SizedBox(width: 20, height: 20,
+            child: CircularProgressIndicator(strokeWidth: 1.5)),
       );
     }
 
@@ -44,81 +42,86 @@ class VolSkewDeltaGrid extends StatelessWidget {
       return _empty('Insufficient data to compute smile comparison');
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _SpotHeader(
-            prevDate:  prevSnap!.obsDateStr,
-            todayDate: snap.obsDateStr,
-            prevSpot:  prevSnap!.spotPrice,
-            todaySpot: snap.spotPrice,
-          ),
-          const SizedBox(height: 20),
+    final pd = prevSnap!.obsDateStr;
+    final td = snap.obsDateStr;
 
-          _sectionLabel('ATM Implied Volatility'),
-          const SizedBox(height: 6),
-          _SmileTable(
-            prevDate:  prevSnap!.obsDateStr,
-            todayDate: snap.obsDateStr,
-            rows: rows.map((r) => _SmileTableRow(
-              dte:        r.label,
-              strike:     r.todayAtmStrike,
-              prevIv:     r.prevAtm,
-              todayIv:    r.todayAtm,
-              deltaIv:    r.dAtm,
-              oi:         r.todayAtmOI,
-              volume:     r.todayAtmVol,
-            )).toList(),
-          ),
-          const SizedBox(height: 20),
+    Widget atmSection = _section('ATM Implied Volatility', _SmileTable(
+      prevDate: pd, todayDate: td, side: _TableSide.atm,
+      rows: rows.map((r) => _SmileTableRow(
+        dte: r.label, strike: r.todayAtmStrike,
+        prevIv: r.prevAtm, todayIv: r.todayAtm, deltaIv: r.dAtm,
+        callOI: r.atmCallOI, callVol: r.atmCallVol,
+        putOI:  r.atmPutOI,  putVol:  r.atmPutVol)).toList()));
 
-          _sectionLabel('Put Wing  ·  OTM put nearest −10% from spot'),
-          const SizedBox(height: 6),
-          _SmileTable(
-            prevDate:  prevSnap!.obsDateStr,
-            todayDate: snap.obsDateStr,
-            rows: rows.map((r) => _SmileTableRow(
-              dte:        r.label,
-              strike:     r.todayPutStrike,
-              prevIv:     r.prevPut,
-              todayIv:    r.todayPut,
-              deltaIv:    r.dPut,
-              oi:         r.todayPutOI,
-              volume:     r.todayPutVol,
-            )).toList(),
-          ),
-          const SizedBox(height: 20),
+    Widget putSection = _section('Put Wing  ·  −10% from spot', _SmileTable(
+      prevDate: pd, todayDate: td, side: _TableSide.put,
+      rows: rows.map((r) => _SmileTableRow(
+        dte: r.label, strike: r.todayPutStrike,
+        prevIv: r.prevPut, todayIv: r.todayPut, deltaIv: r.dPut,
+        putOI: r.putOI, putVol: r.putVol)).toList()));
 
-          _sectionLabel('Call Wing  ·  OTM call nearest +10% from spot'),
-          const SizedBox(height: 6),
-          _SmileTable(
-            prevDate:  prevSnap!.obsDateStr,
-            todayDate: snap.obsDateStr,
-            rows: rows.map((r) => _SmileTableRow(
-              dte:        r.label,
-              strike:     r.todayCallStrike,
-              prevIv:     r.prevCall,
-              todayIv:    r.todayCall,
-              deltaIv:    r.dCall,
-              oi:         r.todayCallOI,
-              volume:     r.todayCallVol,
-            )).toList(),
-          ),
-          const SizedBox(height: 20),
+    Widget callSection = _section('Call Wing  ·  +10% from spot', _SmileTable(
+      prevDate: pd, todayDate: td, side: _TableSide.call,
+      rows: rows.map((r) => _SmileTableRow(
+        dte: r.label, strike: r.todayCallStrike,
+        prevIv: r.prevCall, todayIv: r.todayCall, deltaIv: r.dCall,
+        callOI: r.callOI, callVol: r.callVol)).toList()));
 
-          _sectionLabel('Put Skew Slope  ·  (put −10% IV) − (ATM IV)'),
-          const SizedBox(height: 6),
-          _SlopeTable(
-            prevDate:  prevSnap!.obsDateStr,
-            todayDate: snap.obsDateStr,
-            rows: rows,
+    Widget slopeSection = _section(
+      'Put Skew Slope  ·  (put −10% IV) − (ATM IV)',
+      _SlopeTable(prevDate: pd, todayDate: td, rows: rows));
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useGrid = constraints.maxWidth >= 860;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _SpotHeader(
+                prevDate: pd, todayDate: td,
+                prevSpot: prevSnap!.spotPrice, todaySpot: snap.spotPrice,
+              ),
+              const SizedBox(height: 16),
+              if (useGrid) ...[
+                IntrinsicHeight(child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: atmSection),
+                    const SizedBox(width: 12),
+                    Expanded(child: putSection),
+                  ],
+                )),
+                const SizedBox(height: 12),
+                IntrinsicHeight(child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: callSection),
+                    const SizedBox(width: 12),
+                    Expanded(child: slopeSection),
+                  ],
+                )),
+              ] else ...[
+                atmSection,   const SizedBox(height: 16),
+                putSection,   const SizedBox(height: 16),
+                callSection,  const SizedBox(height: 16),
+                slopeSection,
+              ],
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
+
+  static Widget _section(String label, Widget table) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _sectionLabel(label),
+      table,
+    ],
+  );
 
   // ── Computation ────────────────────────────────────────────────────────────
 
@@ -147,25 +150,31 @@ class VolSkewDeltaGrid extends StatelessWidget {
 
       if ([tAtm, pAtm, tPut, pPut, tCall, pCall].any((v) => v == null)) continue;
 
-      // Nearest actual points for strike / OI / volume
-      final tAtmPt  = _nearestPoint(snap.points,      snap.spotPrice,   0.0);
-      final tPutPt  = _nearestPoint(snap.points,      snap.spotPrice, -10.0);
-      final tCallPt = _nearestPoint(snap.points,      snap.spotPrice, 10.0);
+      // Nearest actual point within this specific DTE for strike / OI / volume
+      final dtePoints = snap.points.where((p) => p.dte == td).toList();
+      final tAtmPt  = _nearestPoint(dtePoints, snap.spotPrice,   0.0);
+      final tPutPt  = _nearestPoint(dtePoints, snap.spotPrice, -10.0);
+      final tCallPt = _nearestPoint(dtePoints, snap.spotPrice,  10.0);
 
       rows.add(_SkewRow(
         label:          _dteLabel(td),
-        todayAtm:       tAtm!,    prevAtm:  pAtm!,
-        todayPut:       tPut!,    prevPut:  pPut!,
-        todayCall:      tCall!,   prevCall: pCall!,
+        todayAtm:       tAtm!,  prevAtm:  pAtm!,
+        todayPut:       tPut!,  prevPut:  pPut!,
+        todayCall:      tCall!, prevCall: pCall!,
         todayAtmStrike:  tAtmPt?.strike,
         todayPutStrike:  tPutPt?.strike,
         todayCallStrike: tCallPt?.strike,
-        todayAtmOI:  _totalOI(tAtmPt),
-        todayAtmVol: _totalVol(tAtmPt),
-        todayPutOI:  _totalOI(tPutPt),
-        todayPutVol: _totalVol(tPutPt),
-        todayCallOI:  _totalOI(tCallPt),
-        todayCallVol: _totalVol(tCallPt),
+        // ATM: both sides
+        atmCallOI:  _toInt(tAtmPt?.callOI),
+        atmPutOI:   _toInt(tAtmPt?.putOI),
+        atmCallVol: _toInt(tAtmPt?.callVolume),
+        atmPutVol:  _toInt(tAtmPt?.putVolume),
+        // Put wing: put side
+        putOI:  _toInt(tPutPt?.putOI),
+        putVol: _toInt(tPutPt?.putVolume),
+        // Call wing: call side
+        callOI:  _toInt(tCallPt?.callOI),
+        callVol: _toInt(tCallPt?.callVolume),
       ));
     }
     return rows;
@@ -226,19 +235,7 @@ class VolSkewDeltaGrid extends StatelessWidget {
     return best;
   }
 
-  static int? _totalOI(VolPoint? p) {
-    if (p == null) return null;
-    final c = p.callOI ?? 0;
-    final x = p.putOI  ?? 0;
-    return (c + x) > 0 ? c + x : null;
-  }
-
-  static int? _totalVol(VolPoint? p) {
-    if (p == null) return null;
-    final c = p.callVolume ?? 0;
-    final x = p.putVolume  ?? 0;
-    return (c + x) > 0 ? c + x : null;
-  }
+  static int? _toInt(int? v) => (v != null && v > 0) ? v : null;
 
   static int? _matchDte(int dte, List<int> others) {
     final c = others.where((d) => (d - dte).abs() <= 3).toList();
@@ -262,17 +259,23 @@ class VolSkewDeltaGrid extends StatelessWidget {
                 fontSize: 12,
                 fontFamily: 'monospace')));
 
-  static Widget _sectionLabel(String text) => Text(
-        text.toUpperCase(),
-        style: const TextStyle(
-            color:        Color(0xFF6b7280),
-            fontSize:     9,
-            fontWeight:   FontWeight.w700,
-            letterSpacing: 1.0,
-            fontFamily:   'monospace'));
+  static Widget _sectionLabel(String text) => Container(
+        width: double.infinity,
+        color: Colors.black,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        child: Text(
+          text.toUpperCase(),
+          style: const TextStyle(
+              color:        Color(0xFFe5e7eb),
+              fontSize:     11,
+              fontWeight:   FontWeight.w700,
+              letterSpacing: 0.8,
+              fontFamily:   'monospace')));
 }
 
 // ── Data model ─────────────────────────────────────────────────────────────────
+
+enum _TableSide { atm, put, call }
 
 class _SkewRow {
   final String  label;
@@ -280,9 +283,12 @@ class _SkewRow {
   final double  todayPut,  prevPut;
   final double  todayCall, prevCall;
   final double? todayAtmStrike, todayPutStrike, todayCallStrike;
-  final int?    todayAtmOI, todayAtmVol;
-  final int?    todayPutOI, todayPutVol;
-  final int?    todayCallOI, todayCallVol;
+  // ATM: both sides
+  final int? atmCallOI, atmPutOI, atmCallVol, atmPutVol;
+  // Put wing: put side only
+  final int? putOI, putVol;
+  // Call wing: call side only
+  final int? callOI, callVol;
 
   const _SkewRow({
     required this.label,
@@ -290,16 +296,16 @@ class _SkewRow {
     required this.todayPut,  required this.prevPut,
     required this.todayCall, required this.prevCall,
     this.todayAtmStrike, this.todayPutStrike, this.todayCallStrike,
-    this.todayAtmOI,  this.todayAtmVol,
-    this.todayPutOI,  this.todayPutVol,
-    this.todayCallOI, this.todayCallVol,
+    this.atmCallOI, this.atmPutOI, this.atmCallVol, this.atmPutVol,
+    this.putOI,  this.putVol,
+    this.callOI, this.callVol,
   });
 
-  double get dAtm   => todayAtm  - prevAtm;
-  double get dPut   => todayPut  - prevPut;
-  double get dCall  => todayCall - prevCall;
-  double get todaySlope => todayPut - todayAtm;
-  double get prevSlope  => prevPut  - prevAtm;
+  double get dAtm       => todayAtm  - prevAtm;
+  double get dPut       => todayPut  - prevPut;
+  double get dCall      => todayCall - prevCall;
+  double get todaySlope => todayPut  - todayAtm;
+  double get prevSlope  => prevPut   - prevAtm;
   double get dSlope     => todaySlope - prevSlope;
 }
 
@@ -307,7 +313,8 @@ class _SmileTableRow {
   final String  dte;
   final double? strike;
   final double  prevIv, todayIv, deltaIv;
-  final int?    oi, volume;
+  // Populated depending on side: ATM gets all four, wings get one side
+  final int? callOI, callVol, putOI, putVol;
 
   const _SmileTableRow({
     required this.dte,
@@ -315,24 +322,24 @@ class _SmileTableRow {
     required this.prevIv,
     required this.todayIv,
     required this.deltaIv,
-    this.oi,
-    this.volume,
+    this.callOI, this.callVol,
+    this.putOI,  this.putVol,
   });
 }
 
 // ── Shared constants ───────────────────────────────────────────────────────────
 
-const _kBorder  = Color(0xFF1f2937);
+const _kBorder   = Color(0xFF1f2937);
 const _kHeaderBg = Color(0xFF0d1117);
 const _kAltBg    = Color(0x08ffffff);
 const _kText     = Color(0xFFd1d5db);
 const _kDim      = Color(0xFF6b7280);
 
 const TextStyle _kMono = TextStyle(
-    fontFamily: 'monospace', fontSize: 11, color: _kText);
+    fontFamily: 'monospace', fontSize: 13, color: _kText);
 const TextStyle _kMonoHdr = TextStyle(
-    fontFamily: 'monospace', fontSize: 9,  color: _kDim,
-    fontWeight: FontWeight.w700, letterSpacing: 0.5);
+    fontFamily: 'monospace', fontSize: 11, color: _kDim,
+    fontWeight: FontWeight.w700, letterSpacing: 0.4);
 
 String _fmtIv(double v, {bool signed = false}) {
   final pct = (v * 100).toStringAsFixed(2);
@@ -346,13 +353,12 @@ String _fmtInt(int v) {
   return v.toString();
 }
 
-// Returns highlight color for the Δ cell background; null = no highlight.
 Color? _deltaHighlight(double delta) {
-  final d = delta * 100; // in pp
-  if (d >  2.0) return const Color(0x30f97316); // orange
-  if (d >  0.5) return const Color(0x25fbbf24); // amber
-  if (d < -2.0) return const Color(0x3060a5fa); // blue
-  if (d < -0.5) return const Color(0x2093c5fd); // light blue
+  final d = delta * 100;
+  if (d >  2.0) return const Color(0x30f97316);
+  if (d >  0.5) return const Color(0x25fbbf24);
+  if (d < -2.0) return const Color(0x3060a5fa);
+  if (d < -0.5) return const Color(0x2093c5fd);
   return null;
 }
 
@@ -366,7 +372,7 @@ Color _deltaTextColor(double delta) {
 // ── Spot header ────────────────────────────────────────────────────────────────
 
 class _SpotHeader extends StatelessWidget {
-  final String prevDate, todayDate;
+  final String  prevDate, todayDate;
   final double? prevSpot, todaySpot;
 
   const _SpotHeader({
@@ -379,8 +385,9 @@ class _SpotHeader extends StatelessWidget {
     if (prevSpot == null || todaySpot == null) return const SizedBox.shrink();
     final delta = todaySpot! - prevSpot!;
     final pct   = delta / prevSpot! * 100;
+    final color = delta >= 0 ? const Color(0xFF4ade80) : const Color(0xFFf87171);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: _kHeaderBg,
         border: Border.all(color: _kBorder),
@@ -389,25 +396,20 @@ class _SpotHeader extends StatelessWidget {
       child: Row(children: [
         _spotCol(prevDate,  prevSpot!),
         const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 12),
-          child: Icon(Icons.east_rounded, size: 13, color: _kDim),
+          padding: EdgeInsets.symmetric(horizontal: 14),
+          child: Icon(Icons.east_rounded, size: 14, color: _kDim),
         ),
         _spotCol(todayDate, todaySpot!),
-        const SizedBox(width: 16),
+        const SizedBox(width: 20),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(
             '${delta >= 0 ? '+' : ''}\$${delta.toStringAsFixed(2)}',
-            style: TextStyle(
-              fontFamily: 'monospace', fontSize: 13, fontWeight: FontWeight.w700,
-              color: delta >= 0 ? const Color(0xFF4ade80) : const Color(0xFFf87171),
-            ),
+            style: TextStyle(fontFamily: 'monospace', fontSize: 15,
+                fontWeight: FontWeight.w700, color: color),
           ),
           Text(
             '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%',
-            style: TextStyle(
-              fontFamily: 'monospace', fontSize: 10,
-              color: delta >= 0 ? const Color(0xFF4ade80) : const Color(0xFFf87171),
-            ),
+            style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: color),
           ),
         ]),
       ]),
@@ -417,31 +419,35 @@ class _SpotHeader extends StatelessWidget {
   Widget _spotCol(String date, double price) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(date,  style: const TextStyle(fontFamily: 'monospace', fontSize: 9,  color: _kDim)),
+      Text(date,
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: _kDim)),
       Text('\$${price.toStringAsFixed(2)}',
-          style: const TextStyle(fontFamily: 'monospace', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFf9fafb))),
+          style: const TextStyle(fontFamily: 'monospace', fontSize: 15,
+              fontWeight: FontWeight.w700, color: Color(0xFFf9fafb))),
     ],
   );
 }
 
-// ── Smile section table (ATM / Put / Call) ─────────────────────────────────────
-// Columns: DTE · Strike · Prev IV · Today IV · Δ IV · OI · Volume
+// ── Smile section table ────────────────────────────────────────────────────────
+// ATM  side: DTE · Strike · Prev · Today · Δ · Call OI · Call Vol · Put OI · Put Vol
+// Put  side: DTE · Strike · Prev · Today · Δ · Put OI  · Put Vol
+// Call side: DTE · Strike · Prev · Today · Δ · Call OI · Call Vol
 
 class _SmileTable extends StatelessWidget {
-  final String prevDate, todayDate;
+  final String         prevDate, todayDate;
+  final _TableSide     side;
   final List<_SmileTableRow> rows;
 
-  // Column widths
-  static const double _wDte    = 110;
-  static const double _wStrike = 64;
-  static const double _wIv     = 72;
-  static const double _wDelta  = 68;
-  static const double _wOi     = 72;
-  static const double _wVol    = 68;
+  static const double _wDte    = 125;
+  static const double _wStrike = 72;
+  static const double _wIv     = 84;
+  static const double _wDelta  = 78;
+  static const double _wOi     = 80;
+  static const double _wVol    = 74;
 
   const _SmileTable({
     required this.prevDate, required this.todayDate,
-    required this.rows,
+    required this.side,     required this.rows,
   });
 
   @override
@@ -470,15 +476,21 @@ class _SmileTable extends StatelessWidget {
 
   Widget _header() => Container(
     color: _kHeaderBg,
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
     child: Row(children: [
-      _cell('DTE',         _wDte,    TextAlign.left,  _kMonoHdr),
-      _cell('STRIKE',      _wStrike, TextAlign.right, _kMonoHdr),
-      _cell(prevDate,      _wIv,     TextAlign.right, _kMonoHdr),
-      _cell(todayDate,     _wIv,     TextAlign.right, _kMonoHdr),
-      _cell('Δ IV',        _wDelta,  TextAlign.right, _kMonoHdr),
-      _cell('OI',          _wOi,     TextAlign.right, _kMonoHdr),
-      _cell('VOLUME',      _wVol,    TextAlign.right, _kMonoHdr),
+      _cell('DTE',      _wDte,    TextAlign.left,  _kMonoHdr),
+      _cell('STRIKE',   _wStrike, TextAlign.right, _kMonoHdr),
+      _cell(prevDate,   _wIv,     TextAlign.right, _kMonoHdr),
+      _cell(todayDate,  _wIv,     TextAlign.right, _kMonoHdr),
+      _cell('Δ IV',     _wDelta,  TextAlign.right, _kMonoHdr),
+      if (side == _TableSide.atm || side == _TableSide.call) ...[
+        _cell('CALL OI',  _wOi,  TextAlign.right, _kMonoHdr),
+        _cell('CALL VOL', _wVol, TextAlign.right, _kMonoHdr),
+      ],
+      if (side == _TableSide.atm || side == _TableSide.put) ...[
+        _cell('PUT OI',   _wOi,  TextAlign.right, _kMonoHdr),
+        _cell('PUT VOL',  _wVol, TextAlign.right, _kMonoHdr),
+      ],
     ]),
   );
 
@@ -486,56 +498,57 @@ class _SmileTable extends StatelessWidget {
     final hl = _deltaHighlight(r.deltaIv);
     return Container(
       color: alt ? _kAltBg : Colors.transparent,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       child: Row(children: [
         _cell(r.dte, _wDte, TextAlign.left, _kMono),
-        _cell(
-          r.strike != null ? '\$${r.strike!.toStringAsFixed(1)}' : '—',
-          _wStrike, TextAlign.right, _kMono,
-        ),
-        _cell(_fmtIv(r.prevIv),  _wIv, TextAlign.right, _kMono),
+        _cell(r.strike != null ? '\$${r.strike!.toStringAsFixed(1)}' : '—',
+            _wStrike, TextAlign.right, _kMono),
+        _cell(_fmtIv(r.prevIv), _wIv, TextAlign.right, _kMono),
         _cell(_fmtIv(r.todayIv), _wIv, TextAlign.right,
             _kMono.copyWith(fontWeight: FontWeight.w600)),
-        // Δ cell with optional background highlight
-        Container(
-          width: _wDelta,
-          alignment: Alignment.centerRight,
-          decoration: hl != null
-              ? BoxDecoration(
-                  color: hl,
-                  borderRadius: BorderRadius.circular(3),
-                )
-              : null,
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-          child: Text(
-            _fmtIv(r.deltaIv, signed: true),
-            style: _kMono.copyWith(
-              color:      _deltaTextColor(r.deltaIv),
-              fontWeight: FontWeight.w700,
-            ),
-            textAlign: TextAlign.right,
-          ),
-        ),
-        _cell(r.oi     != null ? _fmtInt(r.oi!)     : '—', _wOi,  TextAlign.right, _kMono),
-        _cell(r.volume != null ? _fmtInt(r.volume!)  : '—', _wVol, TextAlign.right, _kMono),
+        _deltaCell(r.deltaIv, hl),
+        if (side == _TableSide.atm || side == _TableSide.call) ...[
+          _cell(r.callOI  != null ? _fmtInt(r.callOI!)  : '—', _wOi,  TextAlign.right, _kMono),
+          _cell(r.callVol != null ? _fmtInt(r.callVol!) : '—', _wVol, TextAlign.right, _kMono),
+        ],
+        if (side == _TableSide.atm || side == _TableSide.put) ...[
+          _cell(r.putOI  != null ? _fmtInt(r.putOI!)  : '—', _wOi,  TextAlign.right, _kMono),
+          _cell(r.putVol != null ? _fmtInt(r.putVol!) : '—', _wVol, TextAlign.right, _kMono),
+        ],
       ]),
     );
   }
 
+  Widget _deltaCell(double delta, Color? hl) => Container(
+    width: _wDelta,
+    alignment: Alignment.centerRight,
+    decoration: hl != null
+        ? BoxDecoration(color: hl, borderRadius: BorderRadius.circular(3))
+        : null,
+    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+    child: Text(
+      _fmtIv(delta, signed: true),
+      style: _kMono.copyWith(
+          color: _deltaTextColor(delta), fontWeight: FontWeight.w700),
+      textAlign: TextAlign.right,
+    ),
+  );
+
   static Widget _cell(String text, double width, TextAlign align, TextStyle style) =>
-      SizedBox(width: width, child: Text(text, style: style, textAlign: align, overflow: TextOverflow.ellipsis));
+      SizedBox(width: width,
+          child: Text(text, style: style, textAlign: align,
+              overflow: TextOverflow.ellipsis));
 }
 
 // ── Slope table ────────────────────────────────────────────────────────────────
-// Columns: DTE · Prev Slope · Today Slope · Δ Slope
 
 class _SlopeTable extends StatelessWidget {
-  final String prevDate, todayDate;
+  final String        prevDate, todayDate;
   final List<_SkewRow> rows;
 
-  static const double _wDte   = 110;
-  static const double _wSlope = 90;
-  static const double _wDelta = 80;
+  static const double _wDte   = 125;
+  static const double _wSlope = 100;
+  static const double _wDelta = 94;
 
   const _SlopeTable({
     required this.prevDate, required this.todayDate,
@@ -568,12 +581,12 @@ class _SlopeTable extends StatelessWidget {
 
   Widget _header() => Container(
     color: _kHeaderBg,
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
     child: Row(children: [
-      _cell('DTE',      _wDte,   TextAlign.left,  _kMonoHdr),
-      _cell(prevDate,   _wSlope, TextAlign.right, _kMonoHdr),
-      _cell(todayDate,  _wSlope, TextAlign.right, _kMonoHdr),
-      _cell('Δ SLOPE',  _wDelta, TextAlign.right, _kMonoHdr),
+      _cell('DTE',     _wDte,   TextAlign.left,  _kMonoHdr),
+      _cell(prevDate,  _wSlope, TextAlign.right, _kMonoHdr),
+      _cell(todayDate, _wSlope, TextAlign.right, _kMonoHdr),
+      _cell('Δ SLOPE', _wDelta, TextAlign.right, _kMonoHdr),
     ]),
   );
 
@@ -581,7 +594,7 @@ class _SlopeTable extends StatelessWidget {
     final hl = _deltaHighlight(r.dSlope);
     return Container(
       color: alt ? _kAltBg : Colors.transparent,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       child: Row(children: [
         _cell(r.label,                            _wDte,   TextAlign.left,  _kMono),
         _cell(_fmtIv(r.prevSlope,  signed: true), _wSlope, TextAlign.right, _kMono),
@@ -597,8 +610,7 @@ class _SlopeTable extends StatelessWidget {
           child: Text(
             _fmtIv(r.dSlope, signed: true),
             style: _kMono.copyWith(
-                color:      _deltaTextColor(r.dSlope),
-                fontWeight: FontWeight.w700),
+                color: _deltaTextColor(r.dSlope), fontWeight: FontWeight.w700),
             textAlign: TextAlign.right,
           ),
         ),
@@ -607,5 +619,7 @@ class _SlopeTable extends StatelessWidget {
   }
 
   static Widget _cell(String text, double width, TextAlign align, TextStyle style) =>
-      SizedBox(width: width, child: Text(text, style: style, textAlign: align, overflow: TextOverflow.ellipsis));
+      SizedBox(width: width,
+          child: Text(text, style: style, textAlign: align,
+              overflow: TextOverflow.ellipsis));
 }

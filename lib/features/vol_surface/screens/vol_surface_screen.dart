@@ -32,7 +32,6 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
   VolSnapshot? _activeSnap;
   VolSnapshot? _prevSnap;
   bool _pointsLoading = false;
-  bool _prevLoading   = false;
   List<VolSnapshot> _snaps = [];
   late final TabController _tabs;
 
@@ -62,7 +61,6 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
       _activeSnap    = s;
       _pointsLoading = s.points.isEmpty && s.id != null;
       _prevSnap      = null;
-      _prevLoading   = false;
     });
     if (s.points.isEmpty && s.id != null) {
       try {
@@ -89,14 +87,18 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
         .fold<VolSnapshot?>(null, (best, s) =>
             best == null || s.obsDate.isAfter(best.obsDate) ? s : best);
     if (prev == null) {
-      setState(() { _prevSnap = null; _prevLoading = false; });
+      setState(() => _prevSnap = null);
       return;
     }
     if (prev.points.isNotEmpty) {
-      setState(() { _prevSnap = prev; _prevLoading = false; });
+      setState(() => _prevSnap = prev);
       return;
     }
-    setState(() { _prevSnap = null; _prevLoading = prev.id != null; });
+    // Set placeholder with empty points so VolSkewDeltaGrid shows its spinner.
+    setState(() => _prevSnap = VolSnapshot(
+      id: prev.id, ticker: prev.ticker, obsDate: prev.obsDate,
+      spotPrice: prev.spotPrice, points: const [], parsedAt: prev.parsedAt,
+    ));
     if (prev.id != null) _loadPrevPoints(prev);
   }
 
@@ -104,16 +106,13 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
     try {
       final pts = await VolSurfaceRepository(Supabase.instance.client).loadPoints(s.id!);
       if (!mounted) return;
-      setState(() {
-        _prevSnap = VolSnapshot(
-          id: s.id, ticker: s.ticker, obsDate: s.obsDate,
-          spotPrice: s.spotPrice, points: pts, parsedAt: s.parsedAt,
-        );
-        _prevLoading = false;
-      });
+      setState(() => _prevSnap = VolSnapshot(
+        id: s.id, ticker: s.ticker, obsDate: s.obsDate,
+        spotPrice: s.spotPrice, points: pts, parsedAt: s.parsedAt,
+      ));
     } catch (e) {
       debugPrint('vol_surface: failed to load prev points for ${s.id}: $e');
-      if (mounted) setState(() { _prevSnap = null; _prevLoading = false; });
+      if (mounted) setState(() => _prevSnap = null);
     }
   }
 
@@ -133,13 +132,6 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
       final latest = snaps.reduce((a, b) => a.obsDate.isAfter(b.obsDate) ? a : b);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _selectSnap(latest);
-      });
-    }
-
-    // Re-find prev snap if active is set but prev isn't (e.g. after provider refresh).
-    if (_activeSnap != null && _prevSnap == null && !_prevLoading) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _findAndLoadPrevSnap(_activeSnap!);
       });
     }
 
