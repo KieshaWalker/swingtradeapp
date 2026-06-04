@@ -11,14 +11,24 @@ class VolSurfaceRepository {
   VolSurfaceRepository(this._db);
 
   Future<List<VolSnapshot>> loadAll() async {
-    final response = await _db
-        .from(_table)
-        .select('id,ticker,obs_date,spot_price,parsed_at')
-        .order('ticker', ascending: true)
-        .order('obs_date', ascending: true);
-    return (response as List<dynamic>)
-        .map((r) => VolSnapshot.fromRow(r as Map<String, dynamic>))
-        .toList();
+    const batchSize = 1000;
+    final results = <VolSnapshot>[];
+    var from = 0;
+    while (true) {
+      final response = await _db
+          .from(_table)
+          .select('id,ticker,obs_date,spot_price,parsed_at')
+          .order('ticker', ascending: true)
+          .order('obs_date', ascending: true)
+          .range(from, from + batchSize - 1);
+      final batch = (response as List<dynamic>)
+          .map((r) => VolSnapshot.fromRow(r as Map<String, dynamic>))
+          .toList();
+      results.addAll(batch);
+      if (batch.length < batchSize) break;
+      from += batchSize;
+    }
+    return results;
   }
 
   /// Fetches the full `points` array for a single snapshot by id.
