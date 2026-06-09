@@ -18,6 +18,10 @@
 //                     (raw Form 4 discovery → SEC /live-query-api formType:4)
 //   Earnings history  Supabase  ticker_earnings_reactions (tickerEarningsReactionsProvider)
 //
+//   ── Vol ─────────────────────────────────────────────────────────────────
+//   IV analytics      embedded IvAnalyticsView (features/iv/screens/iv_screen)
+//                     ivAnalysisProvider / ivHistoryProvider
+//
 //   ── My Edge ─────────────────────────────────────────────────────────────
 //   All analytics     Supabase  trades table — computed locally, no API calls
 //                     (tickerAnalyticsProvider → TickerTradeAnalytics.compute())
@@ -33,6 +37,7 @@
 // FAB per tab:
 //   Overview  → add note sheet (saves to Supabase)
 //   Levels    → add S/R level sheet (saves to Supabase)
+//   Insiders  → import Form 4 sheet
 // =============================================================================
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -40,7 +45,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../core/widgets/chart/chart_axes.dart';
+import '../../../core/widgets/chart/chart_card.dart';
 import '../../../services/iv/iv_models.dart';
+import '../../../services/iv/iv_providers.dart';
 import '../../../services/iv/iv_storage_service.dart';
 import '../../../services/schwab/schwab_providers.dart';
 import '../../current_regime/models/regime_ml_models.dart';
@@ -58,6 +67,7 @@ import '../widgets/add_sr_level_sheet.dart';
 import '../widgets/add_ticker_note_sheet.dart';
 import 'ticker_profile_cards.dart';
 import 'ticker_profile_shared_widgets.dart';
+import '../../iv/screens/iv_screen.dart';
 import '../../iv/widgets/expected_move_chart.dart';
 import '../../iv/widgets/realized_vol_chart.dart';
 
@@ -83,7 +93,7 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 5, vsync: this);
+    _tabs = TabController(length: 6, vsync: this);
     _tabs.addListener(() => setState(() {}));
   }
 
@@ -116,14 +126,14 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
               _showSheet(AddTickerNoteSheet(symbol: _sym)),
           child: const Icon(Icons.note_add_outlined),
         );
-      case 2:
+      case 3:
         return FloatingActionButton(
           heroTag: 'sr_fab',
           onPressed: () =>
               _showSheet(AddSRLevelSheet(symbol: _sym)),
           child: const Icon(Icons.add),
         );
-      case 4:
+      case 5:
         return FloatingActionButton(
           heroTag: 'insider_fab',
           onPressed: () => _showSheet(ApiForm4Sheet(symbol: _sym)),
@@ -166,7 +176,11 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
             tooltip: 'Fetch Snapshot',
             onPressed: () => _showSheet(FetchDtesSheet(
               symbol: _sym,
-              onFetchComplete: () => ref.invalidate(_tickerIvSnapshotProvider(_sym)),
+              onFetchComplete: () {
+                ref.invalidate(_tickerIvSnapshotProvider(_sym));
+                ref.invalidate(ivAnalysisProvider(_sym));
+                ref.invalidate(ivHistoryProvider(_sym));
+              },
             )),
           ),
           IconButton(
@@ -187,8 +201,11 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
         ],
         bottom: TabBar(
           controller: _tabs,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: const [
             Tab(text: 'Overview'),
+            Tab(text: 'Vol'),
             Tab(text: 'My Edge'),
             Tab(text: 'Levels'),
             Tab(text: 'Timeline'),
@@ -204,7 +221,11 @@ class _TickerProfileScreenState extends ConsumerState<TickerProfileScreen>
             symbol: _sym,
             onAddInsider: () => _showSheet(ApiForm4Sheet(symbol: _sym)),
             onAddEarnings: () => _showSheet(AddEarningsReactionSheet(symbol: _sym)),
-            onSeeAllInsiders: () => _tabs.animateTo(4),
+            onSeeAllInsiders: () => _tabs.animateTo(5),
+          ),
+          IvAnalyticsView(
+            symbol: _sym,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
           ),
           _MyEdgeTab(symbol: _sym),
           _LevelsTab(symbol: _sym),
@@ -252,28 +273,21 @@ class _TickerInsightsOverview extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.borderColor.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (ivSnap != null) _buildIvSection(ivSnap),
-          if (regime != null) ...[
-            if (ivSnap != null && _ivSectionHasContent(ivSnap)) const SizedBox(height: 12),
-            _buildRegimeSection(regime),
-          ],
-          if (latestAtm != null) ...[
-            if ((ivSnap != null && _ivSectionHasContent(ivSnap)) || regime != null)
-              const SizedBox(height: 12),
-            _buildGreekSection(latestAtm),
-          ],
+    return AnalyticsCard(
+      title: 'SNAPSHOT',
+      children: [
+        const SizedBox(height: 10),
+        if (ivSnap != null) _buildIvSection(ivSnap),
+        if (regime != null) ...[
+          if (ivSnap != null && _ivSectionHasContent(ivSnap)) const SizedBox(height: 12),
+          _buildRegimeSection(regime),
         ],
-      ),
+        if (latestAtm != null) ...[
+          if ((ivSnap != null && _ivSectionHasContent(ivSnap)) || regime != null)
+            const SizedBox(height: 12),
+          _buildGreekSection(latestAtm),
+        ],
+      ],
     );
   }
 
@@ -476,7 +490,18 @@ class _OverviewTab extends ConsumerWidget {
       }
     });
 
-    return ListView(
+    return RefreshIndicator(
+      color: AppTheme.profitColor,
+      onRefresh: () async {
+        ref.invalidate(schwabEarningsDateProvider(symbol));
+        ref.invalidate(schwabFundamentalsProvider(symbol));
+        ref.invalidate(tickerInsiderBuysProvider(symbol));
+        ref.invalidate(tickerEarningsReactionsProvider(symbol));
+        ref.invalidate(tickerNotesProvider(symbol));
+        ref.invalidate(_tickerIvSnapshotProvider(symbol));
+        await ref.read(tickerNotesProvider(symbol).future);
+      },
+      child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
         // IV / Regime / Greek insights
@@ -496,28 +521,34 @@ class _OverviewTab extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: _OverviewGridCell(
-                title: 'Next Earnings',
-                child: nextEarnings.when(
-                  loading: () => const LoadingCard(),
-                  error: (e, _) => const ErrorCard('Could not load earnings date'),
-                  data: (e) => e == null
-                      ? const EmptyCard('No earnings data available')
-                      : EarningsDateCard(e),
-                ),
+              child: AnalyticsCard(
+                title: 'NEXT EARNINGS',
+                children: [
+                  const SizedBox(height: 8),
+                  nextEarnings.when(
+                    loading: () => const LoadingCard(),
+                    error: (e, _) => const ErrorCard('Could not load earnings date'),
+                    data: (e) => e == null
+                        ? const EmptyCard('No earnings data available')
+                        : EarningsDateCard(e),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _OverviewGridCell(
-                title: 'Fundamentals',
-                child: fundamentals.when(
-                  loading: () => const LoadingCard(),
-                  error: (e, _) => const ErrorCard('Could not load fundamentals'),
-                  data: (f) => f == null
-                      ? const EmptyCard('No fundamental data available')
-                      : FundamentalsCard(f),
-                ),
+              child: AnalyticsCard(
+                title: 'FUNDAMENTALS',
+                children: [
+                  const SizedBox(height: 8),
+                  fundamentals.when(
+                    loading: () => const LoadingCard(),
+                    error: (e, _) => const ErrorCard('Could not load fundamentals'),
+                    data: (f) => f == null
+                        ? const EmptyCard('No fundamental data available')
+                        : FundamentalsCard(f),
+                  ),
+                ],
               ),
             ),
           ],
@@ -529,38 +560,44 @@ class _OverviewTab extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: _OverviewGridCell(
-                title: 'SEC Filings',
-                child: _LazySecFilingsSection(symbol: symbol),
+              child: AnalyticsCard(
+                title: 'SEC FILINGS',
+                children: [
+                  const SizedBox(height: 8),
+                  _LazySecFilingsSection(symbol: symbol),
+                ],
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _OverviewGridCell(
-                title: 'Insider Transactions',
-                action: IconButton(
-                  onPressed: onAddInsider,
-                  icon: const Icon(Icons.upload_file_outlined, size: 16),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  tooltip: 'Import Form 4',
-                ),
-                child: insiders.when(
-                  loading: () => const LoadingCard(),
-                  error: (e, _) => const ErrorCard('Could not load insider transactions'),
-                  data: (list) => list.isEmpty
-                      ? EmptyCard('No insider transactions yet')
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ...list.take(3).map((b) => InsiderBuyCard(symbol: symbol, buy: b)),
-                            TextButton(
-                              onPressed: onSeeAllInsiders,
-                              child: Text('See all ${list.length} →'),
-                            ),
-                          ],
-                        ),
-                ),
+              child: AnalyticsCard(
+                title: 'INSIDER TRANSACTIONS',
+                actions: [
+                  ChartActionButton(
+                    icon: Icons.upload_file_outlined,
+                    tooltip: 'Import Form 4',
+                    onPressed: onAddInsider,
+                  ),
+                ],
+                children: [
+                  const SizedBox(height: 8),
+                  insiders.when(
+                    loading: () => const LoadingCard(),
+                    error: (e, _) => const ErrorCard('Could not load insider transactions'),
+                    data: (list) => list.isEmpty
+                        ? EmptyCard('No insider transactions yet')
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ...list.take(3).map((b) => InsiderBuyCard(symbol: symbol, buy: b)),
+                              TextButton(
+                                onPressed: onSeeAllInsiders,
+                                child: Text('See all ${list.length} →'),
+                              ),
+                            ],
+                          ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -572,94 +609,53 @@ class _OverviewTab extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: _OverviewGridCell(
-                title: 'Earnings History',
-                action: IconButton(
-                  onPressed: onAddEarnings,
-                  icon: const Icon(Icons.add, size: 16),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  tooltip: 'Log Reaction',
-                ),
-                child: earningsHistory.when(
-                  loading: () => const LoadingCard(),
-                  error: (e, _) => const ErrorCard('Could not load earnings history'),
-                  data: (list) => list.isEmpty
-                      ? EmptyCard('No earnings reactions logged yet')
-                      : Column(
-                          children: list
-                              .map((e) => EarningsReactionCard(symbol: symbol, reaction: e))
-                              .toList(),
-                        ),
-                ),
+              child: AnalyticsCard(
+                title: 'EARNINGS HISTORY',
+                actions: [
+                  ChartActionButton(
+                    icon: Icons.add,
+                    tooltip: 'Log Reaction',
+                    onPressed: onAddEarnings,
+                  ),
+                ],
+                children: [
+                  const SizedBox(height: 8),
+                  earningsHistory.when(
+                    loading: () => const LoadingCard(),
+                    error: (e, _) => const ErrorCard('Could not load earnings history'),
+                    data: (list) => list.isEmpty
+                        ? EmptyCard('No earnings reactions logged yet')
+                        : Column(
+                            children: list
+                                .map((e) => EarningsReactionCard(symbol: symbol, reaction: e))
+                                .toList(),
+                          ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _OverviewGridCell(
-                title: 'Notes',
-                child: notes.when(
-                  loading: () => const LoadingCard(),
-                  error: (e, _) => const ErrorCard('Could not load notes'),
-                  data: (list) => list.isEmpty
-                      ? EmptyCard('No notes yet — tap + to add one')
-                      : Column(
-                          children: list.map((n) => NoteCard(symbol: symbol, note: n)).toList(),
-                        ),
-                ),
+              child: AnalyticsCard(
+                title: 'NOTES',
+                children: [
+                  const SizedBox(height: 8),
+                  notes.when(
+                    loading: () => const LoadingCard(),
+                    error: (e, _) => const ErrorCard('Could not load notes'),
+                    data: (list) => list.isEmpty
+                        ? EmptyCard('No notes yet — tap + to add one')
+                        : Column(
+                            children: list.map((n) => NoteCard(symbol: symbol, note: n)).toList(),
+                          ),
+                  ),
+                ],
               ),
             ),
           ],
         ),
         const SizedBox(height: 80),
       ],
-    );
-  }
-}
-
-// ─── Overview grid cell ───────────────────────────────────────────────────────
-
-class _OverviewGridCell extends StatelessWidget {
-  final String title;
-  final Widget? action;
-  final Widget child;
-
-  const _OverviewGridCell({
-    required this.title,
-    required this.child,
-    this.action,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.borderColor.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                title.toUpperCase(),
-                style: const TextStyle(
-                  color: AppTheme.neutralColor,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                ),
-              ),
-              if (action case final a?) a,
-            ],
-          ),
-          const SizedBox(height: 8),
-          child,
-        ],
       ),
     );
   }
@@ -745,10 +741,13 @@ class _MyEdgeTab extends ConsumerWidget {
 
         // Monthly P&L chart
         if (analytics.monthlyPnl.isNotEmpty) ...[
-          SectionHeader('Monthly P&L'),
-          SizedBox(
+          ChartCard(
+            title: 'MONTHLY P&L',
             height: 160,
-            child: _MonthlyPnlChart(monthlyPnl: analytics.monthlyPnl),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 16, 12, 4),
+              child: _MonthlyPnlChart(monthlyPnl: analytics.monthlyPnl),
+            ),
           ),
           const SizedBox(height: 20),
         ],
@@ -929,121 +928,48 @@ class _InsiderActivityChart extends StatelessWidget {
       );
     }).toList();
 
-    String fmtShares(double v) {
-      if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
-      if (v >= 1000) return '${(v / 1000).toStringAsFixed(0)}k';
-      return v.toStringAsFixed(0);
-    }
-
-    const monthLabels = [
-      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Legend
-        Row(
-          children: [
-            _LegendDot(color: AppTheme.profitColor, label: 'Buy / Exercise'),
-            const SizedBox(width: 16),
-            _LegendDot(color: AppTheme.lossColor, label: 'Sell / Withholding'),
-          ],
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 140,
-          child: BarChart(
-            BarChartData(
-              barGroups: bars,
-              gridData: const FlGridData(show: false),
-              borderData: FlBorderData(show: false),
-              titlesData: FlTitlesData(
-                leftTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
-                topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
-                rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (v, _) {
-                      final idx = v.toInt();
-                      if (idx < 0 || idx >= allMonths.length) {
-                        return const SizedBox.shrink();
-                      }
-                      // Skip alternate labels when many months
-                      if (allMonths.length > 6 && idx % 2 != 0) {
-                        return const SizedBox.shrink();
-                      }
-                      final key   = allMonths[idx];
-                      final year  = key ~/ 100;
-                      final month = key % 100;
-                      final label = (month == 1 || idx == 0)
-                          ? "${monthLabels[month]} '${year % 100}"
-                          : monthLabels[month];
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          label,
-                          style: const TextStyle(
-                              color: AppTheme.neutralColor,
-                              fontSize: 9),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              barTouchData: BarTouchData(
-                touchTooltipData: BarTouchTooltipData(
-                  getTooltipColor: (_) => AppTheme.elevatedColor,
-                  getTooltipItem: (group, _, rod, rodIdx) {
-                    if (rod.toY == 0) return null;
-                    final label = rodIdx == 0 ? 'Buy' : 'Sell';
-                    return BarTooltipItem(
-                      '$label\n${fmtShares(rod.toY)} sh',
-                      TextStyle(
-                        color: rodIdx == 0
-                            ? AppTheme.profitColor
-                            : AppTheme.lossColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    );
-                  },
-                ),
+    return ChartCard(
+      title: 'INSIDER ACTIVITY',
+      height: 150,
+      legend: const [
+        ChartLegendItem(AppTheme.profitColor, 'Buy / Exercise'),
+        ChartLegendItem(AppTheme.lossColor, 'Sell / Withholding'),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 4),
+        child: BarChart(
+          BarChartData(
+            barGroups: bars,
+            gridData: const FlGridData(show: false),
+            borderData: FlBorderData(show: false),
+            titlesData: FlTitlesData(
+              leftTitles: kNoAxisTitles,
+              topTitles: kNoAxisTitles,
+              rightTitles: kNoAxisTitles,
+              bottomTitles: monthKeyBottomTitles(allMonths),
+            ),
+            barTouchData: BarTouchData(
+              touchTooltipData: BarTouchTooltipData(
+                getTooltipColor: (_) => AppTheme.elevatedColor,
+                getTooltipItem: (group, _, rod, rodIdx) {
+                  if (rod.toY == 0) return null;
+                  final label = rodIdx == 0 ? 'Buy' : 'Sell';
+                  return BarTooltipItem(
+                    '$label\n${fmtCompactCount(rod.toY)} sh',
+                    TextStyle(
+                      color: rodIdx == 0
+                          ? AppTheme.profitColor
+                          : AppTheme.lossColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  );
+                },
               ),
             ),
           ),
         ),
-      ],
-    );
-  }
-}
-
-class _LegendDot extends StatelessWidget {
-  final Color color;
-  final String label;
-  const _LegendDot({required this.color, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 4),
-        Text(label,
-            style: const TextStyle(
-                color: AppTheme.neutralColor, fontSize: 11)),
-      ],
+      ),
     );
   }
 }
@@ -1170,20 +1096,10 @@ class _InsiderSummaryRow extends StatelessWidget {
     required this.uniqueInsiderCount,
   });
 
-  static String _fmtVal(double v) {
-    if (v == 0) return '—';
-    if (v >= 1e9) return '\$${(v / 1e9).toStringAsFixed(1)}B';
-    if (v >= 1e6) return '\$${(v / 1e6).toStringAsFixed(1)}M';
-    if (v >= 1e3) return '\$${(v / 1e3).toStringAsFixed(0)}K';
-    return '\$${v.toStringAsFixed(0)}';
-  }
+  static String _fmtVal(double v) => v == 0 ? '—' : fmtCompactDollars(v);
 
-  static String _fmtShares(int v) {
-    if (v == 0) return '—';
-    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M sh';
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(0)}K sh';
-    return '$v sh';
-  }
+  static String _fmtShares(int v) =>
+      v == 0 ? '—' : '${fmtCompactCount(v)} sh';
 
   @override
   Widget build(BuildContext context) {
@@ -1333,24 +1249,11 @@ class _InsiderTransactionCard extends ConsumerWidget {
   const _InsiderTransactionCard(
       {required this.symbol, required this.tx});
 
-  static String _fmtDate(DateTime d) =>
-      '${_monthAbbr[d.month]} ${d.day}, ${d.year}';
-  static const _monthAbbr = [
-    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
+  static String _fmtDate(DateTime d) => fmtMediumDate(d);
 
-  static String _fmtShares(int v) => v
-      .toString()
-      .replaceAllMapped(
-          RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+  static String _fmtShares(int v) => fmtThousands(v);
 
-  static String _fmtVal(double v) {
-    if (v >= 1e9) return '\$${(v / 1e9).toStringAsFixed(2)}B';
-    if (v >= 1e6) return '\$${(v / 1e6).toStringAsFixed(2)}M';
-    if (v >= 1e3) return '\$${(v / 1e3).toStringAsFixed(0)}K';
-    return '\$${v.toStringAsFixed(0)}';
-  }
+  static String _fmtVal(double v) => fmtCompactDollars(v, decimals: 2);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1649,44 +1552,11 @@ class _MonthlyPnlChart extends StatelessWidget {
         gridData: const FlGridData(show: false),
         borderData: FlBorderData(show: false),
         titlesData: FlTitlesData(
-          leftTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              getTitlesWidget: (v, _) {
-                final idx = v.toInt();
-                if (idx < 0 || idx >= entries.length) {
-                  return const SizedBox.shrink();
-                }
-                // Skip labels when many months to avoid crowding
-                if (entries.length > 6 && idx % 2 != 0) {
-                  return const SizedBox.shrink();
-                }
-                final key = entries[idx].key;
-                final year  = key ~/ 100;
-                final month = key % 100;
-                const abbr = [
-                  '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-                ];
-                // Show year on January or first bar
-                final label = (month == 1 || idx == 0)
-                    ? "${abbr[month]} '${year % 100}"
-                    : abbr[month];
-                return Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(label,
-                      style: const TextStyle(
-                          color: AppTheme.neutralColor, fontSize: 9)),
-                );
-              },
-            ),
-          ),
+          leftTitles: kNoAxisTitles,
+          topTitles: kNoAxisTitles,
+          rightTitles: kNoAxisTitles,
+          bottomTitles:
+              monthKeyBottomTitles([for (final e in entries) e.key]),
         ),
         barTouchData: BarTouchData(
           touchTooltipData: BarTouchTooltipData(

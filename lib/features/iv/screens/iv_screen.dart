@@ -30,9 +30,6 @@ class IvScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final analysisAsync = ref.watch(ivAnalysisProvider(symbol));
-    final historyAsync  = ref.watch(ivHistoryProvider(symbol));
-
     return Scaffold(
       appBar: AppBar(
         title: Text('$symbol — IV Analytics'),
@@ -47,7 +44,29 @@ class IvScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: analysisAsync.when(
+      body: IvAnalyticsView(symbol: symbol),
+    );
+  }
+}
+
+/// Async IV analytics stack (gauge, vvol, history, skew, GEX, vanna/charm,
+/// strategy context, glossary). Body of [IvScreen]; also embedded in the
+/// ticker profile's Vol tab.
+class IvAnalyticsView extends ConsumerWidget {
+  final String symbol;
+  final EdgeInsetsGeometry padding;
+  const IvAnalyticsView({
+    super.key,
+    required this.symbol,
+    this.padding = const EdgeInsets.fromLTRB(16, 16, 16, 40),
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final analysisAsync = ref.watch(ivAnalysisProvider(symbol));
+    final historyAsync  = ref.watch(ivHistoryProvider(symbol));
+
+    return analysisAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error:   (e, _) => _ErrorView(symbol: symbol, error: e, ref: ref),
         data:    (analysis) => RefreshIndicator(
@@ -58,7 +77,7 @@ class IvScreen extends ConsumerWidget {
             await ref.read(ivAnalysisProvider(symbol).future);
           },
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+            padding: padding,
             children: [
               // ── IV Rank gauge ────────────────────────────────────────────
               IvRankGauge(analysis: analysis),
@@ -102,7 +121,6 @@ class IvScreen extends ConsumerWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }

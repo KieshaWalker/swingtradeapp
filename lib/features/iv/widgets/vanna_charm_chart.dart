@@ -16,6 +16,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../services/iv/iv_models.dart';
+import '../../../core/widgets/chart/chart_card.dart';
 
 class VannaCharmChart extends StatelessWidget {
   final IvAnalysis analysis;
@@ -153,33 +154,17 @@ class _VexChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final strikes = analysis.secondOrder;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color:        AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border:       Border.all(color: AppTheme.borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text(
-                'VANNA EXPOSURE (VEX)',
-                style: TextStyle(
-                  color: AppTheme.neutralColor, fontSize: 11,
-                  fontWeight: FontWeight.w700, letterSpacing: 1.0,
-                ),
-              ),
-              const Spacer(),
-              if (analysis.totalVex != null)
-                _statChip(analysis.vexLabel,
-                    analysis.totalVex! >= 0
-                        ? AppTheme.profitColor
-                        : AppTheme.lossColor),
-            ],
-          ),
+    return AnalyticsCard(
+      title: 'VANNA EXPOSURE (VEX)',
+      actions: [
+        if (analysis.totalVex != null)
+          _statChip(
+              analysis.vexLabel,
+              analysis.totalVex! >= 0
+                  ? AppTheme.profitColor
+                  : AppTheme.lossColor),
+      ],
+      children: [
           const SizedBox(height: 4),
           const Text(
             'Dealer delta pressure per 1% IV move — positive = vol drop triggers buying',
@@ -212,8 +197,7 @@ class _VexChart extends StatelessWidget {
               style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11),
             ),
           ],
-        ],
-      ),
+      ],
     );
   }
 
@@ -338,23 +322,9 @@ class _CharmVolgaSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color:        AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border:       Border.all(color: AppTheme.borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'CHARM & VOLGA',
-            style: TextStyle(
-              color: AppTheme.neutralColor, fontSize: 11,
-              fontWeight: FontWeight.w700, letterSpacing: 1.0,
-            ),
-          ),
+    return AnalyticsCard(
+      title: 'CHARM & VOLGA',
+      children: [
           const SizedBox(height: 12),
           Row(
             children: [
@@ -380,8 +350,7 @@ class _CharmVolgaSummary extends StatelessWidget {
           _charmInterpretation(analysis),
           const SizedBox(height: 8),
           _volgaInterpretation(analysis),
-        ],
-      ),
+      ],
     );
   }
 

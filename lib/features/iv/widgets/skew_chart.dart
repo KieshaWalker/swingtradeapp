@@ -9,6 +9,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../services/iv/iv_models.dart';
+import '../../../core/widgets/chart/chart_card.dart';
 
 class SkewChart extends StatelessWidget {
   final IvAnalysis analysis;
@@ -18,93 +19,47 @@ class SkewChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final points = analysis.skewCurve;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Row(
-            children: [
-              const Text(
-                'VOLATILITY SKEW',
-                style: TextStyle(
-                  color: AppTheme.neutralColor,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.0,
-                ),
-              ),
-              const Spacer(),
-              if (analysis.skew != null) _SkewBadge(skew: analysis.skew!),
-            ],
+    return AnalyticsCard(
+      title: 'VOLATILITY SKEW',
+      actions: [if (analysis.skew != null) _SkewBadge(skew: analysis.skew!)],
+      children: [
+        const SizedBox(height: 4),
+        Text(
+          analysis.skewLabel,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 4),
-          Text(
-            analysis.skewLabel,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+        ),
+
+        const SizedBox(height: 16),
+
+        if (points.length < 3) ...[
+          const SizedBox(height: 40),
+          const Center(
+            child: Text(
+              'Insufficient strikes for skew chart',
+              style: TextStyle(color: AppTheme.neutralColor),
             ),
           ),
-
-          const SizedBox(height: 16),
-
-          if (points.length < 3) ...[
-            const SizedBox(height: 40),
-            const Center(
-              child: Text(
-                'Insufficient strikes for skew chart',
-                style: TextStyle(color: AppTheme.neutralColor),
-              ),
-            ),
-            const SizedBox(height: 40),
-          ] else ...[
-            SizedBox(height: 160, child: _SkewLineChart(points: points)),
-            const SizedBox(height: 8),
-            // Legend
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _legend(AppTheme.lossColor, 'Put IV'),
-                const SizedBox(width: 20),
-                _legend(AppTheme.profitColor, 'Call IV'),
-              ],
-            ),
-          ],
-
-          const SizedBox(height: 12),
-
-          // Skew interpretation
-          _SkewInterpretation(analysis: analysis),
+          const SizedBox(height: 40),
+        ] else ...[
+          SizedBox(height: 160, child: _SkewLineChart(points: points)),
+          const SizedBox(height: 8),
+          const ChartLegendRow(items: [
+            ChartLegendItem(AppTheme.lossColor, 'Put IV'),
+            ChartLegendItem(AppTheme.profitColor, 'Call IV'),
+          ]),
         ],
-      ),
+
+        const SizedBox(height: 12),
+
+        // Skew interpretation
+        _SkewInterpretation(analysis: analysis),
+      ],
     );
   }
-
-  Widget _legend(Color color, String label) => Row(
-    children: [
-      Container(
-        width: 14,
-        height: 3,
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
-      const SizedBox(width: 6),
-      Text(
-        label,
-        style: const TextStyle(color: AppTheme.neutralColor, fontSize: 11),
-      ),
-    ],
-  );
 }
 
 // ── Line chart ────────────────────────────────────────────────────────────────

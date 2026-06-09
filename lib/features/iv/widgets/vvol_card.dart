@@ -10,6 +10,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../services/iv/iv_models.dart';
+import '../../../core/widgets/chart/chart_card.dart';
 
 class VvolCard extends StatelessWidget {
   final IvAnalysis analysis;
@@ -27,30 +28,10 @@ class VvolCard extends StatelessWidget {
 
     final ratingColor = _ratingColor(rating);
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color:        AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border:       Border.all(color: AppTheme.borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Header ───────────────────────────────────────────────────────
-          Row(
-            children: [
-              const Text(
-                'VOL-OF-VOL RANK',
-                style: TextStyle(
-                  color: AppTheme.neutralColor, fontSize: 11,
-                  fontWeight: FontWeight.w700, letterSpacing: 1.0,
-                ),
-              ),
-              const Spacer(),
-              _TrendBadge(trend: trend),
-            ],
-          ),
+    return AnalyticsCard(
+      title: 'VOL-OF-VOL RANK',
+      actions: [_TrendBadge(trend: trend)],
+      children: [
           const SizedBox(height: 4),
           const Text(
             'How volatile the IV surface itself is (SABR ν rank)',
@@ -81,8 +62,7 @@ class VvolCard extends StatelessWidget {
 
           // ── Interpretation ────────────────────────────────────────────────
           _Interpretation(rank: rank, trend: trend),
-        ],
-      ),
+      ],
     );
   }
 

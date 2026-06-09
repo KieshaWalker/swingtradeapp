@@ -19,6 +19,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../services/iv/iv_models.dart';
+import '../../../core/widgets/chart/chart_card.dart';
 
 class IvHistoryChart extends StatefulWidget {
   final List<IvSnapshot> history;
@@ -33,89 +34,29 @@ class IvHistoryChart extends StatefulWidget {
   State<IvHistoryChart> createState() => _IvHistoryChartState();
 }
 
-class _IvHistoryChartState extends State<IvHistoryChart>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabs;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabs = TabController(length: 3, vsync: this);
-    _tabs.addListener(() => setState(() {}));
-  }
-
-  @override
-  void dispose() {
-    _tabs.dispose();
-    super.dispose();
-  }
+class _IvHistoryChartState extends State<IvHistoryChart> {
+  int _tab = 0; // 0 = IV level, 1 = skew, 2 = GEX / P/C
 
   @override
   Widget build(BuildContext context) {
     final history = widget.history;
 
-    return Container(
-      decoration: BoxDecoration(
-        color:        AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border:       Border.all(color: AppTheme.borderColor),
+    return ChartCard(
+      title: 'IV HISTORY',
+      height: 260,
+      actions: [_DataProgress(count: history.length)],
+      segmentedControl: ChartSegmentedTabs(
+        labels: const ['IV LEVEL', 'SKEW', 'GEX / P/C'],
+        selected: _tab,
+        onChanged: (i) => setState(() => _tab = i),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Header ─────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: Row(
-              children: [
-                const Text(
-                  'IV HISTORY',
-                  style: TextStyle(
-                    color:      AppTheme.neutralColor,
-                    fontSize:   11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.0,
-                  ),
-                ),
-                const Spacer(),
-                _DataProgress(count: history.length),
-              ],
-            ),
-          ),
-
-          // ── Tab bar ────────────────────────────────────────────────────
-          TabBar(
-            controller:           _tabs,
-            indicatorColor:       AppTheme.profitColor,
-            labelColor:           AppTheme.profitColor,
-            unselectedLabelColor: AppTheme.neutralColor,
-            labelStyle:    const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-            indicatorSize: TabBarIndicatorSize.label,
-            tabs: const [
-              Tab(text: 'IV LEVEL'),
-              Tab(text: 'SKEW'),
-              Tab(text: 'GEX / P/C'),
-            ],
-          ),
-
-          const Divider(height: 1, color: AppTheme.borderColor),
-
-          // ── Content ────────────────────────────────────────────────────
-          SizedBox(
-            height: 260,
-            child: history.length < 2
-                ? _EmptyState(count: history.length)
-                : TabBarView(
-                    controller: _tabs,
-                    children: [
-                      _IvLevelTab(history: history),
-                      _SkewTab(history: history),
-                      _GexPcTab(history: history),
-                    ],
-                  ),
-          ),
-        ],
-      ),
+      child: history.length < 2
+          ? _EmptyState(count: history.length)
+          : switch (_tab) {
+              0 => _IvLevelTab(history: history),
+              1 => _SkewTab(history: history),
+              _ => _GexPcTab(history: history),
+            },
     );
   }
 }
@@ -661,29 +602,14 @@ class _GexPcTab extends StatelessWidget {
           ],
 
           const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _legend(AppTheme.profitColor,  '+GEX (stable)'),
-              const SizedBox(width: 16),
-              _legend(AppTheme.lossColor,    '−GEX (amplified)'),
-            ],
-          ),
+          const ChartLegendRow(items: [
+            ChartLegendItem(AppTheme.profitColor, '+GEX (stable)'),
+            ChartLegendItem(AppTheme.lossColor, '−GEX (amplified)'),
+          ]),
         ],
       ),
     );
   }
-
-  Widget _legend(Color color, String label) => Row(
-    children: [
-      Container(width: 12, height: 3,
-          decoration: BoxDecoration(color: color,
-              borderRadius: BorderRadius.circular(2))),
-      const SizedBox(width: 5),
-      Text(label, style: const TextStyle(
-          color: AppTheme.neutralColor, fontSize: 10)),
-    ],
-  );
 }
 
 // ── P/C sparkline ─────────────────────────────────────────────────────────────

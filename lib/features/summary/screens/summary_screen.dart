@@ -7,7 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/app_menu_button.dart';
+import '../../../core/widgets/chart/chart_axes.dart';
+import '../../../core/widgets/chart/chart_card.dart';
+import '../../../core/widgets/chart/pannable_chart.dart';
 import '../../../services/schwab/schwab_providers.dart';
 import '../../../services/schwab/schwab_reauth_provider.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -20,17 +24,9 @@ import '../widgets/ticker_insights_section.dart';
 
 // ── Format helper ─────────────────────────────────────────────────────────────
 
-String _fmt(double v, {bool dollar = false, bool sign = false}) {
-  final neg = v < 0;
-  final abs = v.abs();
-  final core = dollar
-      ? (abs >= 1000
-            ? '\$${(abs / 1000).toStringAsFixed(1)}k'
-            : '\$${abs.toStringAsFixed(0)}')
-      : abs.toStringAsFixed(1);
-  final prefix = neg ? '-' : (sign ? '+' : '');
-  return '$prefix$core';
-}
+/// Compact dollar display used across the dashboard ('+$1.2K', '-$540').
+String _fmt(double v, {bool sign = false}) =>
+    fmtCompactDollars(v, kDecimals: 1, sign: sign);
 
 // ── Root screen ───────────────────────────────────────────────────────────────
 
@@ -287,7 +283,15 @@ class _Body extends ConsumerWidget {
     final s = _Stats(closed);
     final blocksAsync = ref.watch(blockWinRateProvider);
 
-    return ListView(
+    return RefreshIndicator(
+      color: AppTheme.profitColor,
+      onRefresh: () async {
+        ref.invalidate(tradesProvider);
+        ref.invalidate(blockWinRateProvider);
+        ref.invalidate(tickerInsightsDataProvider);
+        await ref.read(tradesProvider.future);
+      },
+      child: ListView(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 40),
       children: [
         // Greeting
@@ -312,8 +316,6 @@ class _Body extends ConsumerWidget {
 
         // Cumulative P&L chart
         if (closed.isNotEmpty) ...[
-          _sectionHeader('Cumulative P&L', Icons.show_chart_rounded),
-          const SizedBox(height: 10),
           _PnlChart(trades: closed),
           const SizedBox(height: 22),
         ],
@@ -473,6 +475,7 @@ class _Body extends ConsumerWidget {
           ),
         ],
       ],
+      ),
     );
   }
 
@@ -541,7 +544,7 @@ class _HeroCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _fmt(pnl, dollar: true, sign: true),
+                      _fmt(pnl, sign: true),
                       style: TextStyle(
                         color: pnlColor,
                         fontSize: 34,
@@ -686,151 +689,220 @@ class _PnlChart extends StatelessWidget {
       byMonth[key] = (byMonth[key] ?? 0) + (t.realizedPnl ?? 0);
     }
 
-    if (byMonth.isEmpty) {
-      return const SizedBox(
-        height: 180,
-        child: Center(
-          child: Text(
-            'No closed trades yet',
-            style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
-          ),
-        ),
-      );
-    }
-
     // Sort months ascending (Jan 2025 → Apr 2026 left → right)
     final months = byMonth.keys.toList()..sort();
 
-    // Build cumulative running total per month
+    // Build cumulative running total per month, tracking best/worst month
     double cumulative = 0;
+    var best = double.negativeInfinity;
+    var worst = double.infinity;
     final spots = <FlSpot>[];
     final labels = <DateTime>[];
     for (var i = 0; i < months.length; i++) {
-      cumulative += byMonth[months[i]]!;
+      final monthPnl = byMonth[months[i]]!;
+      if (monthPnl > best) best = monthPnl;
+      if (monthPnl < worst) worst = monthPnl;
+      cumulative += monthPnl;
       spots.add(FlSpot(i.toDouble(), cumulative));
       labels.add(DateTime(months[i] ~/ 100, months[i] % 100));
     }
 
-    if (spots.length < 2) {
-      return const SizedBox(
-        height: 180,
-        child: Center(
-          child: Text(
-            'At least 2 data points needed',
-            style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
-          ),
-        ),
-      );
-    }
+    final canPlot = spots.length >= 2;
 
-    final lineColor = cumulative >= 0
-        ? AppTheme.profitColor
-        : AppTheme.lossColor;
-    final n = labels.length;
-
-    // Show up to 4 evenly-spaced month labels on x-axis
-    final labelIdxs = _pnlLabelIndices(n, 4).toSet();
-
-    return Container(
-      height: 180,
-      decoration: BoxDecoration(
-        color: AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      padding: const EdgeInsets.fromLTRB(6, 14, 14, 24),
-      child: LineChart(
-        LineChartData(
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            getDrawingHorizontalLine: (_) => FlLine(
-              color: Colors.white.withValues(alpha: 0.05),
-              strokeWidth: 1,
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 58,
-                getTitlesWidget: (v, meta) {
-                  if (v != meta.min && v != meta.max) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Text(
-                      v.abs() >= 1000
-                          ? '\$${(v / 1000).toStringAsFixed(0)}k'
-                          : '\$${v.toStringAsFixed(0)}',
-                      style: const TextStyle(
-                        color: AppTheme.neutralColor,
-                        fontSize: 9,
-                      ),
-                      textAlign: TextAlign.right,
-                    ),
-                  );
-                },
+    return ChartCard(
+      title: 'CUMULATIVE P&L',
+      height: 200,
+      actions: [
+        if (canPlot)
+          ChartActionButton(
+            icon: Icons.fullscreen,
+            tooltip: 'Expand chart',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ChartFullScreenScaffold(
+                  title: 'Cumulative P&L',
+                  child: _PnlPlot(
+                    spots: spots,
+                    labels: labels,
+                    showZoomButtons: true,
+                  ),
+                ),
               ),
             ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 22,
-                interval: 1,
-                getTitlesWidget: (v, _) {
-                  final idx = v.round();
-                  if (!labelIdxs.contains(idx) || idx >= labels.length) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      DateFormat("MMM ''yy").format(labels[idx]),
-                      style: const TextStyle(
-                        color: AppTheme.neutralColor,
-                        fontSize: 9,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            topTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
-            rightTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
-            ),
           ),
-          lineBarsData: [
-            LineChartBarData(
-              spots: spots,
-              isCurved: n > 2,
-              color: lineColor,
-              barWidth: 2.5,
-              dotData: FlDotData(show: n <= 3),
-              belowBarData: BarAreaData(
-                show: true,
-                color: lineColor.withValues(alpha: 0.08),
-              ),
+      ],
+      stats: spots.isEmpty
+          ? null
+          : Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChartStatChip(
+                  label: 'Total',
+                  value: _fmt(cumulative, sign: true),
+                ),
+                ChartStatChip(
+                  label: 'Best mo',
+                  value: _fmt(best, sign: true),
+                  dotColor: AppTheme.profitColor,
+                ),
+                ChartStatChip(
+                  label: 'Worst mo',
+                  value: _fmt(worst, sign: true),
+                  dotColor: AppTheme.lossColor,
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+      child: canPlot
+          ? _PnlPlot(spots: spots, labels: labels)
+          : const ChartEmptyState(
+              icon: Icons.show_chart_rounded,
+              title: 'Not enough data',
+              message:
+                  'Close trades in at least two different months to plot cumulative P&L.',
+            ),
+    );
+  }
+}
+
+/// Cumulative P&L line plot — pan/zoom via PannableChart.
+class _PnlPlot extends StatelessWidget {
+  final List<FlSpot> spots;
+  final List<DateTime> labels;
+  final bool showZoomButtons;
+  const _PnlPlot({
+    required this.spots,
+    required this.labels,
+    this.showZoomButtons = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return PannableChart(
+      count: spots.length,
+      defaultWindow: 12,
+      minWindow: 4,
+      leftAxisWidth: 48,
+      showZoomButtons: showZoomButtons,
+      builder: (ctx, minX, maxX) => _chart(minX, maxX),
     );
   }
 
-  /// Pick up to [count] evenly-spaced indices from [total] items,
-  /// always including the last index so the newest month is labelled.
-  static List<int> _pnlLabelIndices(int total, int count) {
-    if (total <= 0) return [];
-    if (total <= count) return List.generate(total, (i) => i);
-    if (count == 1) return [total - 1];
-    return List.generate(
-      count,
-      (i) => ((i * (total - 1)) / (count - 1)).round(),
+  Widget _chart(double minX, double maxX) {
+    final lineColor = spots.last.y >= 0
+        ? AppTheme.profitColor
+        : AppTheme.lossColor;
+    final n = spots.length;
+    final labelInterval =
+        ((maxX - minX) / 4).ceilToDouble().clamp(1.0, double.infinity);
+
+    return LineChart(
+      LineChartData(
+        minX: minX,
+        maxX: maxX,
+        clipData: const FlClipData.all(),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (_) => FlLine(
+            color: Colors.white.withValues(alpha: 0.05),
+            strokeWidth: 1,
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 48,
+              getTitlesWidget: (v, meta) {
+                if (v != meta.min && v != meta.max) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Text(
+                    _fmt(v),
+                    style: const TextStyle(
+                      color: AppTheme.neutralColor,
+                      fontSize: 9,
+                    ),
+                    textAlign: TextAlign.right,
+                  ),
+                );
+              },
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 22,
+              interval: labelInterval,
+              getTitlesWidget: (v, _) {
+                final idx = v.round();
+                if (idx < 0 ||
+                    idx >= labels.length ||
+                    (v - idx).abs() > 0.01) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    DateFormat("MMM ''yy").format(labels[idx]),
+                    style: const TextStyle(
+                      color: AppTheme.neutralColor,
+                      fontSize: 9,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          topTitles: kNoAxisTitles,
+          rightTitles: kNoAxisTitles,
+        ),
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => AppTheme.elevatedColor,
+            getTooltipItems: (touched) => touched.map((s) {
+              final idx = s.x.round().clamp(0, labels.length - 1);
+              return LineTooltipItem(
+                '${DateFormat("MMM ''yy").format(labels[idx])}\n',
+                const TextStyle(
+                  color: AppTheme.neutralColor,
+                  fontSize: 10,
+                ),
+                children: [
+                  TextSpan(
+                    text: _fmt(s.y, sign: true),
+                    style: TextStyle(
+                      color: s.y >= 0
+                          ? AppTheme.profitColor
+                          : AppTheme.lossColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: n > 2,
+            preventCurveOverShooting: true,
+            color: lineColor,
+            barWidth: 2.5,
+            dotData: FlDotData(show: n <= 3),
+            belowBarData: BarAreaData(
+              show: true,
+              color: lineColor.withValues(alpha: 0.08),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -956,37 +1028,37 @@ class _PerformanceGrid extends StatelessWidget {
         _StatTile(
           icon: Icons.arrow_upward_rounded,
           label: 'Avg Win',
-          value: _fmt(s.avgWin, dollar: true, sign: true),
+          value: _fmt(s.avgWin, sign: true),
           color: AppTheme.profitColor,
         ),
         _StatTile(
           icon: Icons.arrow_downward_rounded,
           label: 'Avg Loss',
-          value: _fmt(s.avgLoss, dollar: true),
+          value: _fmt(s.avgLoss),
           color: AppTheme.lossColor,
         ),
         _StatTile(
           icon: Icons.wb_sunny_rounded,
           label: 'Avg Win Day',
-          value: _fmt(s.avgWinDay, dollar: true, sign: true),
+          value: _fmt(s.avgWinDay, sign: true),
           color: AppTheme.profitColor,
         ),
         _StatTile(
           icon: Icons.nights_stay_rounded,
           label: 'Avg Loss Day',
-          value: _fmt(s.avgLossDay, dollar: true),
+          value: _fmt(s.avgLossDay),
           color: AppTheme.lossColor,
         ),
         _StatTile(
           icon: Icons.account_balance_rounded,
           label: 'Capital Deployed',
-          value: _fmt(s.capitalDeployed, dollar: true),
+          value: _fmt(s.capitalDeployed),
           color: AppTheme.neutralColor,
         ),
         _StatTile(
           icon: Icons.savings_rounded,
           label: 'Current Value',
-          value: _fmt(s.currentValue, dollar: true),
+          value: _fmt(s.currentValue),
           color: s.currentValue >= s.capitalDeployed
               ? AppTheme.profitColor
               : AppTheme.lossColor,

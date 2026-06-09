@@ -8,6 +8,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../services/iv/iv_models.dart';
+import '../../../core/widgets/chart/chart_card.dart';
 
 class IvRankGauge extends StatelessWidget {
   final IvAnalysis analysis;
@@ -15,32 +16,10 @@ class IvRankGauge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color:        AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border:       Border.all(color: AppTheme.borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Row(
-            children: [
-              const Text(
-                'IV RANK',
-                style: TextStyle(
-                  color:      AppTheme.neutralColor,
-                  fontSize:   11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.0,
-                ),
-              ),
-              const Spacer(),
-              _RatingBadge(rating: analysis.rating),
-            ],
-          ),
+    return AnalyticsCard(
+      title: 'IV RANK',
+      actions: [_RatingBadge(rating: analysis.rating)],
+      children: [
           const SizedBox(height: 16),
 
           // Arc gauge + center text
@@ -135,8 +114,7 @@ class IvRankGauge extends StatelessWidget {
                   color: AppTheme.neutralColor, fontSize: 12),
             ),
           ],
-        ],
-      ),
+      ],
     );
   }
 

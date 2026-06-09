@@ -13,6 +13,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import '../../../core/theme.dart';
 import '../../../services/iv/iv_models.dart';
+import '../../../core/widgets/chart/chart_card.dart';
 
 class GexChart extends StatelessWidget {
   final IvAnalysis analysis;
@@ -22,33 +23,12 @@ class GexChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final strikes = analysis.gexStrikes;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color:        AppTheme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border:       Border.all(color: AppTheme.borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header row
-          Row(
-            children: [
-              const Text(
-                'GAMMA EXPOSURE (GEX)',
-                style: TextStyle(
-                  color:      AppTheme.neutralColor,
-                  fontSize:   11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.0,
-                ),
-              ),
-              const Spacer(),
-              if (analysis.totalGex != null)
-                _GexBadge(gex: analysis.totalGex!),
-            ],
-          ),
+    return AnalyticsCard(
+      title: 'GAMMA EXPOSURE (GEX)',
+      actions: [
+        if (analysis.totalGex != null) _GexBadge(gex: analysis.totalGex!),
+      ],
+      children: [
           const SizedBox(height: 4),
 
           // Key stats row
@@ -110,8 +90,7 @@ class GexChart extends StatelessWidget {
           _IvGexSignalRow(analysis: analysis),
           const SizedBox(height: 8),
           _WallDensityRow(analysis: analysis),
-        ],
-      ),
+      ],
     );
   }
 
