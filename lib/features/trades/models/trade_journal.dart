@@ -128,8 +128,8 @@ class TradeJournal {
             ? (json['prev_month_shares_shorted'] as num).toDouble()
             : null,
         generalNews: json['general_news'] as String?,
-        createdAt: DateTime.parse(json['created_at'] as String),
-        updatedAt: DateTime.parse(json['updated_at'] as String),
+        createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
+        updatedAt: DateTime.parse(json['updated_at'] as String).toLocal(),
       );
 
   Map<String, dynamic> toUpsertJson(String userId) => {
@@ -151,6 +151,6 @@ class TradeJournal {
         'shares_shorted': sharesShorted,
         'prev_month_shares_shorted': prevMonthSharesShorted,
         'general_news': generalNews,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
 }

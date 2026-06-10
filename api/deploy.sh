@@ -111,66 +111,65 @@ echo "Creating/updating Cloud Scheduler jobs..."
 # Job 1 — vol surface (all downstream jobs depend on this)
 upsert_job vol-surface-pull \
   "${COMMON_FLAGS[@]}" \
-  --schedule="0 * * * 1-5" \
+  --schedule="0 13-21 * * 1-5" \
   --uri="${SERVICE_URL}/jobs/vol-surface-pull" \
   --attempt-deadline=1800s \
-  --description="Fetch Schwab options chains → vol_surface_snapshots (Mon-Fri hourly)"
+  --description="Fetch Schwab options chains → vol_surface_snapshots (Mon-Fri hourly, 13-21 UTC)"
 
 # Job 2 — SABR calibration
 upsert_job sabr-pull \
   "${COMMON_FLAGS[@]}" \
-  --schedule="3 * * * 1-5" \
+  --schedule="3 13-21 * * 1-5" \
   --uri="${SERVICE_URL}/jobs/sabr-pull" \
   --attempt-deadline=900s \
-  --description="SABR calibration from vol surface snapshots (Mon-Fri hourly)"
+  --description="SABR calibration from vol surface snapshots (Mon-Fri hourly, 13-21 UTC)"
 
 # Job 3a — Heston calibration batch 1 (first half of tickers, alphabetically)
 upsert_job heston-pull \
   "${COMMON_FLAGS[@]}" \
-  --schedule="6 * * * 1-5" \
+  --schedule="6 13-21 * * 1-5" \
   --uri="${SERVICE_URL}/jobs/heston-pull?batch=1" \
   --attempt-deadline=1800s \
-  --description="Heston calibration batch 1 (Mon-Fri hourly)"
+  --description="Heston calibration batch 1 (Mon-Fri hourly, 13-21 UTC)"
 
 # Job 3b — Heston calibration batch 2 (second half of tickers, alphabetically)
 upsert_job heston-pull-2 \
   "${COMMON_FLAGS[@]}" \
-  --schedule="20 * * * 1-5" \
+  --schedule="20 13-21 * * 1-5" \
   --uri="${SERVICE_URL}/jobs/heston-pull?batch=2" \
   --attempt-deadline=1800s \
-  --description="Heston calibration batch 2 (Mon-Fri hourly)"
+  --description="Heston calibration batch 2 (Mon-Fri hourly, 13-21 UTC)"
 
 # Job 4 — IV analytics
 upsert_job iv-pull \
   "${COMMON_FLAGS[@]}" \
-  --schedule="9 * * * 1-5" \
+  --schedule="9 13-21 * * 1-5" \
   --uri="${SERVICE_URL}/jobs/iv-pull" \
   --attempt-deadline=900s \
-  --description="IV analytics + vvol rank → iv_snapshots (Mon-Fri hourly)"
+  --description="IV analytics + vvol rank → iv_snapshots (Mon-Fri hourly, 13-21 UTC)"
 
 # Job 5 — Greek grid
 upsert_job greek-grid-pull \
   "${COMMON_FLAGS[@]}" \
-  --schedule="12 * * * 1-5" \
+  --schedule="12 13-21 * * 1-5" \
   --uri="${SERVICE_URL}/jobs/greek-grid-pull" \
   --attempt-deadline=900s \
-  --description="Greek grid aggregation → greek_grid_snapshots (Mon-Fri hourly)"
+  --description="Greek grid aggregation → greek_grid_snapshots (Mon-Fri hourly, 13-21 UTC)"
 
-# Job 6 — ATM greek snapshots
-upsert_job greek-snapshots-pull \
-  "${COMMON_FLAGS[@]}" \
-  --schedule="15 * * * 1-5" \
-  --uri="${SERVICE_URL}/jobs/greek-snapshots-pull" \
-  --attempt-deadline=900s \
-  --description="ATM greek snapshots (Mon-Fri hourly)"
+# Job 6 — DEPRECATED: greek_snapshots are now written by greek-grid-pull from
+# its single chain fetch. Remove the old scheduler job if it still exists.
+gcloud scheduler jobs delete greek-snapshots-pull \
+  --location="${REGION}" \
+  --project="${PROJECT_ID}" \
+  --quiet 2>/dev/null || echo "  greek-snapshots-pull job already removed"
 
 # Job 7 — Regime classification
 upsert_job regime-pull \
   "${COMMON_FLAGS[@]}" \
-  --schedule="18 * * * 1-5" \
+  --schedule="18 13-21 * * 1-5" \
   --uri="${SERVICE_URL}/jobs/regime-pull" \
   --attempt-deadline=900s \
-  --description="Regime classification → regime_snapshots (Mon-Fri hourly)"
+  --description="Regime classification → regime_snapshots (Mon-Fri hourly, 13-21 UTC)"
 
 # Job ML — Regime ML retrain (weekly, after enough history accumulates)
 upsert_job regime-train-weekly \
@@ -216,7 +215,7 @@ echo ""
 echo "Done. Resources in project ${PROJECT_ID}:"
 echo "  Cloud Run:  ${SERVICE_URL}"
 echo "  Scheduler:  vol-surface-pull, sabr-pull, heston-pull, heston-pull-2, iv-pull,"
-echo "              greek-grid-pull, greek-snapshots-pull, regime-pull,"
+echo "              greek-grid-pull (also writes greek_snapshots), regime-pull,"
 echo "              expected-move-pull, position-eod-snapshot,"
 echo "              vol-period-weekly, vol-period-monthly, regime-train-weekly"
 echo ""

@@ -141,7 +141,7 @@ class TickerRegimeResult {
         strategyBias:   j['strategy_bias']   as String? ?? 'unclear',
         signals:        (j['signals']        as List?)?.cast<String>() ?? [],
         lastUpdated:    j['last_updated'] != null
-                            ? DateTime.tryParse(j['last_updated'] as String)
+                            ? DateTime.tryParse(j['last_updated'] as String)?.toLocal()
                             : null,
         scoringMethod:  j['scoring_method']  as String? ?? 'heuristic',
       );
@@ -224,7 +224,7 @@ class RegimeMlAnalysis {
   });
 
   factory RegimeMlAnalysis.fromJson(Map<String, dynamic> j) => RegimeMlAnalysis(
-    asOf:          DateTime.parse(j['as_of'] as String),
+    asOf:          DateTime.parse(j['as_of'] as String).toLocal(),
     marketContext: MlMarketContext.fromJson(
                        j['market_context'] as Map<String, dynamic>? ?? {}),
     modelMetadata: MlModelMetadata.fromJson(

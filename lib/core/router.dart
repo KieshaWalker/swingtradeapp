@@ -10,19 +10,38 @@
 //   • routerProvider  — GoRouter instance; consumed by App in main.dart
 //
 // Route map:
-//   /login             → LoginScreen           (features/auth)
-//   /signup            → SignupScreen          (features/auth)
-//   /auth/callback     → _AuthCallbackScreen
-//   /                  → SummaryScreen         (features/summary)      [home]
-//   /trades            → TradesScreen          (features/trades)
-//   /trades/add        → AddTradeScreen        (features/trades)
-//   /trades/:id        → TradeDetailScreen     (features/trades) — extra: Trade
-//   /calculator        → CalculatorScreen      (features/calculator)
-//   /journal           → JournalScreen         (features/journal)
-//   /journal/add       → AddJournalScreen      (features/journal)
-//   /economy           → EconomyPulseScreen    (features/economy)
-//   /ticker            → TickerDashboardScreen (features/ticker_profile)
-//   /ticker/:symbol    → TickerProfileScreen   (features/ticker_profile) — no shell
+//   /login                → LoginScreen           (features/auth)
+//   /signup               → SignupScreen          (features/auth)
+//   /auth/callback        → _AuthCallbackScreen
+//   /settings/schwab-auth → SchwabBootstrapScreen (features/settings)
+//   /                     → SummaryScreen         (features/summary)   [home]
+//   /trades               → TradesScreen          (features/trades)
+//   /trades/add           → AddTradeScreen        (features/trades)
+//   /trades/blocks        → TradeBlocksScreen     (features/trades)
+//   /trades/import        → CsvImportScreen       (features/trades)
+//   /trades/:id           → TradeDetailScreen     (features/trades) — extra: Trade
+//   /trades/:id/journal   → TradeJournalScreen    (features/trades) — extra: Trade
+//   /calculator           → CalculatorScreen      (features/calculator)
+//   /journal              → JournalScreen         (features/journal)
+//   /journal/add          → AddJournalScreen      (features/journal)
+//   /economy              → EconomyPulseScreen    (features/economy)
+//   /blotter/evaluate     → TradeEvalScreen       (features/blotter) — ?ticker=
+//   /vol-surface          → VolSurfaceScreen      (features/vol_surface, global)
+//   /macro                → MacroScoreScreen      (features/macro)
+//   /macro/iv-crush       → IvCrushTrackerScreen  (features/macro)
+//   /ideas                → TradeIdeasScreen      (features/ideas)
+//   /current-regime       → CurrentRegimeScreen   (features/current_regime)
+//   /positions            → PositionsScreen       (features/positions)
+//   /strategy-tracker     → StrategyTrackerScreen (features/strategy_tracker)
+//   /strategy-tracker/:id → StrategyDetailScreen  (features/strategy_tracker)
+//   /ticker               → TickerDashboardScreen (features/ticker_profile)
+//   /ticker/:symbol       → TickerProfileScreen   (features/ticker_profile) — no shell
+//     …/chains            → OptionsChainScreen    (features/options)
+//     …/chains/wizard     → OptionDecisionWizard  (features/options)
+//     …/chains/iv         → IvScreen              (features/iv)
+//     …/chains/greeks     → GreekChartScreen      (features/options)
+//     …/greek-grid        → GreekGridScreen       (features/greek_grid)
+//     …/vol-surface       → VolSurfaceScreen      (features/vol_surface, scoped)
 //
 // Auth guard (redirect):
 //   Unauthenticated users → /login
@@ -61,6 +80,8 @@ import '../features/ideas/screens/trade_ideas_screen.dart';
 import '../features/greek_grid/screens/greek_grid_screen.dart';
 import '../features/settings/screens/schwab_bootstrap_screen.dart';
 import '../features/current_regime/screens/current_regime_screen.dart';
+import '../features/macro/screens/macro_score_screen.dart';
+import '../features/macro/screens/iv_crush_tracker_screen.dart';
 import '../features/positions/screens/positions_screen.dart';
 import '../features/strategy_tracker/screens/strategy_tracker_screen.dart';
 import '../features/strategy_tracker/screens/strategy_detail_screen.dart';
@@ -151,6 +172,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: 'import', builder: (_, _) => const CsvImportScreen()),
           GoRoute(
             path: ':id',
+            // These screens need the Trade passed via `extra`, which doesn't
+            // survive a browser refresh / direct deep link — fall back to the
+            // trades list instead of crashing on the null cast.
+            redirect: (_, state) => state.extra == null ? '/trades' : null,
             builder: (_, state) {
               final trade = state.extra as Trade;
               return TradeDetailScreen(trade: trade);
@@ -158,6 +183,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: 'journal',
+                redirect: (_, state) => state.extra == null ? '/trades' : null,
                 builder: (_, state) {
                   final trade = state.extra as Trade;
                   return TradeJournalScreen(trade: trade);
@@ -196,6 +222,24 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => TradeEvalScreen(
           initialTicker: state.uri.queryParameters['ticker'],
         ),
+      ),
+      // Global multi-ticker vol surface (no symbol). Linked from the vol
+      // surface phase panel; the per-ticker view lives under /ticker/:symbol.
+      GoRoute(
+        path: '/vol-surface',
+        builder: (_, _) => const VolSurfaceScreen(),
+      ),
+      // Macro score detail — linked from the Home macro card and the
+      // economic phase panel.
+      GoRoute(
+        path: '/macro',
+        builder: (_, _) => const MacroScoreScreen(),
+        routes: [
+          GoRoute(
+            path: 'iv-crush',
+            builder: (_, _) => const IvCrushTrackerScreen(),
+          ),
+        ],
       ),
       GoRoute(
         path: '/ideas',

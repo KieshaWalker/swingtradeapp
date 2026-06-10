@@ -51,7 +51,7 @@ async def schwab_pull_trigger(request: Request):
 @router.post("/vol-surface-pull")
 async def vol_surface_pull_trigger(request: Request):
     """Job 1 — Fetch chain → vol_surface_snapshots.
-    Cron: 0 * * * 1-5
+    Cron: 0 13-21 * * 1-5  (in-code ET market-session guard trims the edges)
     """
     _verify_scheduler(request)
     from jobs.vol_surface_pull import run_vol_surface_pull
@@ -63,7 +63,7 @@ async def vol_surface_pull_trigger(request: Request):
 @router.post("/sabr-pull")
 async def sabr_pull_trigger(request: Request):
     """Job 2 — vol_surface_snapshots → sabr_calibrations.
-    Cron: 3 * * * 1-5
+    Cron: 3 13-21 * * 1-5
     """
     _verify_scheduler(request)
     from jobs.sabr_pull import run_sabr_pull
@@ -75,8 +75,8 @@ async def sabr_pull_trigger(request: Request):
 @router.post("/heston-pull")
 async def heston_pull_trigger(request: Request, batch: int = Query(1)):
     """Job 3 — vol_surface_snapshots → heston_calibrations.
-    batch=1 (A–M) cron: 6 * * * 1-5
-    batch=2 (N–Z) cron: 20 * * * 1-5
+    batch=1 (A–M) cron: 6 13-21 * * 1-5
+    batch=2 (N–Z) cron: 20 13-21 * * 1-5
     """
     _verify_scheduler(request)
     from jobs.heston_pull import run_heston_pull
@@ -88,7 +88,7 @@ async def heston_pull_trigger(request: Request, batch: int = Query(1)):
 @router.post("/iv-pull")
 async def iv_pull_trigger(request: Request):
     """Job 4 — Fetch chain + sabr history → iv_snapshots.
-    Cron: 9 * * * 1-5
+    Cron: 9 13-21 * * 1-5
     """
     _verify_scheduler(request)
     from jobs.iv_pull import run_iv_pull
@@ -99,8 +99,8 @@ async def iv_pull_trigger(request: Request):
 
 @router.post("/greek-grid-pull")
 async def greek_grid_pull_trigger(request: Request):
-    """Job 5 — Fetch chain → greek_grid_snapshots.
-    Cron: 12 * * * 1-5
+    """Job 5 — Fetch chain → greek_grid_snapshots + greek_snapshots (one shared fetch).
+    Cron: 12 13-21 * * 1-5
     """
     _verify_scheduler(request)
     from jobs.greek_grid_pull import run_greek_grid_pull
@@ -111,8 +111,8 @@ async def greek_grid_pull_trigger(request: Request):
 
 @router.post("/greek-snapshots-pull")
 async def greek_snapshots_pull_trigger(request: Request):
-    """Job 6 — Fetch chain → greek_snapshots (ATM per DTE bucket).
-    Cron: 15 * * * 1-5
+    """Job 6 — DEPRECATED no-op: greek_snapshots are written by greek-grid-pull.
+    Delete the greek-snapshots-pull Cloud Scheduler job.
     """
     _verify_scheduler(request)
     from jobs.greek_snapshots_pull import run_greek_snapshots_pull
@@ -136,7 +136,7 @@ async def sofr_pull_trigger(request: Request):
 @router.post("/regime-pull")
 async def regime_pull_trigger(request: Request):
     """Job 7 — iv_snapshots + price history + VIX → regime_snapshots.
-    Cron: 18 * * * 1-5
+    Cron: 18 13-21 * * 1-5
     """
     _verify_scheduler(request)
     from jobs.regime_pull import run_regime_pull

@@ -61,6 +61,8 @@ class _FetchDtesSheetState extends ConsumerState<FetchDtesSheet> {
         userId:          userId,
         expirationDates: selectedExps,
       );
+      // The sheet may have been dismissed during the (up to 30 s) fetch.
+      if (!mounted) return;
 
       // Invalidate providers so the profile refreshes with new data
       ref.invalidate(greekGridProvider(widget.symbol));
@@ -72,11 +74,13 @@ class _FetchDtesSheetState extends ConsumerState<FetchDtesSheet> {
         _resultSummary = raw.map((k, v) => MapEntry(k, v.toString()));
       });
     } on PythonApiException catch (e) {
+      if (!mounted) return;
       setState(() {
         _fetching     = false;
         _errorMessage = e.message;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _fetching     = false;
         _errorMessage = e.toString();

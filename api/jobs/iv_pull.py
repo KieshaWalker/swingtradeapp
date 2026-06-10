@@ -4,7 +4,7 @@ from __future__ import annotations
 # jobs/iv_pull.py
 # =============================================================================
 # Job 4 — Fetch chain → IV analytics + vvol rank → upsert iv_snapshots.
-# Cron: 9 * * * 1-5  (9 min after vol_surface_pull, Mon–Fri)
+# Cron: 9 13-21 * * 1-5  (9 min after vol_surface_pull, Mon–Fri)
 #
 # Fetches the raw Schwab chain (needed by iv_analyse for GEX/RND computation).
 # Reads today's sabr_calibrations for vvol rank (written by sabr_pull).
@@ -12,39 +12,49 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 
 import httpx
 
 from core.supabase_client import get_supabase
-from jobs.common import get_tickers, fetch_schwab_chain
+from jobs.common import get_tickers, fetch_schwab_chain, market_session_guard
 from jobs.sabr_pull import fetch_nu_history
 from services.iv_analytics import analyse as iv_analyse
 from services.vvol_analytics import compute as vvol_compute
 
 log = logging.getLogger(__name__)
 
+_CONCURRENCY = 5
+
 
 async def run_iv_pull() -> dict:
-    now = datetime.now(timezone.utc)
-    if now.hour >= 21:
-        log.info("iv_pull: skipped (after 4 PM ET / 21:00 UTC)")
-        return {"status": "after_4pm"}
-    
+    skip = market_session_guard()
+    if skip:
+        log.info("iv_pull: skipped (%s)", skip)
+        return {"status": "skipped", "reason": skip}
+
     db = get_supabase()
     today = date.today().isoformat()
-    rows = get_tickers(db)
-    if not rows:
+    all_rows = get_tickers(db)
+    if not all_rows:
         log.warning("iv_pull: no tickers")
         return {"status": "no_tickers"}
 
+    # iv_snapshots is keyed (ticker, date) — global, not per-user — so process
+    # each ticker once. Pick the lowest user_id per ticker deterministically
+    # for the per-user SABR/vvol inputs (was last-writer-wins before).
+    by_ticker: dict[str, dict] = {}
+    for r in sorted(all_rows, key=lambda r: (r["ticker"], r["user_id"])):
+        by_ticker.setdefault(r["ticker"], r)
+    rows = list(by_ticker.values())
+
     results: dict[str, str] = {}
+    sem = asyncio.Semaphore(_CONCURRENCY)
 
     # Prefetch all DB reads before the concurrent HTTP section so synchronous
     # Supabase calls don't block the event loop mid-gather.
-    unique_tickers = list({r["ticker"] for r in rows})
     iv_history_map: dict[str, list[dict]] = {
-        t: _fetch_iv_history(db, t) for t in unique_tickers
+        r["ticker"]: _fetch_iv_history(db, r["ticker"], today) for r in rows
     }
     sabr_map: dict[tuple[str, str], list[dict]] = {
         (r["ticker"], r["user_id"]): _fetch_today_sabr(db, r["ticker"], r["user_id"], today)
@@ -61,7 +71,8 @@ async def run_iv_pull() -> dict:
             ticker  = row["ticker"]
             user_id = row["user_id"]
             try:
-                chain = await fetch_schwab_chain(client, ticker)
+                async with sem:
+                    chain = await fetch_schwab_chain(client, ticker)
                 if chain is None:
                     return ticker, "chain_error"
                 spot = float(chain.get("underlyingPrice", 0))
@@ -93,16 +104,26 @@ async def run_iv_pull() -> dict:
     return {"status": "complete", "tickers": results, "date": today}
 
 
-def _fetch_iv_history(db, ticker: str) -> list[dict]:
+def _fetch_iv_history(db, ticker: str, before_date: str) -> list[dict]:
+    """Most recent 252 prior-day rows, returned oldest→newest.
+
+    Order desc + reverse: ascending order with a limit returns the *oldest*
+    rows once the table outgrows the limit, freezing IVR/IVP/skew windows on
+    ancient data. Excludes before_date (today) so the rank window holds prior
+    sessions only.
+    """
     resp = (
         db.table("iv_snapshots")
         .select("atm_iv,skew,total_gex,date")
         .eq("ticker", ticker)
-        .order("date", desc=False)
+        .lt("date", before_date)
+        .order("date", desc=True)
         .limit(252)
         .execute()
     )
-    return resp.data or []
+    rows = resp.data or []
+    rows.reverse()
+    return rows
 
 
 def _fetch_today_sabr(db, ticker: str, user_id: str, today: str) -> list[dict]:

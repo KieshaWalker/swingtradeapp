@@ -58,7 +58,7 @@ class PartialClose {
         contractsClosed: json['contracts_closed'] as int,
         exitPrice: (json['exit_price'] as num).toDouble(),
         pnl: (json['pnl'] as num).toDouble(),
-        closedAt: DateTime.parse(json['closed_at'] as String),
+        closedAt: DateTime.parse(json['closed_at'] as String).toLocal(),
       );
 }
 
@@ -243,9 +243,9 @@ class Trade {
         ivRank: json['iv_rank'] != null ? (json['iv_rank'] as num).toDouble() : null,
         delta: json['delta'] != null ? (json['delta'] as num).toDouble() : null,
         notes: json['notes'] as String?,
-        openedAt: DateTime.parse(json['opened_at'] as String),
+        openedAt: DateTime.parse(json['opened_at'] as String).toLocal(),
         closedAt: json['closed_at'] != null
-            ? DateTime.parse(json['closed_at'] as String)
+            ? DateTime.parse(json['closed_at'] as String).toLocal()
             : null,
         priceRangeHigh: json['price_range_high'] != null
             ? (json['price_range_high'] as num).toDouble()

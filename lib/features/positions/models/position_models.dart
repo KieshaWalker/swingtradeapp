@@ -65,7 +65,7 @@ class LegSnapshot {
         vega: (row['vega'] as num?)?.toDouble(),
         rho: (row['rho'] as num?)?.toDouble(),
         impliedVol: (row['implied_vol'] as num?)?.toDouble(),
-        createdAt: DateTime.parse(row['created_at'] as String),
+        createdAt: DateTime.parse(row['created_at'] as String).toLocal(),
       );
 
   Map<String, dynamic> toSupabaseInsert() => {
@@ -156,7 +156,7 @@ class PositionLeg {
         'entryPrice': entryPrice,
         'exitPrice': exitPrice,
         'status': status.name,
-        'closedAt': closedAt?.toIso8601String(),
+        'closedAt': closedAt?.toUtc().toIso8601String(),
       };
 
   factory PositionLeg.fromJson(Map<String, dynamic> j) => PositionLeg(
@@ -172,7 +172,7 @@ class PositionLeg {
             ? LegStatus.values.byName(j['status'] as String)
             : LegStatus.open,
         closedAt: j['closedAt'] != null
-            ? DateTime.parse(j['closedAt'] as String)
+            ? DateTime.parse(j['closedAt'] as String).toLocal()
             : null,
       );
 
@@ -189,7 +189,7 @@ class PositionLeg {
             ? LegStatus.values.byName(row['status'] as String)
             : LegStatus.open,
         closedAt: row['closed_at'] != null
-            ? DateTime.parse(row['closed_at'] as String)
+            ? DateTime.parse(row['closed_at'] as String).toLocal()
             : null,
       );
 
@@ -204,7 +204,7 @@ class PositionLeg {
         if (entryPrice != null) 'entry_price': entryPrice,
         if (exitPrice != null) 'exit_price': exitPrice,
         'status': status.name,
-        if (closedAt != null) 'closed_at': closedAt!.toIso8601String(),
+        if (closedAt != null) 'closed_at': closedAt!.toUtc().toIso8601String(),
       };
 
   String get label {

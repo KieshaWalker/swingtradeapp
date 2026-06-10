@@ -205,6 +205,7 @@ class _ApiForm4SheetState extends ConsumerState<ApiForm4Sheet> {
         'proxy-edgar-xml',
         body: {'url': xmlUrl},
       );
+      if (!mounted) return;
       if (res.status != 200) {
         setState(() {
           _loadError = 'Could not fetch filing XML (HTTP ${res.status}).';
@@ -237,6 +238,7 @@ class _ApiForm4SheetState extends ConsumerState<ApiForm4Sheet> {
         _step = 1;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _loadError = 'Failed to load filing: $e';
         _loadingXml = false;

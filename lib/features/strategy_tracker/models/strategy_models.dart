@@ -452,7 +452,7 @@ class StrategySetup {
                 .whereType<TargetArea>()
                 .toList()
             : [],
-        createdAt:    DateTime.parse(j['created_at'] as String),
+        createdAt:    DateTime.parse(j['created_at'] as String).toLocal(),
         linkedTrades: linkedTrades,
       );
 

@@ -571,6 +571,7 @@ class _BlackScholesTabState extends State<_BlackScholesTab> {
           optionType: _isCall ? 'call' : 'put',
         ),
       ]);
+      if (!mounted) return;
       setState(() {
         _priceResult = results[0];
         _greeksResult = results[1];
@@ -813,6 +814,7 @@ class _SABRTabState extends State<_SABRTab> {
       final result = await PythonApiClient.sabrIv(
         f: f, k: k, t: t, alpha: alpha, beta: _beta, rho: rho, nu: nu,
       );
+      if (!mounted) return;
       setState(() => _sabrVol = (result['sabr_vol'] as num).toDouble());
     } on PythonApiException catch (e) {
       if (mounted) {
@@ -1066,6 +1068,7 @@ class _HestonTabState extends State<_HestonTab> {
         r: r / 100, isCall: _isCall,
         kappa: kappa, theta: theta, xi: xi, rho: rho, v0: v0,
       );
+      if (!mounted) return;
       setState(() => _result = res);
     } on PythonApiException catch (e) {
       if (mounted) {
@@ -1623,6 +1626,7 @@ class _TheoreticalPriceTabState extends State<_TheoreticalPriceTab> {
         brokerMid: mid,
         r: r / 100,
       );
+      if (!mounted) return;
       setState(() => _result = res);
     } on PythonApiException catch (e) {
       if (mounted) {
@@ -2292,8 +2296,10 @@ class _ImpliedVolTabState extends State<_ImpliedVolTab> {
         r: r / 100,
         optionType: _isCall ? 'call' : 'put',
       );
+      if (!mounted) return;
       setState(() => _result = res);
     } on PythonApiException catch (e) {
+      if (!mounted) return;
       setState(() => _error = 'API error (${e.statusCode}): ${e.message}');
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -2698,8 +2704,10 @@ class _VommaTabState extends State<_VommaTab> {
         sigma: iv / 100, r: r / 100,
         optionType: _isCall ? 'call' : 'put',
       );
+      if (!mounted) return;
       setState(() { _result = res; _loading = false; });
     } catch (e) {
+      if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
     }
   }

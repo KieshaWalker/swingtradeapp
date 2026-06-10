@@ -5,7 +5,7 @@ from typing import Optional
 # jobs/regime_pull.py
 # =============================================================================
 # Job 7 — Read iv_snapshots + price history → regime classification → upsert regime_snapshots.
-# Cron: 18 * * * 1-5  (18 min after vol_surface_pull, Mon–Fri)
+# Cron: 18 13-21 * * 1-5  (18 min after vol_surface_pull, Mon–Fri)
 #
 # Reads today's iv_snapshots (written by iv_pull).
 # Fetches price/volume history for SMA and ROC computation.
@@ -17,17 +17,19 @@ from typing import Optional
 
 import asyncio
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 
 import httpx
 
 from core.config import settings
 from core.supabase_client import get_supabase
-from jobs.common import get_tickers, fetch_schwab_closes
+from jobs.common import get_tickers, fetch_schwab_closes, market_session_guard
 from services.regime_service import classify_regime, compute_wilder_rsi
 from services.hmm_regime import classify_vix_regime
 
 log = logging.getLogger(__name__)
+
+_CONCURRENCY = 5
 
 
 async def _fetch_fred_series(
@@ -58,19 +60,24 @@ async def _fetch_fred_series(
 
 
 async def run_regime_pull() -> dict:
-    now = datetime.now(timezone.utc)
-    if now.hour >= 21:
-        log.info("regime_pull: skipped (after 4 PM ET)")
-        return {"status": "after_4pm"}
+    skip = market_session_guard()
+    if skip:
+        log.info("regime_pull: skipped (%s)", skip)
+        return {"status": "skipped", "reason": skip}
 
     db = get_supabase()
     today = date.today().isoformat()
-    rows = get_tickers(db)
-    if not rows:
+    all_rows = get_tickers(db)
+    if not all_rows:
         log.warning("regime_pull: no tickers")
         return {"status": "no_tickers"}
 
+    # regime_snapshots is keyed (ticker, obs_date) — global, not per-user — so
+    # classify each ticker exactly once regardless of how many users watch it.
+    tickers = sorted({r["ticker"] for r in all_rows})
+
     results: dict[str, str] = {}
+    sem = asyncio.Semaphore(_CONCURRENCY)
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         # Fetch macro index histories in parallel
@@ -160,9 +167,7 @@ async def run_regime_pull() -> dict:
             hmm_result.state.value if hmm_result else "—",
         )
 
-        async def _process(row: dict) -> tuple[str, str]:
-            ticker  = row["ticker"]
-            user_id = row["user_id"]
+        async def _process(ticker: str) -> tuple[str, str]:
             try:
                 # Read today's IV snapshot (written by iv_pull)
                 iv_snap = (
@@ -185,7 +190,8 @@ async def run_regime_pull() -> dict:
                 spot = float(iv.get("underlying_price") or 0)
 
                 # Price/volume history for SMA + ROC
-                closes, volumes = await fetch_schwab_closes(client, ticker, days=65)
+                async with sem:
+                    closes, volumes = await fetch_schwab_closes(client, ticker, days=65)
                 clean_c = [c for c in closes  if c and c > 0]
                 clean_v = [v for v in volumes if v and v > 0]
 
@@ -230,37 +236,13 @@ async def run_regime_pull() -> dict:
                 log.error("regime_failed ticker=%s error=%r", ticker, exc, exc_info=True)
                 return ticker, f"error:{exc!r}"
 
-        results = dict(await asyncio.gather(*[_process(r) for r in rows]))
+        results = dict(await asyncio.gather(*[_process(t) for t in tickers]))
 
-    # Attempt ML retrain after snapshots are written — non-blocking.
-    # Starts working from MIN_SAMPLES_EARLY (60 rows); upgrades to full
-    # walk-forward CV automatically once MIN_SAMPLES_FULL (200 rows) is met.
-    _attempt_ml_retrain(db)
+    # ML retraining is handled by the weekly regime-train Cloud Scheduler job
+    # (routers/scheduler_trigger.py). Training data only changes once per day,
+    # so retraining here on every hourly run was pure waste.
 
     return {"status": "complete", "tickers": results, "date": today}
-
-
-def _attempt_ml_retrain(db) -> None:
-    try:
-        from services.regime_ml_trainer import train_and_store
-        from services.regime_ml_service import load_trained_model
-        result = train_and_store(db)
-        if result.sufficient_data:
-            load_trained_model(db)
-            log.info(
-                "regime_ml auto_retrained model=%s mode=%s n=%d auc=%.3f",
-                result.model_type,
-                result.model_json.get("training_mode", "?"),
-                result.n_samples,
-                result.auc_roc,
-            )
-        else:
-            log.info(
-                "regime_ml auto_retrain skipped n=%d min_needed=60",
-                result.n_samples,
-            )
-    except Exception as exc:
-        log.warning("regime_ml auto_retrain_failed error=%s", exc)
 
 
 def _upsert_regime_snapshot(db, today: str, regime) -> None:

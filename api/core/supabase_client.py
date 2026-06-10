@@ -19,6 +19,26 @@ from .config import settings
 _client:Optional[Client] = None
 
 
+def fetch_all(build_query, page_size: int = 1000) -> list:
+    """Fetch every row of a PostgREST query, paginating past the server-side
+    max-rows cap (Supabase default: 1000 rows per request, applied silently).
+
+    build_query: zero-arg callable returning a fresh, fully-filtered query
+    builder with a deterministic ORDER BY (unique across rows — add secondary
+    sort keys if needed) and no .range()/.limit() applied.
+    """
+    rows: list = []
+    offset = 0
+    while True:
+        page = (
+            build_query().range(offset, offset + page_size - 1).execute()
+        ).data or []
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+        offset += page_size
+
+
 def get_supabase() -> Client:
     global _client
     if _client is None:

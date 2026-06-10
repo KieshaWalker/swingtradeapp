@@ -70,7 +70,7 @@ class JournalEntry {
         tags: json['tags'] != null
             ? List<String>.from(json['tags'] as List)
             : [],
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
       );
 
   Map<String, dynamic> toJson() => {

@@ -53,7 +53,7 @@ class TickerProfileNote {
         tags: json['tags'] != null
             ? List<String>.from(json['tags'] as List)
             : [],
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -123,9 +123,9 @@ class SupportResistanceLevel {
                 orElse: () => SRTimeframe.daily,
               )
             : null,
-        notedAt: DateTime.parse(json['noted_at'] as String),
+        notedAt: DateTime.parse(json['noted_at'] as String).toLocal(),
         invalidatedAt: json['invalidated_at'] != null
-            ? DateTime.parse(json['invalidated_at'] as String)
+            ? DateTime.parse(json['invalidated_at'] as String).toLocal()
             : null,
         invalidationNote: json['invalidation_note'] as String?,
       );

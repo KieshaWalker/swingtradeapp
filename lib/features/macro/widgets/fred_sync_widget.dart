@@ -1,5 +1,5 @@
 // =============================================================================
-// features/macro/fred_sync_widget.dart
+// features/macro/widgets/fred_sync_widget.dart
 // =============================================================================
 // Silent background widget — wraps any screen and triggers all FRED fetches.
 // When each series arrives it is persisted to Supabase, then macroScoreProvider
@@ -10,8 +10,8 @@
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../services/fred/fred_providers.dart';
-import '../../services/macro/macro_score_provider.dart';
+import '../../../services/fred/fred_providers.dart';
+import '../../../services/macro/macro_score_provider.dart';
 
 class FredSyncWidget extends ConsumerStatefulWidget {
   final Widget child;

@@ -78,7 +78,7 @@ class _AddEarningsReactionSheetState
       firstDate: DateTime(2000),
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
-    if (picked != null) setState(() => _earningsDate = picked);
+    if (picked != null && mounted) setState(() => _earningsDate = picked);
   }
 
   double? _parse(TextEditingController c) =>

@@ -59,7 +59,7 @@ class PositionsNotifier extends StateNotifier<List<Position>> {
   Future<void> update(Position p) async {
     await _db
         .from('positions')
-        .update({'name': p.name, 'updated_at': DateTime.now().toIso8601String()})
+        .update({'name': p.name, 'updated_at': DateTime.now().toUtc().toIso8601String()})
         .eq('id', p.id);
 
     // Only delete legs that were removed — preserves snapshot history for retained legs.
@@ -95,7 +95,7 @@ class PositionsNotifier extends StateNotifier<List<Position>> {
     await _db.from('position_legs').update({
       'status': 'closed',
       'exit_price': exitPrice,
-      'closed_at': now.toIso8601String(),
+      'closed_at': now.toUtc().toIso8601String(),
     }).eq('id', legId);
 
     // Find the leg in state and capture exit snapshot

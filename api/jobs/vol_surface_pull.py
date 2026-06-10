@@ -4,7 +4,7 @@ from __future__ import annotations
 # jobs/vol_surface_pull.py
 # =============================================================================
 # Job 1 — Fetch Schwab options chain → upsert vol_surface_snapshots.
-# Cron: 0 * * * 1-5  (top of every hour, Mon–Fri)
+# Cron: 0 13-21 * * 1-5  (hourly during US market hours, Mon–Fri)
 #
 # All downstream jobs (sabr, heston, iv, greek_grid, greek_snapshots, regime)
 # depend on data written here — run this first.
@@ -19,17 +19,22 @@ import httpx
 
 from core.supabase_client import get_supabase
 from core.chain_utils import parse_expirations
-from jobs.common import get_tickers, fetch_schwab_chain, _fgt0, _fne0, _fany, _igt0
+from jobs.common import (
+    get_tickers, fetch_schwab_chain, market_session_guard,
+    _fgt0, _fne0, _fany, _igt0,
+)
 
 log = logging.getLogger(__name__)
 
+_CONCURRENCY = 5
+
 
 async def run_vol_surface_pull() -> dict:
-    now = datetime.now(timezone.utc)
-    if now.hour >= 21:
-        log.info("vol_surface_pull: skipped (after 4 PM ET / 21:00 UTC)")
-        return {"status": "after_4pm"}
-    
+    skip = market_session_guard()
+    if skip:
+        log.info("vol_surface_pull: skipped (%s)", skip)
+        return {"status": "skipped", "reason": skip}
+
     db = get_supabase()
     today = date.today().isoformat()
     rows = get_tickers(db)
@@ -38,13 +43,15 @@ async def run_vol_surface_pull() -> dict:
         return {"status": "no_tickers"}
 
     results: dict[str, str] = {}
+    sem = asyncio.Semaphore(_CONCURRENCY)
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         async def _process(row: dict) -> tuple[str, str]:
             ticker  = row["ticker"]
             user_id = row["user_id"]
             try:
-                chain = await fetch_schwab_chain(client, ticker)
+                async with sem:
+                    chain = await fetch_schwab_chain(client, ticker)
                 if chain is None:
                     return ticker, "chain_error"
                 spot = float(chain.get("underlyingPrice", 0))

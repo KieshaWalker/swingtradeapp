@@ -1,5 +1,5 @@
 // =============================================================================
-// features/macro/macro_score_screen.dart
+// features/macro/screens/macro_score_screen.dart
 // =============================================================================
 // Full-screen macro regime breakdown.
 // Shows score gauge, each sub-component bar, and strategy recommendations.
@@ -7,10 +7,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/theme.dart';
-import '../../services/macro/macro_score_model.dart';
-import '../../services/macro/macro_score_provider.dart';
-import 'iv_crush_tracker_screen.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/theme.dart';
+import '../../../services/macro/macro_score_model.dart';
+import '../../../services/macro/macro_score_provider.dart';
 
 class MacroScoreScreen extends ConsumerWidget {
   const MacroScoreScreen({super.key});
@@ -94,11 +94,7 @@ class _ScoreBody extends StatelessWidget {
         // IV Crush Tracker link
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute<void>(
-                builder: (_) => const IvCrushTrackerScreen()),
-          ),
+          onPressed: () => context.push('/macro/iv-crush'),
           icon: const Icon(Icons.compress_outlined, size: 16),
           label: const Text('IV Crush Tracker'),
           style: OutlinedButton.styleFrom(

@@ -168,16 +168,21 @@ def load_latest_model(supabase_client) ->Optional[dict]:
 def _fetch_all_snapshots(supabase_client, history_days: int) -> list[dict]:
     try:
         from datetime import timedelta
+        from core.supabase_client import fetch_all
         cutoff = (datetime.now(timezone.utc) - timedelta(days=history_days)).date().isoformat()
-        resp = (
-            supabase_client
-            .table("regime_snapshots")
-            .select("*")
-            .gte("obs_date", cutoff)
-            .order("obs_date", desc=False)
-            .execute()
+        # Paginate: history_days × n_tickers rows exceeds the Supabase 1000-row
+        # response cap, which silently dropped the most recent dates from the
+        # training set. Secondary sort on ticker keeps pagination stable.
+        return fetch_all(
+            lambda: (
+                supabase_client
+                .table("regime_snapshots")
+                .select("*")
+                .gte("obs_date", cutoff)
+                .order("obs_date", desc=False)
+                .order("ticker", desc=False)
+            )
         )
-        return resp.data or []
     except Exception as exc:
         log.warning("regime_snapshots_fetch_failed error=%s", exc)
         return []

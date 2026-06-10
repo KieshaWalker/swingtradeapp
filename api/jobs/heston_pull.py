@@ -4,34 +4,41 @@ from __future__ import annotations
 # jobs/heston_pull.py
 # =============================================================================
 # Job 3 — Read vol_surface_snapshots → Heston calibration → upsert heston_calibrations.
-# Cron: 6 * * * 1-5  (6 min after vol_surface_pull, Mon–Fri)
+# Cron: 6 13-21 * * 1-5 (batch 1) / 20 13-21 * * 1-5 (batch 2), Mon–Fri
 #
 # Reads today's vol_surface_snapshots.points written by vol_surface_pull.
 # =============================================================================
 
 import asyncio
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 
 from core.supabase_client import get_supabase
-from jobs.common import get_tickers
+from jobs.common import get_tickers, market_session_guard
 from services.heston_calibrator import calibrate_heston
 
 log = logging.getLogger(__name__)
 
+# Cooperative calibration deadline. Slightly under the asyncio.wait_for backstop
+# so the optimizer stops itself and the worker thread actually exits — wait_for
+# alone abandons the thread, which keeps burning the single Cloud Run CPU.
+_CALIBRATION_DEADLINE_S = 170.0
+_CALIBRATION_BACKSTOP_S = 180.0
+
 
 async def run_heston_pull(batch: int = 1) -> dict:
-    now = datetime.now(timezone.utc)
-    if now.hour >= 21:
-        log.info("heston_pull: skipped (after 4 PM ET)")
-        return {"status": "after_4pm"}
+    skip = market_session_guard()
+    if skip:
+        log.info("heston_pull: skipped (%s)", skip)
+        return {"status": "skipped", "reason": skip}
 
     db = get_supabase()
     today = date.today().isoformat()
     all_rows = get_tickers(db)
-    all_rows.sort(key=lambda r: r["ticker"])
-    mid = len(all_rows) // 2
-    rows = all_rows[:mid] if batch == 1 else all_rows[mid:]
+    # Deterministic first-letter split (A–M / N–Z) so a watchlist change between
+    # the batch-1 (:06) and batch-2 (:20) runs can't skip a boundary ticker.
+    rows = [r for r in all_rows if (r["ticker"][:1].upper() <= "M") == (batch == 1)]
+    rows.sort(key=lambda r: r["ticker"])
 
     if not rows:
         log.warning("heston_pull: no tickers")
@@ -62,11 +69,16 @@ async def run_heston_pull(batch: int = 1) -> dict:
             if not points:
                 return ticker, "no_points"
 
-            # Calibration with 180s timeout per ticker
+            # Calibration with cooperative deadline + hard backstop per ticker
             try:
                 result = await asyncio.wait_for(
-                    asyncio.to_thread(calibrate_heston, surface_points=points, spot=spot),
-                    timeout=180.0
+                    asyncio.to_thread(
+                        calibrate_heston,
+                        surface_points=points,
+                        spot=spot,
+                        deadline_s=_CALIBRATION_DEADLINE_S,
+                    ),
+                    timeout=_CALIBRATION_BACKSTOP_S,
                 )
             except asyncio.TimeoutError:
                 log.warning("heston_calibration_timeout ticker=%s — writing sentinel row", ticker)

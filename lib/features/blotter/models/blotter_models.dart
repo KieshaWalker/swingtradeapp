@@ -358,7 +358,7 @@ class BlotterTrade {
       (s) => s.name == j['status'],
       orElse: () => TradeStatus.draft,
     ),
-    createdAt: DateTime.parse(j['created_at'] as String),
+    createdAt: DateTime.parse(j['created_at'] as String).toLocal(),
     fairValueResult: FairValueResult.fromJson(j),
     delta: (j['delta'] as num?)?.toDouble(),
     gamma: (j['gamma'] as num?)?.toDouble(),

@@ -3,8 +3,12 @@ from __future__ import annotations
 # =============================================================================
 # jobs/greek_grid_pull.py
 # =============================================================================
-# Job 5 — Fetch chain → greek grid aggregation → upsert greek_grid_snapshots.
-# Cron: 12 * * * 1-5  (12 min after vol_surface_pull, Mon–Fri)
+# Job 5 — Fetch chain → greek grid + ATM greek snapshots from ONE shared fetch.
+# Cron: 12 13-21 * * 1-5  (12 min after vol_surface_pull, Mon–Fri)
+#
+# Writes both greek_grid_snapshots and greek_snapshots. The former standalone
+# greek_snapshots_pull job (:15 cron) duplicated this job's chain fetch for
+# every ticker and is now a deprecated no-op — see jobs/greek_snapshots_pull.py.
 # =============================================================================
 
 import asyncio
@@ -14,18 +18,21 @@ from datetime import datetime, date, timezone
 import httpx
 
 from core.supabase_client import get_supabase
-from jobs.common import get_tickers, fetch_schwab_chain
+from jobs.common import get_tickers, fetch_schwab_chain, market_session_guard
+from jobs.greek_snapshots_pull import _upsert_greek_snapshots
 from services.greek_grid_ingester import ingest as grid_ingest
 
 log = logging.getLogger(__name__)
 
+_CONCURRENCY = 5
+
 
 async def run_greek_grid_pull() -> dict:
-    now = datetime.now(timezone.utc)
-    if now.hour >= 21:
-        log.info("greek_grid_pull: skipped (after 4 PM ET / 21:00 UTC)")
-        return {"status": "after_4pm"}
-    
+    skip = market_session_guard()
+    if skip:
+        log.info("greek_grid_pull: skipped (%s)", skip)
+        return {"status": "skipped", "reason": skip}
+
     db = get_supabase()
     today = date.today().isoformat()
     rows = get_tickers(db)
@@ -34,13 +41,15 @@ async def run_greek_grid_pull() -> dict:
         return {"status": "no_tickers"}
 
     results: dict[str, str] = {}
+    sem = asyncio.Semaphore(_CONCURRENCY)
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         async def _process(row: dict) -> tuple[str, str]:
             ticker  = row["ticker"]
             user_id = row["user_id"]
             try:
-                chain = await fetch_schwab_chain(client, ticker)
+                async with sem:
+                    chain = await fetch_schwab_chain(client, ticker)
                 if chain is None:
                     return ticker, "chain_error"
                 spot = float(chain.get("underlyingPrice", 0))
@@ -48,10 +57,15 @@ async def run_greek_grid_pull() -> dict:
                     return ticker, "zero_spot"
 
                 cells = grid_ingest(chain, datetime.now(timezone.utc))
-                if not cells:
-                    return ticker, "no_cells"
+                if cells:
+                    _upsert_greek_grid(db, ticker, today, cells, spot, user_id)
 
-                _upsert_greek_grid(db, ticker, today, cells, spot, user_id)
+                # ATM greek snapshots from the same chain — one fetch, two tables
+                _upsert_greek_snapshots(db, ticker, today, spot, chain, user_id)
+
+                if not cells:
+                    log.warning("greek_grid_no_cells ticker=%s (snapshots still written)", ticker)
+                    return ticker, "no_cells"
                 log.info("greek_grid_ok ticker=%s cells=%d", ticker, len(cells))
                 return ticker, "ok"
             except Exception as exc:

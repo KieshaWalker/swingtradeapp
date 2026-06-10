@@ -49,6 +49,7 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
 
   Future<void> _deleteSnap(VolSnapshot s) async {
     await ref.read(volSurfaceProvider.notifier).delete(s);
+    if (!mounted) return;
     if (_activeSnap?.ticker == s.ticker && _activeSnap?.obsDateStr == s.obsDateStr) {
       setState(() { _activeSnap = null; _prevSnap = null; });
     } else if (_prevSnap?.ticker == s.ticker && _prevSnap?.obsDateStr == s.obsDateStr) {

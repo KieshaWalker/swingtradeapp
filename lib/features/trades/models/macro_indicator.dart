@@ -20,6 +20,6 @@ class MacroIndicator {
         userId: json['user_id'] as String,
         name: json['name'] as String,
         weight: json['weight'] as int,
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
       );
 }

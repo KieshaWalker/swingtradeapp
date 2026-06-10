@@ -319,7 +319,7 @@ class VolSnapshot {
         'obs_date':   obsDateStr,
         if (spotPrice != null) 'spot_price': spotPrice,
         'points':     points.map((p) => p.toJson()).toList(),
-        'parsed_at':  parsedAt.toIso8601String(),
+        'parsed_at':  parsedAt.toUtc().toIso8601String(),
       };
 
   factory VolSnapshot.fromRow(Map<String, dynamic> r) => VolSnapshot(
@@ -330,6 +330,6 @@ class VolSnapshot {
         points:     (r['points'] as List? ?? [])
             .map((p) => VolPoint.fromJson(p as Map<String, dynamic>))
             .toList(),
-        parsedAt:   DateTime.parse(r['parsed_at'] as String),
+        parsedAt:   DateTime.parse(r['parsed_at'] as String).toLocal(),
       );
 }

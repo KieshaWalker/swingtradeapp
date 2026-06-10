@@ -131,9 +131,9 @@ class TradesNotifier extends AsyncNotifier<void> {
       final patch = <String, dynamic>{
         'exit_price': exitPrice,
         'status': 'closed',
-        'closed_at': DateTime.now().toIso8601String(),
-        if (impliedVolExit != null) 'implied_vol_exit': impliedVolExit,
-        if (timeOfExit != null) 'time_of_exit': timeOfExit,
+        'closed_at': DateTime.now().toUtc().toIso8601String(),
+        'implied_vol_exit': ?impliedVolExit,
+        'time_of_exit': ?timeOfExit,
       };
       await _client.from('trades').update(patch).eq('id', tradeId);
       ref.invalidate(tradesProvider);
@@ -168,7 +168,7 @@ class TradesNotifier extends AsyncNotifier<void> {
         'contracts_closed': contractsClosed,
         'exit_price': exitPrice,
         'pnl': pnl,
-        'closed_at': DateTime.now().toIso8601String(),
+        'closed_at': DateTime.now().toUtc().toIso8601String(),
       });
 
       // Sum all legs to check if the position is fully closed.
@@ -194,7 +194,7 @@ class TradesNotifier extends AsyncNotifier<void> {
         await _client.from('trades').update({
           'exit_price': weightedAvg,
           'status': 'closed',
-          'closed_at': DateTime.now().toIso8601String(),
+          'closed_at': DateTime.now().toUtc().toIso8601String(),
         }).eq('id', trade.id);
       }
 

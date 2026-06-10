@@ -1,15 +1,15 @@
 // =============================================================================
-// features/macro/macro_score_card.dart
+// features/macro/widgets/macro_score_card.dart
 // =============================================================================
 // Compact dashboard card showing the macro regime score.
 // Tapping opens MacroScoreScreen (full breakdown).
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/theme.dart';
-import '../../services/macro/macro_score_model.dart';
-import '../../services/macro/macro_score_provider.dart';
-import 'macro_score_screen.dart';
+import 'package:go_router/go_router.dart';
+import '../../../core/theme.dart';
+import '../../../services/macro/macro_score_model.dart';
+import '../../../services/macro/macro_score_provider.dart';
 
 class MacroScoreCard extends ConsumerWidget {
   const MacroScoreCard({super.key});
@@ -19,10 +19,7 @@ class MacroScoreCard extends ConsumerWidget {
     final async = ref.watch(macroScoreProvider);
 
     return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute<void>(builder: (_) => const MacroScoreScreen()),
-      ),
+      onTap: () => context.push('/macro'),
       child: Container(
         margin: const EdgeInsets.only(bottom: 24),
         padding: const EdgeInsets.all(16),

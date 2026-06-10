@@ -48,7 +48,7 @@ class TradeIdea {
             ? (j['price_target'] as num).toDouble()
             : null,
         notes:       j['notes'] as String?,
-        createdAt:    DateTime.parse(j['created_at'] as String),
+        createdAt:    DateTime.parse(j['created_at'] as String).toLocal(),
       );
 
   Map<String, dynamic> toJson() => {

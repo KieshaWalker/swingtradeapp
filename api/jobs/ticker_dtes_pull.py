@@ -126,7 +126,7 @@ async def run_ticker_dtes_pull(
             iv_chain = await fetch_schwab_chain(client, ticker)
             if iv_chain:
                 iv_spot   = float(iv_chain.get("underlyingPrice", spot))
-                history   = _fetch_iv_history(db, ticker)
+                history   = _fetch_iv_history(db, ticker, today)
                 iv_result = iv_analyse(iv_chain, history)
 
                 vvol = None

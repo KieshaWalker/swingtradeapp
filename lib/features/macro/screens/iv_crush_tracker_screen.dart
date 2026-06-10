@@ -1,5 +1,5 @@
 // =============================================================================
-// features/macro/iv_crush_tracker_screen.dart
+// features/macro/screens/iv_crush_tracker_screen.dart
 // =============================================================================
 // IV Crush Tracker — shows historical IV drop (entry → exit) for all closed
 // trades that have both impliedVolEntry and impliedVolExit recorded.
@@ -13,9 +13,9 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../../core/theme.dart';
-import '../../features/trades/models/trade.dart';
-import '../../features/trades/providers/trades_provider.dart';
+import '../../../core/theme.dart';
+import '../../trades/models/trade.dart';
+import '../../trades/providers/trades_provider.dart';
 
 // ─── Model ────────────────────────────────────────────────────────────────────
 

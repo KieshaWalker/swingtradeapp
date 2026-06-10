@@ -18,8 +18,8 @@ import '../../auth/providers/auth_provider.dart';
 import '../../trades/models/trade.dart';
 import '../../trades/providers/trade_block_provider.dart';
 import '../../trades/providers/trades_provider.dart';
-import '../../macro/macro_score_card.dart';
-import '../../macro/fred_sync_widget.dart';
+import '../../macro/widgets/macro_score_card.dart';
+import '../../macro/widgets/fred_sync_widget.dart';
 import '../widgets/ticker_insights_section.dart';
 
 // ── Format helper ─────────────────────────────────────────────────────────────

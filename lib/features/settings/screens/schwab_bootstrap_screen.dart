@@ -41,6 +41,7 @@ class _SchwabBootstrapScreenState
       );
       final data = res.data as Map<String, dynamic>?;
       final authUrl = data?['auth_url'] as String?;
+      if (!mounted) return;
       if (authUrl == null) {
         setState(() {
           _message = 'Failed to get auth URL';
@@ -49,14 +50,16 @@ class _SchwabBootstrapScreenState
         return;
       }
       await launchUrl(Uri.parse(authUrl), mode: LaunchMode.externalApplication);
+      if (!mounted) return;
       setState(() => _urlOpened = true);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _message = 'Error: $e';
         _success = false;
       });
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -83,6 +86,7 @@ class _SchwabBootstrapScreenState
         body: {'code': code},
         method: HttpMethod.post,
       );
+      if (!mounted) return;
       if (res.status == 200) {
         ref.read(schwabReauthNeededProvider.notifier).state = false;
         setState(() {
@@ -100,12 +104,13 @@ class _SchwabBootstrapScreenState
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _success = false;
         _message = 'Error: $e';
       });
     } finally {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 

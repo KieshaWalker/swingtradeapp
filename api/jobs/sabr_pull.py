@@ -4,7 +4,7 @@ from __future__ import annotations
 # jobs/sabr_pull.py
 # =============================================================================
 # Job 2 — Read vol_surface_snapshots → SABR calibration → upsert sabr_calibrations.
-# Cron: 3 * * * 1-5  (3 min after vol_surface_pull, Mon–Fri)
+# Cron: 3 13-21 * * 1-5  (3 min after vol_surface_pull, Mon–Fri)
 #
 # Reads today's vol_surface_snapshots.points written by vol_surface_pull.
 # =============================================================================
@@ -12,21 +12,21 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from datetime import date, timedelta, datetime, timezone
+from datetime import date, timedelta
 
-from core.supabase_client import get_supabase
-from jobs.common import get_tickers
+from core.supabase_client import get_supabase, fetch_all
+from jobs.common import get_tickers, market_session_guard
 from services.sabr_calibrator import calibrate_snapshot
 
 log = logging.getLogger(__name__)
 
 
 async def run_sabr_pull() -> dict:
-    now = datetime.now(timezone.utc)
-    if now.hour >= 21:
-        log.info("sabr_pull: skipped (after 4 PM ET / 21:00 UTC)")
-        return {"status": "after_4pm"}
-    
+    skip = market_session_guard()
+    if skip:
+        log.info("sabr_pull: skipped (%s)", skip)
+        return {"status": "skipped", "reason": skip}
+
     db = get_supabase()
     today = date.today().isoformat()
     rows = get_tickers(db)
@@ -80,17 +80,20 @@ def fetch_nu_history(db, ticker: str, user_id: str, dte_target: int = 30) -> lis
     Shared by iv_pull.py.
     """
     cutoff = (date.today() - timedelta(days=365)).isoformat()
-    resp = (
-        db.table("sabr_calibrations")
-        .select("obs_date,dte,nu")
-        .eq("user_id", user_id)
-        .eq("ticker", ticker)
-        .gte("obs_date", cutoff)
-        .gte("n_points", 5)
-        .order("obs_date", desc=False)
-        .execute()
+    # Paginate: a year of slices (≥1 row per DTE per day) exceeds the Supabase
+    # 1000-row response cap, which would silently drop the most recent dates.
+    rows = fetch_all(
+        lambda: (
+            db.table("sabr_calibrations")
+            .select("obs_date,dte,nu")
+            .eq("user_id", user_id)
+            .eq("ticker", ticker)
+            .gte("obs_date", cutoff)
+            .gte("n_points", 5)
+            .order("obs_date", desc=False)
+            .order("dte", desc=False)
+        )
     )
-    rows = resp.data or []
     if not rows:
         return []
 
@@ -111,19 +114,22 @@ def fetch_nu_history(db, ticker: str, user_id: str, dte_target: int = 30) -> lis
 
 
 def _upsert_sabr_calibrations(db, ticker: str, today: str, slices, user_id: str) -> None:
-    for s in slices:
-        db.table("sabr_calibrations").upsert(
-            {
-                "user_id":   user_id,
-                "ticker":    ticker,
-                "obs_date":  today,
-                "dte":       s.dte,
-                "alpha":     s.alpha,
-                "beta":      s.beta,
-                "rho":       s.rho,
-                "nu":        s.nu,
-                "rmse":      s.rmse,
-                "n_points":  s.n_points,
-            },
-            on_conflict="user_id,ticker,obs_date,dte",
-        ).execute()
+    rows = [
+        {
+            "user_id":   user_id,
+            "ticker":    ticker,
+            "obs_date":  today,
+            "dte":       s.dte,
+            "alpha":     s.alpha,
+            "beta":      s.beta,
+            "rho":       s.rho,
+            "nu":        s.nu,
+            "rmse":      s.rmse,
+            "n_points":  s.n_points,
+        }
+        for s in slices
+    ]
+    db.table("sabr_calibrations").upsert(
+        rows,
+        on_conflict="user_id,ticker,obs_date,dte",
+    ).execute()

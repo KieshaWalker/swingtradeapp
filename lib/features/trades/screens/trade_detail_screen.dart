@@ -36,7 +36,6 @@ import '../../../features/strategy_tracker/providers/strategy_tracker_provider.d
 import '../models/trade.dart';
 import '../providers/trades_provider.dart';
 import '../services/live_greeks_service.dart';
-import 'trade_journal_screen.dart';
 
 class TradeDetailScreen extends ConsumerWidget {
   final Trade trade;
@@ -75,12 +74,8 @@ class TradeDetailScreen extends ConsumerWidget {
             ),
           if (trade.status != TradeStatus.open)
             TextButton.icon(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => TradeJournalScreen(trade: trade),
-                ),
-              ),
+              onPressed: () =>
+                  context.push('/trades/${trade.id}/journal', extra: trade),
               icon: const Icon(Icons.book_outlined),
               label: const Text('Journal'),
               style: TextButton.styleFrom(foregroundColor: AppTheme.profitColor),

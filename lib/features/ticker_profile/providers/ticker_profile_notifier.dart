@@ -35,7 +35,7 @@ class TickerProfileNotifier extends AsyncNotifier<void> {
         'user_id': user.id,
         'ticker': ticker.toUpperCase(),
         'shares_outstanding': sharesOutstanding.toInt(),
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       },
       onConflict: 'user_id,ticker',
     );
@@ -119,7 +119,7 @@ class TickerProfileNotifier extends AsyncNotifier<void> {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       await client.from('ticker_support_resistance').update({
-        'invalidated_at': DateTime.now().toIso8601String(),
+        'invalidated_at': DateTime.now().toUtc().toIso8601String(),
         'invalidation_note': invalidationNote,
       }).eq('id', levelId);
       ref.invalidate(tickerSRLevelsProvider(symbol));

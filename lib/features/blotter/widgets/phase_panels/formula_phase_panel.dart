@@ -18,7 +18,7 @@
 //   WARN  score 50–64  OR  return 15–29%  OR  any soft flag (wide spread, DTE<14)
 //   FAIL  score < 50   OR  negative P&L  OR  illiquid  OR  no open interest
 //
-// The parent (FivePhaseBlotterScreen) fetches and passes:
+// The parent (TradeIdeasScreen) fetches and passes:
 //   ticker, strike (double), expiry ("YYYY-MM-DD"), contractType,
 //   priceTarget (optional), maxBudget
 // =============================================================================

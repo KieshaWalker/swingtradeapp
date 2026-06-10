@@ -121,16 +121,26 @@ async def run_position_eod_snapshot() -> dict:
 
                     contract = contract_map.get((expiry, float(strike), leg_type))
                     if contract is None:
-                        # Fuzzy match — find nearest strike
+                        # Fuzzy match — nearest strike, but only within 2% of
+                        # the leg strike so a sparse chain can't silently
+                        # snapshot a far-away contract's Greeks.
                         candidates = [
                             (k, v) for k, v in contract_map.items()
                             if k[0] == expiry and k[2] == leg_type
                         ]
                         if candidates:
-                            contract = min(
+                            best_k, best_v = min(
                                 candidates,
                                 key=lambda kv: abs(kv[0][1] - float(strike)),
-                            )[1]
+                            )
+                            tolerance = max(0.5, 0.02 * float(strike))
+                            if abs(best_k[1] - float(strike)) <= tolerance:
+                                contract = best_v
+                            else:
+                                log.warning(
+                                    "position_eod: nearest strike %.2f too far from leg strike %.2f (leg=%s ticker=%s)",
+                                    best_k[1], float(strike), leg["id"], ticker,
+                                )
 
                     if not contract:
                         results[leg["id"]] = "contract_not_found"

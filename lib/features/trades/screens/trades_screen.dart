@@ -35,8 +35,6 @@ import '../providers/live_marks_provider.dart';
 import '../providers/macro_indicator_provider.dart';
 import '../providers/trade_block_provider.dart';
 import '../providers/trades_provider.dart';
-import 'csv_import_screen.dart';
-import 'trade_blocks_screen.dart';
 
 class TradesScreen extends ConsumerStatefulWidget {
   const TradesScreen({super.key});
@@ -98,18 +96,12 @@ class _TradesScreenState extends ConsumerState<TradesScreen>
           IconButton(
             icon: const Icon(Icons.upload_file_outlined),
             tooltip: 'Import CSV',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const CsvImportScreen()),
-            ),
+            onPressed: () => context.push('/trades/import'),
           ),
           IconButton(
             icon: const Icon(Icons.analytics_outlined),
             tooltip: 'Block Analytics',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const TradeBlocksScreen()),
-            ),
+            onPressed: () => context.push('/trades/blocks'),
           ),
           const _MacroScoreBadge(),
           const AppMenuButton(),
@@ -633,10 +625,7 @@ class _EdgeWarningBanner extends ConsumerWidget {
             ),
           ),
           GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const TradeBlocksScreen()),
-            ),
+            onTap: () => context.push('/trades/blocks'),
             child: const Text(
               'View →',
               style: TextStyle(

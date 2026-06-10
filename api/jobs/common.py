@@ -8,12 +8,41 @@ from typing import Optional
 # =============================================================================
 
 import logging
+from datetime import datetime, time, timezone
 
 import httpx
+import pytz
 
 from core.config import settings
 
 log = logging.getLogger(__name__)
+
+_ET = pytz.timezone("America/New_York")
+_MARKET_OPEN = time(9, 30)
+# Allow the 4 PM ET close-capture cycle: the staggered jobs of the cycle that
+# starts at 16:00 ET keep firing until ~16:20 ET (heston batch 2).
+_MARKET_LAST = time(16, 30)
+
+
+def market_session_guard() -> Optional[str]:
+    """Return a skip reason when outside US equity market hours (ET), else None.
+
+    The hourly pipeline crons fire around the clock in UTC. Without this guard
+    the jobs pull stale after-hours chains overnight and — between 00:00 and
+    ~04:00 UTC — write rows under the *next* UTC date using the prior session's
+    data (permanent pollution on market holidays).
+
+    Known limitation: market holidays that fall Mon–Fri still run.
+    """
+    now_et = datetime.now(timezone.utc).astimezone(_ET)
+    if now_et.weekday() >= 5:
+        return "weekend"
+    t = now_et.time()
+    if t < _MARKET_OPEN:
+        return "before_open"
+    if t > _MARKET_LAST:
+        return "after_close"
+    return None
 
 
 def _headers() -> dict:

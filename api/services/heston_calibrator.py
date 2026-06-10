@@ -16,6 +16,7 @@ from typing import Optional
 # =============================================================================
 
 import math
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -167,6 +168,7 @@ def calibrate_heston(
     spot: float,
     r: float = DEFAULT_R,
     atm_iv:Optional[float] = None,
+    deadline_s:Optional[float] = None,
 ) ->Optional[HestonCalibResult]:
     """Fit Heston {κ, θ, ξ, ρ, V₀} to a vol-surface snapshot.
 
@@ -177,10 +179,19 @@ def calibrate_heston(
         r: Risk-free rate.
         atm_iv: ATM implied vol (decimal) used to seed V₀ and θ.
             If None it is estimated from the surface itself.
+        deadline_s: Optional wall-clock budget in seconds. When exceeded, both
+            optimizers stop at their current best instead of running to
+            completion (result has converged=False). Lets callers bound
+            runtime without abandoning the worker thread mid-calibration.
 
     Returns:
         HestonCalibResult or None if surface is too thin.
     """
+    deadline = (time.monotonic() + deadline_s) if deadline_s else None
+
+    def _out_of_time() -> bool:
+        return deadline is not None and time.monotonic() > deadline
+
     by_dte = _downsample_quotes(_build_quotes(surface_points, spot, r))
     n_total = sum(len(v[1]) for v in by_dte.values())
     if n_total < 8:
@@ -236,7 +247,12 @@ def calibrate_heston(
         popsize=4,
         workers=1,
         polish=False,
+        callback=lambda xk, convergence=0.0: _out_of_time(),
     )
+
+    def _nm_deadline_cb(xk):
+        if _out_of_time():
+            raise StopIteration
 
     # Local refinement from the DE solution
     nm_result = minimize(
@@ -245,6 +261,7 @@ def calibrate_heston(
         method="Nelder-Mead",
         bounds=bounds,
         options={"maxiter": 1000, "fatol": 1e-9, "xatol": 1e-8},
+        callback=_nm_deadline_cb,
     )
 
     kappa, theta, xi, rho, V0 = nm_result.x

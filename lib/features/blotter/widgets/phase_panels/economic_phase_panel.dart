@@ -32,11 +32,12 @@
 //   eiaRefineryUtilProvider — refinery utilization (oil-sector tickers only)
 //
 // Emits PhaseResult via [onResult] whenever the computed status changes.
-// The parent (FivePhaseBlotterScreen) uses this to gate lifecycle transitions.
+// The parent (TradeIdeasScreen) uses this to gate lifecycle transitions.
 // =============================================================================
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/theme.dart';
 import '../../../../services/iv/iv_models.dart';
 import '../../../../services/iv/iv_providers.dart';
@@ -45,7 +46,6 @@ import '../../../../services/macro/macro_score_provider.dart';
 import '../../../../services/fred/fred_providers.dart';
 import '../../../../services/bls/bls_models.dart';
 import '../../../economy/providers/api_data_providers.dart';
-import '../../../macro/macro_score_screen.dart';
 import '../../models/blotter_models.dart';
 import '../../models/phase_result.dart';
 
@@ -1647,12 +1647,7 @@ class _DeepLinkButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
-      onPressed: () => Navigator.push(
-        context,
-        MaterialPageRoute<void>(
-          builder: (_) => const MacroScoreScreen(),
-        ),
-      ),
+      onPressed: () => context.push('/macro'),
       icon: const Icon(Icons.open_in_new_rounded, size: 14),
       label: const Text('View Full Macro Score'),
       style: OutlinedButton.styleFrom(

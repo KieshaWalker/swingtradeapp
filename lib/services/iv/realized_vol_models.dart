@@ -141,14 +141,14 @@ class RealizedVolSnapshot {
 
   Map<String, dynamic> toJson() => {
     'symbol':       symbol,
-    'date':         date.toIso8601String(),
+    'date':         date.toIso8601String().substring(0, 10),
     'rv_1d':        rv1d,
     'rv_5d':        rv5d,
     'rv_21d':       rv21d,
     'rv_63d':       rv63d,
     'rv_21d_pct':   rv21dPct,
     'rv_63d_pct':   rv63dPct,
-    'persisted_at': persistedAt.toIso8601String(),
+    'persisted_at': persistedAt.toUtc().toIso8601String(),
   };
 
   factory RealizedVolSnapshot.fromJson(Map<String, dynamic> j) =>
@@ -161,6 +161,6 @@ class RealizedVolSnapshot {
         rv63d:       (j['rv_63d']     as num?)?.toDouble(),
         rv21dPct:    (j['rv_21d_pct'] as num?)?.toDouble(),
         rv63dPct:    (j['rv_63d_pct'] as num?)?.toDouble(),
-        persistedAt: DateTime.parse(j['persisted_at'] as String),
+        persistedAt: DateTime.parse(j['persisted_at'] as String).toLocal(),
       );
 }

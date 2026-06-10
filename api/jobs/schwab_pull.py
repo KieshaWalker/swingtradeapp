@@ -566,15 +566,19 @@ def _chain_to_vol_points(chain: dict, spot: float) -> list[dict]:
 # ── Supabase upserts ──────────────────────────────────────────────────────────
 
 def _fetch_iv_history(db, ticker: str) -> list[dict]:
+    # Desc + reverse: ascending order with a limit would return the oldest
+    # 252 rows once the table outgrows the limit (see jobs/iv_pull.py).
     resp = (
         db.table("iv_snapshots")
         .select("atm_iv,skew,total_gex,date")
         .eq("ticker", ticker)
-        .order("date", desc=False)
+        .order("date", desc=True)
         .limit(252)
         .execute()
     )
-    return resp.data or []
+    rows = resp.data or []
+    rows.reverse()
+    return rows
 
 
 def _fetch_nu_history(db, ticker: str, user_id: str, dte_target: int = 30) -> list[float]:
@@ -586,18 +590,21 @@ def _fetch_nu_history(db, ticker: str, user_id: str, dte_target: int = 30) -> li
     """
     from collections import defaultdict
     from datetime import timedelta
+    from core.supabase_client import fetch_all
     cutoff = (date.today() - timedelta(days=365)).isoformat()
-    resp = (
-        db.table("sabr_calibrations")
-        .select("obs_date,dte,nu")
-        .eq("user_id", user_id)
-        .eq("ticker", ticker)
-        .gte("obs_date", cutoff)
-        .gte("n_points", 5)
-        .order("obs_date", desc=False)
-        .execute()
+    # Paginate past the Supabase 1000-row cap (see jobs/sabr_pull.py).
+    rows = fetch_all(
+        lambda: (
+            db.table("sabr_calibrations")
+            .select("obs_date,dte,nu")
+            .eq("user_id", user_id)
+            .eq("ticker", ticker)
+            .gte("obs_date", cutoff)
+            .gte("n_points", 5)
+            .order("obs_date", desc=False)
+            .order("dte", desc=False)
+        )
     )
-    rows = resp.data or []
     if not rows:
         return []
 

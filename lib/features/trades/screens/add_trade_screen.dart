@@ -116,7 +116,7 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 730)),
     );
-    if (picked != null) setState(() => _expiration = picked);
+    if (picked != null && mounted) setState(() => _expiration = picked);
   }
 
   int get _dteAtEntry => _expiration.difference(DateTime.now()).inDays;

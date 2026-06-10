@@ -61,7 +61,7 @@ async def run_expected_move_pull() -> dict:
     # Prefetch RV history for all tickers before the concurrent HTTP section so
     # synchronous DB reads don't interleave with async HTTP calls.
     rv_history: dict[str, tuple[list[float], list[float]]] = {
-        t: _fetch_rv_history(db, t) for t in unique_tickers
+        t: _fetch_rv_history(db, t, today) for t in unique_tickers
     }
 
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -136,13 +136,20 @@ async def run_expected_move_pull() -> dict:
     return {"status": "complete", "tickers": results, "date": today}
 
 
-def _fetch_rv_history(db, ticker: str) -> tuple[list[float], list[float]]:
-    """Fetch historical rv_21d and rv_63d for percentile ranking (excludes today)."""
+def _fetch_rv_history(db, ticker: str, before_date: str) -> tuple[list[float], list[float]]:
+    """Fetch the most recent 252 prior days of rv_21d / rv_63d for percentile
+    ranking (excludes before_date / today).
+
+    Order desc: ascending order with a limit returns the *oldest* 252 rows once
+    the table outgrows the limit — with multi-year backfilled history that
+    ranked today's RV against data from years ago.
+    """
     resp = (
         db.table("realized_vol_snapshots")
         .select("rv_21d,rv_63d")
         .eq("symbol", ticker)
-        .order("date", desc=False)
+        .lt("date", before_date)
+        .order("date", desc=True)
         .limit(252)
         .execute()
     )
