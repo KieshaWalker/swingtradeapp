@@ -4,15 +4,17 @@
 # Supervised ML trainer for gamma regime flip prediction.
 #
 # Pipeline:
-#   1. Fetch all regime_snapshots from Supabase (45-day window by default,
-#      or pass full history for a longer training set).
+#   1. Fetch finalized (is_final) regime_snapshots from Supabase.
 #   2. Label each snapshot: did gamma_regime change within the next
 #      LOOKAHEAD observations for the same ticker? (y=1 = flip, y=0 = stable)
-#   3. Engineer the same 6 features used by regime_ml_service.py.
-#   4. Temporal train/test split (last 20% of time as test — no leakage).
-#   5. Fit Logistic Regression (primary) and optionally XGBoost.
-#   6. Evaluate: AUC-ROC, accuracy, precision, recall.
-#   7. Serialize model to JSON and store in Supabase regime_ml_models table.
+#   3. Engineer the 14 features shared with regime_ml_service.py.
+#   4. Walk-forward CV with purge + embargo measured in *dates* (all tickers
+#      of one obs_date stay on the same side of every fold boundary).
+#   5. Fit Logistic Regression (primary) or XGBoost on a temporal split.
+#   6. Fit isotonic calibration on the pooled out-of-sample fold predictions
+#      (class_weight='balanced' distorts raw predict_proba).
+#   7. Evaluate: AUC-ROC, accuracy, precision, recall.
+#   8. Serialize model to JSON and store in Supabase regime_ml_models table.
 #      Falls back to module-level in-memory cache if Supabase write fails.
 #
 # Feature names (must match regime_ml_service.py scoring features):
@@ -81,12 +83,20 @@ MIN_SAMPLES_FULL:  int = 200 # minimum rows for full walk-forward CV evaluation
 MIN_SAMPLES: int = MIN_SAMPLES_FULL
 TEST_FRAC: float = 0.20       # temporal hold-out fraction
 
-# Walk-forward cross-validation with purge + embargo
-WF_N_SPLITS:  int   = 5         # number of expanding-window folds
-WF_MIN_TRAIN: int   = 100       # minimum training observations per fold
-WF_PURGE:     int   = LOOKAHEAD # obs removed from train end (label window bleed-through)
-WF_EMBARGO:   int   = LOOKAHEAD # obs skipped at test start (autocorrelation buffer)
+# Walk-forward cross-validation with purge + embargo.
+# All boundaries are measured in distinct obs_dates, NOT pooled sample rows:
+# with ~N tickers per date a row-index purge of 5 spans half a trading day and
+# same-date correlated samples (shared VIX/breadth features, synchronized
+# flips) leak across the train/test boundary.
+WF_N_SPLITS:        int   = 5         # number of expanding-window folds
+WF_MIN_TRAIN_DATES: int   = 40        # minimum distinct training dates (~2 months)
+WF_MIN_TEST_DATES:  int   = 5         # minimum distinct test dates per fold
+WF_PURGE:     int   = LOOKAHEAD # dates removed from train end (label window bleed-through)
+WF_EMBARGO:   int   = LOOKAHEAD # dates skipped at test start (autocorrelation buffer)
 MIN_OOS_AUC:  float = 0.52      # AUC required to accept model (walk-forward or single-split)
+
+# Calibration: isotonic regression on pooled walk-forward OOS predictions.
+MIN_CALIBRATION_OOS: int = 100  # minimum OOS predictions to fit a calibrator
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +183,7 @@ def _fetch_all_snapshots(supabase_client, history_days: int) -> list[dict]:
         # Paginate: history_days × n_tickers rows exceeds the Supabase 1000-row
         # response cap, which silently dropped the most recent dates from the
         # training set. Secondary sort on ticker keeps pagination stable.
-        return fetch_all(
+        rows = fetch_all(
             lambda: (
                 supabase_client
                 .table("regime_snapshots")
@@ -183,6 +193,10 @@ def _fetch_all_snapshots(supabase_client, history_days: int) -> list[dict]:
                 .order("ticker", desc=False)
             )
         )
+        # Train on finalized EOD rows only — intraday partials have a different
+        # feature distribution. Filter in Python (not .eq) so rows from before
+        # the is_final migration (key absent/NULL) still count as final.
+        return [r for r in rows if r.get("is_final") is not False]
     except Exception as exc:
         log.warning("regime_snapshots_fetch_failed error=%s", exc)
         return []
@@ -308,50 +322,85 @@ def _extract_features_at(history: list[dict], i: int) ->Optional[list[float]]:
 # Training
 # ---------------------------------------------------------------------------
 
+def _date_fold_bounds(n_dates: int) -> list[tuple[int, int, int]]:
+    """Expanding-window fold boundaries in date-index units.
+
+    Returns (train_end, test_start, test_end) tuples: train uses date indices
+    [0, train_end), test uses [test_start, test_end). Between them sit the
+    purge (WF_PURGE dates removed from the train end, whose labels look
+    forward into the test window) and the embargo (WF_EMBARGO dates skipped
+    at the test start, whose feature lookback overlaps training data).
+    """
+    folds: list[tuple[int, int, int]] = []
+    # The embargo eats the start of each test fold, so a fold needs
+    # WF_EMBARGO + WF_MIN_TEST_DATES dates for WF_MIN_TEST_DATES to survive.
+    min_fold   = WF_EMBARGO + WF_MIN_TEST_DATES
+    min_needed = WF_MIN_TRAIN_DATES + WF_PURGE + min_fold
+    if n_dates < min_needed:
+        return folds
+
+    available = n_dates - WF_MIN_TRAIN_DATES
+    fold_size = max(available // (WF_N_SPLITS + 1), min_fold)
+
+    for k in range(WF_N_SPLITS):
+        test_start_raw = WF_MIN_TRAIN_DATES + k * fold_size
+        test_end       = min(test_start_raw + fold_size, n_dates)
+
+        if test_end - test_start_raw < min_fold:
+            break
+
+        train_end  = test_start_raw - WF_PURGE
+        test_start = test_start_raw + WF_EMBARGO
+        if train_end < WF_MIN_TRAIN_DATES // 2:
+            continue
+        if test_start >= test_end:
+            continue
+
+        folds.append((train_end, test_start, test_end))
+
+    return folds
+
+
 def _walk_forward_auc(
     X: np.ndarray,
     y: np.ndarray,
+    dates: list[str],
     model_type: str,
-) -> float:
-    """Expanding-window walk-forward CV with purge + embargo.
+) -> tuple[float, np.ndarray, np.ndarray]:
+    """Expanding-window walk-forward CV with date-based purge + embargo.
 
-    Purge removes the last WF_PURGE training samples before each test fold —
-    those samples have labels that look forward into the test period.
-    Embargo skips the first WF_EMBARGO test samples — their features share a
-    lookback window with training data, so autocorrelation inflates their AUC.
+    Fold boundaries cut on distinct obs_dates so all tickers of one date stay
+    on the same side — same-date samples share market-wide features and flip
+    together, so a row-based split lets correlated samples leak across it.
 
-    Returns mean OOS AUC across valid folds, or 0.5 if fewer than 2 folds run.
+    Returns (mean OOS AUC, pooled OOS y_true, pooled OOS y_prob). The pooled
+    predictions feed isotonic calibration. AUC falls back to the 0.5 sentinel
+    (with empty arrays) when fewer than 2 folds run.
     """
-    n = len(X)
-    min_needed = WF_MIN_TRAIN + WF_PURGE + WF_EMBARGO + 5
-    if n < min_needed:
-        log.warning("walk_forward_cv skipped n=%d min_needed=%d", n, min_needed)
-        return 0.5
+    unique_dates = sorted(set(dates))
+    date_index   = {d: i for i, d in enumerate(unique_dates)}
+    sample_d     = np.array([date_index[d] for d in dates])
+    no_result    = (0.5, np.empty(0), np.empty(0))
 
-    available  = n - WF_MIN_TRAIN
-    fold_size  = max(available // (WF_N_SPLITS + 1), 5)
+    folds = _date_fold_bounds(len(unique_dates))
+    if not folds:
+        log.warning(
+            "walk_forward_cv skipped n_dates=%d min_needed=%d",
+            len(unique_dates),
+            WF_MIN_TRAIN_DATES + WF_PURGE + WF_EMBARGO + WF_MIN_TEST_DATES,
+        )
+        return no_result
+
     auc_scores: list[float] = []
+    oos_true:   list[np.ndarray] = []
+    oos_prob:   list[np.ndarray] = []
 
-    for k in range(WF_N_SPLITS):
-        test_start_raw = WF_MIN_TRAIN + k * fold_size
-        test_end       = min(test_start_raw + fold_size, n)
+    for k, (train_end, test_start, test_end) in enumerate(folds):
+        train_mask = sample_d < train_end
+        test_mask  = (sample_d >= test_start) & (sample_d < test_end)
 
-        if test_end - test_start_raw < 5:
-            break
-
-        # Purge: cut the last WF_PURGE obs from training so their labels don't
-        # bleed into the test window.
-        train_end = test_start_raw - WF_PURGE
-        if train_end < WF_MIN_TRAIN // 2:
-            continue
-
-        # Embargo: skip the first WF_EMBARGO test obs (autocorr contamination).
-        actual_test_start = test_start_raw + WF_EMBARGO
-        if actual_test_start >= test_end:
-            continue
-
-        X_tr, y_tr = X[:train_end], y[:train_end]
-        X_te, y_te = X[actual_test_start:test_end], y[actual_test_start:test_end]
+        X_tr, y_tr = X[train_mask], y[train_mask]
+        X_te, y_te = X[test_mask],  y[test_mask]
 
         if len(np.unique(y_te)) < 2 or len(np.unique(y_tr)) < 2:
             continue
@@ -366,12 +415,14 @@ def _walk_forward_auc(
                 model, _ = _train_logistic(X_tr_sc, y_tr)
             y_prob = model.predict_proba(X_te_sc)[:, 1]
             auc_scores.append(float(roc_auc_score(y_te, y_prob)))
+            oos_true.append(y_te)
+            oos_prob.append(y_prob)
         except Exception as exc:
             log.debug("wf_cv_fold_failed fold=%d error=%s", k, exc)
 
     if len(auc_scores) < 2:
         log.warning("walk_forward_cv too_few_valid_folds n_valid=%d", len(auc_scores))
-        return 0.5
+        return no_result
 
     mean_auc = float(np.mean(auc_scores))
     log.info(
@@ -380,7 +431,46 @@ def _walk_forward_auc(
         ", ".join(f"{a:.3f}" for a in auc_scores),
         mean_auc,
     )
-    return mean_auc
+    return mean_auc, np.concatenate(oos_true), np.concatenate(oos_prob)
+
+
+# ---------------------------------------------------------------------------
+# Probability calibration
+# ---------------------------------------------------------------------------
+
+def _fit_calibration(y_true: np.ndarray, y_prob: np.ndarray) ->Optional[dict]:
+    """Fit isotonic regression on pooled walk-forward OOS predictions.
+
+    class_weight='balanced' / scale_pos_weight deliberately distort the base
+    rate, so raw predict_proba systematically over-states flip probability.
+    Isotonic maps raw scores back to observed OOS frequencies, preserving the
+    ranking (AUC unchanged) while making the displayed probability honest.
+    """
+    if len(y_true) < MIN_CALIBRATION_OOS or len(np.unique(y_true)) < 2:
+        return None
+    try:
+        from sklearn.isotonic import IsotonicRegression
+        iso = IsotonicRegression(y_min=0.01, y_max=0.99, out_of_bounds="clip")
+        iso.fit(y_prob, y_true)
+        return {
+            "method": "isotonic",
+            "x": [float(v) for v in iso.X_thresholds_],
+            "y": [float(v) for v in iso.y_thresholds_],
+        }
+    except Exception as exc:
+        log.warning("calibration_fit_failed error=%s", exc)
+        return None
+
+
+def _apply_calibration(calib:Optional[dict], p: float) -> float:
+    """Map a raw probability through a stored isotonic curve (no-op if absent)."""
+    if not calib or calib.get("method") != "isotonic":
+        return p
+    xs = calib.get("x") or []
+    ys = calib.get("y") or []
+    if len(xs) < 2 or len(xs) != len(ys):
+        return p
+    return float(np.interp(p, xs, ys))
 
 
 def _train(
@@ -390,28 +480,39 @@ def _train(
     model_type: str,
 ) -> TrainingResult:
     # Sort all samples chronologically — required for walk-forward and split.
-    order    = sorted(range(len(dates)), key=lambda i: dates[i])
-    X_sorted = X[order]
-    y_sorted = y[order]
+    order        = sorted(range(len(dates)), key=lambda i: dates[i])
+    X_sorted     = X[order]
+    y_sorted     = y[order]
+    dates_sorted = [dates[i] for i in order]
 
     # ── Walk-forward OOS AUC (honest, leakage-free evaluation) ────────────
-    # Returns 0.5 as a sentinel when there is not enough data to run CV folds.
-    oos_auc   = _walk_forward_auc(X_sorted, y_sorted, model_type)
-    wf_ran    = oos_auc > 0.5   # True = walk-forward produced a meaningful estimate
-    is_early  = not wf_ran      # early mode: < MIN_SAMPLES_FULL rows
+    # Returns the 0.5 sentinel (empty OOS arrays) when there is not enough
+    # data to run CV folds.
+    oos_auc, oos_y, oos_p = _walk_forward_auc(X_sorted, y_sorted, dates_sorted, model_type)
+    wf_ran    = oos_p.size > 0  # True = walk-forward produced a meaningful estimate
+    is_early  = not wf_ran      # early mode: too few distinct dates
 
-    # ── Final train/test split ────────────────────────────────────────────────
+    # Calibration from pooled OOS fold predictions (full mode only — early
+    # mode has no out-of-sample pool to fit on).
+    calibration = _fit_calibration(oos_y, oos_p) if wf_ran else None
+
+    # ── Final train/test split (date-based, same units as walk-forward) ─────
     # Full mode: apply purge + embargo to match the walk-forward protocol.
-    # Early mode: skip purge/embargo — too few samples to sacrifice any rows.
-    split = int(len(order) * (1 - TEST_FRAC))
+    # Early mode: skip purge/embargo — too few dates to sacrifice any rows.
+    unique_dates = sorted(set(dates_sorted))
+    date_index   = {d: i for i, d in enumerate(unique_dates)}
+    sample_d     = np.array([date_index[d] for d in dates_sorted])
+    split_d      = int(len(unique_dates) * (1 - TEST_FRAC))
     if is_early:
-        train_end, test_start = split, split
+        train_end_d, test_start_d = split_d, split_d
     else:
-        train_end  = split - WF_PURGE   # purge boundary
-        test_start = split + WF_EMBARGO # embargo boundary
+        train_end_d  = split_d - WF_PURGE   # purge boundary
+        test_start_d = split_d + WF_EMBARGO # embargo boundary
 
-    X_train, y_train = X_sorted[:train_end],  y_sorted[:train_end]
-    X_test,  y_test  = X_sorted[test_start:], y_sorted[test_start:]
+    train_mask = sample_d < train_end_d
+    test_mask  = sample_d >= test_start_d
+    X_train, y_train = X_sorted[train_mask], y_sorted[train_mask]
+    X_test,  y_test  = X_sorted[test_mask],  y_sorted[test_mask]
 
     # Scale features (fit on train only — no leakage)
     scaler     = StandardScaler()
@@ -438,7 +539,10 @@ def _train(
     else:
         X_eval, y_eval = X_test_sc, y_test
 
+    # Evaluate with calibration applied — matches what inference will serve.
     y_prob = model.predict_proba(X_eval)[:, 1]
+    if calibration is not None:
+        y_prob = np.array([_apply_calibration(calibration, p) for p in y_prob])
     y_pred = (y_prob >= 0.5).astype(int)
 
     test_auc = float(roc_auc_score(y_eval, y_prob)) if len(np.unique(y_eval)) > 1 else 0.5
@@ -452,13 +556,15 @@ def _train(
     #   Early mode, no test set → metrics on training data; reject regardless of AUC
     best_auc = oos_auc if wf_ran else test_auc
 
-    # Embed scaler + AUC metrics + training mode into model_json
+    # Embed scaler + calibration + AUC metrics + training mode into model_json
     model_json["scaler_mean"]   = scaler.mean_.tolist()
     model_json["scaler_std"]    = scaler.scale_.tolist()
     model_json["feature_names"] = FEATURE_NAMES
     model_json["oos_auc"]       = round(oos_auc, 4)   # walk-forward AUC (0.5 if not run)
     model_json["test_auc"]      = round(test_auc, 4)  # single-split AUC
     model_json["training_mode"] = "early" if is_early else "full"
+    if calibration is not None:
+        model_json["calibration"] = calibration       # isotonic curve from OOS preds
 
     # Reject when eval was forced onto training data — AUC is inflated and unreliable.
     model_accepted = (best_auc >= MIN_OOS_AUC) and (wf_ran or not is_eval_fallback)
@@ -466,9 +572,10 @@ def _train(
     n_pos = int(y_sorted.sum())
     log.info(
         "regime_ml_trained model=%s mode=%s n=%d pos=%d best_auc=%.3f "
-        "(oos=%.3f test=%.3f) accepted=%s",
+        "(oos=%.3f test=%.3f) calibrated=%s accepted=%s",
         model_type, "early" if is_early else "full",
-        len(y_sorted), n_pos, best_auc, oos_auc, test_auc, model_accepted,
+        len(y_sorted), n_pos, best_auc, oos_auc, test_auc,
+        calibration is not None, model_accepted,
     )
 
     return TrainingResult(
@@ -560,10 +667,14 @@ def _train_xgboost(
 def make_inference_fn(stored: dict):
     """
     Given a stored model row (from Supabase regime_ml_models), return a
-    callable: features_list -> (flip_prob: float, model_score: float)
+    callable: features_list -> (flip_prob, model_score, contributions)
 
-    flip_prob  ∈ [0, 1]  — P(regime flips within LOOKAHEAD obs)
-    model_score ∈ [-1, 1] — directional score (+1 = strong positive gamma)
+    flip_prob     ∈ [0, 1]  — calibrated P(regime flips within LOOKAHEAD obs)
+    model_score   ∈ [-1, 1] — directional score (+1 = strong positive gamma)
+    contributions — per-feature pull on the *raw* prediction in logit/margin
+                    space, aligned with FEATURE_NAMES; positive = pushes
+                    toward a flip. LR: coef × scaled value. XGB: SHAP values
+                    via pred_contribs. Powers the "why this prediction" UI.
     """
     mj = stored.get("model_json", {})
     if not mj:
@@ -582,6 +693,7 @@ def make_inference_fn(stored: dict):
         return None
 
     mtype = mj.get("model_type", stored.get("model_type", "logistic"))
+    calib = mj.get("calibration")  # isotonic curve fitted on OOS fold predictions
 
     if mtype == "xgboost":
         booster_b64 = mj.get("booster_b64")
@@ -593,14 +705,21 @@ def make_inference_fn(stored: dict):
             booster = Booster()
             booster.load_model(buf)
 
-            def _xgb_infer(feats: list[float]) -> tuple[float, float]:
+            def _xgb_infer(feats: list[float]) -> tuple[float, float, list[float]]:
                 x = np.array(feats, dtype=float).reshape(1, -1)
                 x_sc = (x - scaler_mean) / np.where(scaler_std > 0, scaler_std, 1)
                 from xgboost import DMatrix
                 dm = DMatrix(x_sc)
                 flip_prob = float(booster.predict(dm)[0])
+                flip_prob = _apply_calibration(calib, flip_prob)
                 flip_prob = max(0.01, min(0.99, flip_prob))
-                return flip_prob, _flip_to_score(flip_prob, feats)
+                # SHAP-style margin-space contributions; last column is bias.
+                try:
+                    contribs = booster.predict(dm, pred_contribs=True)[0][:-1].tolist()
+                except Exception as contrib_exc:
+                    log.debug("xgb_pred_contribs_failed error=%s", contrib_exc)
+                    contribs = [0.0] * len(FEATURE_NAMES)
+                return flip_prob, _flip_to_score(flip_prob, feats), contribs
 
             return _xgb_infer
         except Exception as exc:
@@ -613,13 +732,15 @@ def make_inference_fn(stored: dict):
     if coef.size == 0:
         return None
 
-    def _lr_infer(feats: list[float]) -> tuple[float, float]:
+    def _lr_infer(feats: list[float]) -> tuple[float, float, list[float]]:
         x = np.array(feats, dtype=float)
         x_sc = (x - scaler_mean) / np.where(scaler_std > 0, scaler_std, 1)
-        logit = float(np.dot(coef, x_sc) + intercept)
+        contribs = coef * x_sc   # per-feature logit contributions
+        logit = float(contribs.sum() + intercept)
         flip_prob = 1.0 / (1.0 + math.exp(-logit))
+        flip_prob = _apply_calibration(calib, flip_prob)
         flip_prob = max(0.01, min(0.99, flip_prob))
-        return flip_prob, _flip_to_score(flip_prob, feats)
+        return flip_prob, _flip_to_score(flip_prob, feats), contribs.tolist()
 
     return _lr_infer
 

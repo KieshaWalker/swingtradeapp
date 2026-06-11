@@ -475,17 +475,28 @@ class _ModelInfoCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           border:       Border.all(color: Colors.white12),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.info_outline_rounded, color: Colors.white38, size: 16),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'No trained model yet — scoring uses 14-feature heuristic weights. '
-                'A supervised model trains automatically each Sunday as history accumulates.',
-                style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
-              ),
+            Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, color: Colors.white38, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'No trained model yet — scoring uses 14-feature heuristic weights. '
+                    'A supervised model trains automatically each Sunday as history accumulates.',
+                    style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+                  ),
+                ),
+              ],
             ),
+            // Heuristic predictions are logged + reconciled too, so live
+            // performance is available before the first model trains.
+            if (meta.hasLiveMetrics) ...[
+              const SizedBox(height: 10),
+              _LiveMetricsRow(meta: meta),
+            ],
           ],
         ),
       );
@@ -580,6 +591,10 @@ class _ModelInfoCard extends StatelessWidget {
               ),
             ],
           ),
+          if (meta.hasLiveMetrics) ...[
+            const SizedBox(height: 12),
+            _LiveMetricsRow(meta: meta),
+          ],
           const SizedBox(height: 6),
           Text(
             '${meta.nSamples} training samples · ${meta.nPositive} regime flips observed ($flipRate% flip rate)',
@@ -593,6 +608,94 @@ class _ModelInfoCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Live metrics row ──────────────────────────────────────────────────────────
+// Post-deployment performance: predictions logged at each close, reconciled
+// against what the regime actually did 5 sessions later. Training metrics say
+// the model *was* good on history; these say whether it still is.
+
+class _LiveMetricsRow extends StatelessWidget {
+  final MlModelMetadata meta;
+  const _LiveMetricsRow({required this.meta});
+
+  static const _liveColor = Color(0xFF67E8F9); // cyan — distinct from train metrics
+
+  @override
+  Widget build(BuildContext context) {
+    final window = meta.liveWindowDays != null ? 'last ${meta.liveWindowDays}d' : 'rolling';
+    final computedAt = meta.liveComputedAt != null
+        ? DateTime.tryParse(meta.liveComputedAt!) : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _Pill('LIVE · $window', _liveColor),
+            const SizedBox(width: 12),
+            _MetricBadge(
+              'Live AUC',
+              meta.liveAuc?.toStringAsFixed(3) ?? '—',
+              tooltip:
+                'AUC measured on real predictions, after the fact.\n\n'
+                'Every close, the day\'s flip probabilities are logged. Five '
+                'sessions later each one is reconciled against what the gamma '
+                'regime actually did. This AUC is computed from those resolved '
+                'predictions only — data the model had never seen.\n\n'
+                'If Live AUC sits well below the training AUC, the market has '
+                'drifted away from the patterns the model learned and a retrain '
+                '(or heuristic fallback) is warranted.\n\n'
+                '"—" means every prediction in the window resolved the same way '
+                '(all flips or all stable), so ranking quality can\'t be measured yet.',
+            ),
+            const SizedBox(width: 12),
+            _MetricBadge(
+              'Hit Rate',
+              meta.liveHitRate != null
+                  ? '${(meta.liveHitRate! * 100).toStringAsFixed(1)}%' : '—',
+              tooltip:
+                'Of all reconciled predictions, the fraction where the model\'s '
+                'call (flip probability above or below 50%) matched what '
+                'actually happened.\n\n'
+                'Read it against the realized flip rate: if only 15% of windows '
+                'flip, always predicting "stable" already scores 85%.',
+            ),
+            const SizedBox(width: 12),
+            _MetricBadge(
+              'Flips',
+              meta.liveBaseRate != null
+                  ? '${(meta.liveBaseRate! * 100).toStringAsFixed(1)}%' : '—',
+              tooltip:
+                'Realized flip rate — the fraction of reconciled prediction '
+                'windows where the gamma regime actually changed within 5 '
+                'sessions.\n\n'
+                'This is the baseline the hit rate must beat, and the number '
+                'the average predicted flip probability should roughly match '
+                'if the probabilities are well calibrated.',
+            ),
+            const SizedBox(width: 12),
+            _MetricBadge(
+              'Brier',
+              meta.liveBrier?.toStringAsFixed(3) ?? '—',
+              tooltip:
+                'Brier score — mean squared error between predicted flip '
+                'probability and the realized outcome (0 or 1). Lower is better.\n\n'
+                '0.00 = perfect foresight. 0.25 = no better than always '
+                'guessing 50%. Unlike AUC it punishes miscalibrated '
+                'probabilities, not just bad ranking.',
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${meta.liveN} predictions reconciled'
+          '${computedAt != null ? ' · updated ${DateFormat('MMM d').format(computedAt.toLocal())}' : ''}',
+          style: const TextStyle(color: Colors.white38, fontSize: 10),
+        ),
+      ],
     );
   }
 }
@@ -1332,6 +1435,12 @@ class _TickerDetailSheet extends StatelessWidget {
         _InterpretationCard(result: result),
         const SizedBox(height: 12),
 
+        // ── Why this prediction ────────────────────────────────────────────
+        if (result.drivers.isNotEmpty) ...[
+          _PredictionDriversCard(result: result),
+          const SizedBox(height: 12),
+        ],
+
         // ── Risk Flags ─────────────────────────────────────────────────────
         _RiskFlagsRow(features: f),
         const SizedBox(height: 12),
@@ -1444,6 +1553,158 @@ class _InterpretationCard extends StatelessWidget {
               color: biasColor.withValues(alpha: 0.9), fontSize: 13, height: 1.5)),
         ],
       ),
+    );
+  }
+}
+
+// ── Prediction Drivers Card ───────────────────────────────────────────────────
+// "Why this prediction": the top feature contributions behind the current
+// flip probability. Supervised mode shows exact model attributions (LR
+// coefficient×value, XGBoost SHAP); heuristic mode shows weighted components.
+// Bars diverge from center: right (amber) pushes toward a regime flip,
+// left (cyan) anchors the current regime.
+
+class _PredictionDriversCard extends StatelessWidget {
+  final TickerRegimeResult result;
+  const _PredictionDriversCard({required this.result});
+
+  static const _flipColor   = Color(0xFFFFB74D); // amber  — toward a flip
+  static const _anchorColor = Color(0xFF67E8F9); // cyan   — anchoring regime
+
+  @override
+  Widget build(BuildContext context) {
+    final drivers = result.drivers;
+    final maxAbs = drivers
+        .map((d) => d.pushFlip.abs())
+        .reduce((a, b) => a > b ? a : b);
+    final methodTag = switch (result.scoringMethod) {
+      'supervised_logistic' => 'LR',
+      'supervised_xgboost'  => 'XGB',
+      _                     => 'H',
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color:        AppTheme.cardColor,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Why ${(result.transitionProb * 100).toStringAsFixed(0)}% flip risk',
+                  style: const TextStyle(
+                    color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+              ),
+              _Pill(methodTag, AppTheme.neutralColor, fontSize: 10),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final d in drivers) ...[
+            _DriverBarRow(driver: d, maxAbs: maxAbs),
+            const SizedBox(height: 8),
+          ],
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Container(width: 8, height: 8,
+                decoration: BoxDecoration(
+                  color: _anchorColor, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(width: 4),
+              const Text('anchoring current regime',
+                style: TextStyle(color: Colors.white38, fontSize: 10)),
+              const SizedBox(width: 12),
+              Container(width: 8, height: 8,
+                decoration: BoxDecoration(
+                  color: _flipColor, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(width: 4),
+              const Text('pushing toward a flip',
+                style: TextStyle(color: Colors.white38, fontSize: 10)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DriverBarRow extends StatelessWidget {
+  final PredictionDriver driver;
+  final double maxAbs;
+  const _DriverBarRow({required this.driver, required this.maxAbs});
+
+  @override
+  Widget build(BuildContext context) {
+    final towardFlip = driver.pushFlip > 0;
+    final frac = maxAbs > 0 ? (driver.pushFlip.abs() / maxAbs) : 0.0;
+    final color = towardFlip
+        ? _PredictionDriversCard._flipColor
+        : _PredictionDriversCard._anchorColor;
+
+    return Row(
+      children: [
+        SizedBox(
+          width: 150,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(driver.label,
+                style: const TextStyle(
+                  color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(driver.valueText,
+                style: TextStyle(color: AppTheme.neutralColor, fontSize: 10),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Diverging bar: anchoring grows left of center, flip-push right.
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FractionallySizedBox(
+                    widthFactor: towardFlip ? 0.0 : frac,
+                    child: Container(
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: const BorderRadius.horizontal(
+                            left: Radius.circular(3)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Container(width: 1, height: 14, color: Colors.white24),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: towardFlip ? frac : 0.0,
+                    child: Container(
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: const BorderRadius.horizontal(
+                            right: Radius.circular(3)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

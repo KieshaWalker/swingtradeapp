@@ -101,6 +101,28 @@ class RegimeMlFeatures {
       breadthProxy != null && breadthProxy!.abs() >= 1.5;
 }
 
+/// One feature's pull on the current prediction — the "why" behind the flip %.
+class PredictionDriver {
+  final String feature;    // ML feature key
+  final String label;      // human-readable name
+  final String valueText;  // the value the model saw, formatted
+  final double pushFlip;   // > 0 pushes toward a regime flip, < 0 anchors it
+
+  const PredictionDriver({
+    required this.feature,
+    required this.label,
+    required this.valueText,
+    required this.pushFlip,
+  });
+
+  factory PredictionDriver.fromJson(Map<String, dynamic> j) => PredictionDriver(
+    feature:   j['feature']    as String? ?? '',
+    label:     j['label']      as String? ?? '',
+    valueText: j['value_text'] as String? ?? '',
+    pushFlip:  (j['push_flip'] as num?)?.toDouble() ?? 0,
+  );
+}
+
 class TickerRegimeResult {
   final String          ticker;
   final String          currentRegime;   // "positive" | "negative" | "unknown"
@@ -113,6 +135,7 @@ class TickerRegimeResult {
   final List<String>    signals;
   final DateTime?       lastUpdated;
   final String          scoringMethod;   // "supervised_lr" | "supervised_xgb" | "heuristic"
+  final List<PredictionDriver> drivers;  // top contributions, largest first
 
   const TickerRegimeResult({
     required this.ticker,
@@ -126,6 +149,7 @@ class TickerRegimeResult {
     required this.signals,
     this.lastUpdated,
     this.scoringMethod = 'heuristic',
+    this.drivers = const [],
   });
 
   factory TickerRegimeResult.fromJson(Map<String, dynamic> j) =>
@@ -144,6 +168,10 @@ class TickerRegimeResult {
                             ? DateTime.tryParse(j['last_updated'] as String)?.toLocal()
                             : null,
         scoringMethod:  j['scoring_method']  as String? ?? 'heuristic',
+        drivers:        (j['drivers'] as List?)
+                            ?.map((e) => PredictionDriver.fromJson(
+                                e as Map<String, dynamic>))
+                            .toList() ?? const [],
       );
 }
 
@@ -184,6 +212,15 @@ class MlModelMetadata {
   final double  accuracy;
   final double  precision;
   final double  recall;
+  // Live performance from reconciled predictions — null/0 until at least one
+  // prediction's 5-obs outcome window has closed.
+  final double? liveAuc;
+  final double? liveHitRate;
+  final double? liveBaseRate;
+  final double? liveBrier;
+  final int     liveN;
+  final int?    liveWindowDays;
+  final String? liveComputedAt;
 
   const MlModelMetadata({
     required this.available,
@@ -195,6 +232,13 @@ class MlModelMetadata {
     required this.accuracy,
     required this.precision,
     required this.recall,
+    this.liveAuc,
+    this.liveHitRate,
+    this.liveBaseRate,
+    this.liveBrier,
+    this.liveN = 0,
+    this.liveWindowDays,
+    this.liveComputedAt,
   });
 
   factory MlModelMetadata.fromJson(Map<String, dynamic> j) => MlModelMetadata(
@@ -207,7 +251,17 @@ class MlModelMetadata {
     accuracy:   (j['accuracy']  as num?)?.toDouble() ?? 0,
     precision:  (j['precision'] as num?)?.toDouble() ?? 0,
     recall:     (j['recall']    as num?)?.toDouble() ?? 0,
+    liveAuc:        (j['live_auc']       as num?)?.toDouble(),
+    liveHitRate:    (j['live_hit_rate']  as num?)?.toDouble(),
+    liveBaseRate:   (j['live_base_rate'] as num?)?.toDouble(),
+    liveBrier:      (j['live_brier']     as num?)?.toDouble(),
+    liveN:          (j['live_n']         as num?)?.toInt() ?? 0,
+    liveWindowDays: (j['live_window_days'] as num?)?.toInt(),
+    liveComputedAt: j['live_computed_at'] as String?,
   );
+
+  /// True once reconciliation has produced live out-of-sample metrics.
+  bool get hasLiveMetrics => liveN > 0;
 }
 
 class RegimeMlAnalysis {

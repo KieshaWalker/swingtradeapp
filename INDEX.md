@@ -86,12 +86,14 @@ _Machine-learning market regime classification. Ingests macro + IV data, trains 
 | [API] | api/routers/regime.py ← `/classify`, `/train`, `/ml_analyze` |
 | [API] | api/services/regime_ml_service.py |
 | [API] | api/services/regime_ml_trainer.py |
+| [API] | api/services/regime_ml_monitor.py ← prediction logging + reconciliation + live metrics |
 | [API] | api/services/regime_service.py ← heuristic fallback |
 | [API] | api/services/hmm_regime.py ← HMM / VIX classification |
-| [API] | api/jobs/schwab_pull.py ← periodic snapshot ingestion |
+| [API] | api/jobs/regime_pull.py ← hourly snapshot ingestion (close-capture run finalizes + logs predictions) |
 | [DB] | supabase/migrations/024_regime_snapshot.sql → `regime_snapshots` |
 | [DB] | supabase/migrations/025_regime_snapshots_institutional_fields.sql |
 | [DB] | supabase/migrations/026_regime_ml_models.sql → `regime_ml_models` |
+| [DB] | supabase/migrations/056_regime_ml_monitoring.sql → `is_final`, `regime_ml_predictions`, `regime_ml_live_metrics` |
 | [FN] | supabase/functions/get-schwab-quotes/index.ts ← quote data |
 | [FN] | supabase/functions/schwab-bootstrap/index.ts ← OAuth tokens |
 
@@ -103,6 +105,8 @@ _Machine-learning market regime classification. Ingests macro + IV data, trains 
 **Waterfall — Writes to:**
 - `regime_snapshots` (024) — read by Blotter phase 1 + Summary
 - `regime_ml_models` (026) — storing trained model JSON
+- `regime_ml_predictions` (056) — daily prediction log, reconciled after 5 sessions
+- `regime_ml_live_metrics` (056) — rolling live AUC / hit rate / Brier
 
 **Changing the ML feature schema** (026) requires updating `regime_ml_models.dart`, `regime_ml_service.py`, and the regime provider.
 regime_ml_models - supabase

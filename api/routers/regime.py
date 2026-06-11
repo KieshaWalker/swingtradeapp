@@ -92,6 +92,13 @@ class RegimeFeaturesOut(BaseModel):
     price_roc5:Optional[float] = None
 
 
+class PredictionDriverOut(BaseModel):
+    feature:    str
+    label:      str
+    value_text: str
+    push_flip:  float   # > 0 pushes toward a regime flip, < 0 anchors it
+
+
 class TickerRegimeOut(BaseModel):
     ticker:          str
     current_regime:  str
@@ -104,6 +111,7 @@ class TickerRegimeOut(BaseModel):
     signals:         list[str]
     last_updated:Optional[str]
     scoring_method:  str
+    drivers:         list[PredictionDriverOut] = []
 
 
 class MarketContextOut(BaseModel):
@@ -125,6 +133,15 @@ class ModelMetadataOut(BaseModel):
     accuracy:    float
     precision:   float
     recall:      float
+    # Live performance from reconciled predictions (regime_ml_live_metrics);
+    # None/0 until reconciliation has resolved at least one prediction window.
+    live_auc:Optional[float] = None
+    live_hit_rate:Optional[float] = None
+    live_base_rate:Optional[float] = None
+    live_brier:Optional[float] = None
+    live_n:           int             = 0
+    live_window_days:Optional[int] = None
+    live_computed_at:Optional[str] = None
 
 
 class MlAnalyzeResponse(BaseModel):
@@ -187,6 +204,15 @@ def ml_analyze() -> MlAnalyzeResponse:
             signals=t.signals,
             last_updated=t.last_updated,
             scoring_method=t.scoring_method,
+            drivers=[
+                PredictionDriverOut(
+                    feature=d.feature,
+                    label=d.label,
+                    value_text=d.value_text,
+                    push_flip=d.push_flip,
+                )
+                for d in t.drivers
+            ],
         )
         for t in result.tickers
     ]
@@ -210,6 +236,13 @@ def ml_analyze() -> MlAnalyzeResponse:
             accuracy=m.accuracy,
             precision=m.precision,
             recall=m.recall,
+            live_auc=m.live_auc,
+            live_hit_rate=m.live_hit_rate,
+            live_base_rate=m.live_base_rate,
+            live_brier=m.live_brier,
+            live_n=m.live_n,
+            live_window_days=m.live_window_days,
+            live_computed_at=m.live_computed_at,
         ),
         tickers=tickers_out,
     )
@@ -241,9 +274,11 @@ def train_model(req: TrainRequest) -> TrainResponse:
         )
     else:
         msg = (
-            f"Insufficient training data — need ≥200 labeled samples, "
-            f"got {result.n_samples}. Accumulate more regime history and retry."
-                            )
+            f"Model not accepted — got {result.n_samples} labeled samples. "
+            f"Training needs ≥40 samples (≥200 across ~50 trading days for full "
+            f"walk-forward validation) and an out-of-sample AUC ≥0.52. "
+            f"Accumulate more regime history and retry."
+        )
 
     return TrainResponse(
         model_type=result.model_type,

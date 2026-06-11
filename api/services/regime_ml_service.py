@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
@@ -34,9 +34,9 @@ log = logging.getLogger(__name__)
 # Module-level trained model cache
 # ---------------------------------------------------------------------------
 # Populated by load_trained_model() on API startup or after /regime/train.
-# Shape: callable(features: list[float]) -> (flip_prob: float, score: float)
+# Shape: callable(features) -> (flip_prob, score, per-feature contributions)
 # or None when no trained model is available.
-_inference_fn:Optional[Callable[[list[float]], tuple[float, float]]] = None
+_inference_fn:Optional[Callable[[list[float]], tuple[float, float, list[float]]]] = None
 _model_meta:Optional[dict] = None   # stored row metadata (auc_roc, trained_at, …)
 
 
@@ -129,6 +129,15 @@ class RegimeFeatures:
 
 
 @dataclass
+class PredictionDriver:
+    """One feature's pull on the current prediction, for the 'why' UI."""
+    feature:    str    # FEATURE_NAMES key
+    label:      str    # human-readable name
+    value_text: str    # the feature value the model saw, formatted
+    push_flip:  float  # signed strength; > 0 pushes toward a regime flip
+
+
+@dataclass
 class TickerRegimeResult:
     ticker:            str
     current_regime:    str
@@ -141,6 +150,7 @@ class TickerRegimeResult:
     signals:           list[str]
     last_updated:Optional[str]
     scoring_method:    str     # "supervised_logistic" | "supervised_xgboost" | "heuristic"
+    drivers:           list[PredictionDriver] = field(default_factory=list)
 
 
 @dataclass
@@ -154,6 +164,16 @@ class ModelMetadata:
     accuracy:     float
     precision:    float
     recall:       float
+    # Live (post-deployment) metrics from reconciled predictions — populated
+    # from the latest regime_ml_live_metrics row; None until reconciliation
+    # has resolved at least one prediction window.
+    live_auc:Optional[float] = None
+    live_hit_rate:Optional[float] = None
+    live_base_rate:Optional[float] = None
+    live_brier:Optional[float] = None
+    live_n:           int             = 0
+    live_window_days:Optional[int] = None
+    live_computed_at:Optional[str] = None
 
 
 @dataclass
@@ -208,7 +228,7 @@ def analyze_all_tickers(supabase_client) -> MlAnalysisResult:
             any_row = latest
 
     market_ctx    = _build_market_context(spy_row, vix_row=any_row)
-    model_meta    = _build_model_metadata()
+    model_meta    = _build_model_metadata(supabase_client)
 
     return MlAnalysisResult(
         as_of=datetime.now(timezone.utc).isoformat(),
@@ -218,13 +238,18 @@ def analyze_all_tickers(supabase_client) -> MlAnalysisResult:
     )
 
 
-def _build_model_metadata() -> ModelMetadata:
+def _build_model_metadata(supabase_client=None) -> ModelMetadata:
+    live = _fetch_live_metrics(supabase_client) if supabase_client is not None else {}
+
     if _model_meta is None or _inference_fn is None:
+        # Heuristic predictions are also logged + reconciled, so live metrics
+        # are meaningful even without a trained model.
         return ModelMetadata(
             available=False,
             model_type=None, trained_at=None,
             n_samples=0, n_positive=0,
             auc_roc=0.0, accuracy=0.0, precision=0.0, recall=0.0,
+            **live,
         )
     return ModelMetadata(
         available=True,
@@ -236,7 +261,37 @@ def _build_model_metadata() -> ModelMetadata:
         accuracy=float(_model_meta.get("accuracy", 0) or 0),
         precision=float(_model_meta.get("precision", 0) or 0),
         recall=float(_model_meta.get("recall", 0) or 0),
+        **live,
     )
+
+
+def _fetch_live_metrics(supabase_client) -> dict:
+    """Latest reconciled live-performance row, as ModelMetadata kwargs."""
+    try:
+        resp = (
+            supabase_client
+            .table("regime_ml_live_metrics")
+            .select("computed_at, window_days, n_predictions, live_auc, hit_rate, base_rate, brier")
+            .order("computed_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        if not rows:
+            return {}
+        r = rows[0]
+        return {
+            "live_auc":         _safe_float(r, "live_auc"),
+            "live_hit_rate":    _safe_float(r, "hit_rate"),
+            "live_base_rate":   _safe_float(r, "base_rate"),
+            "live_brier":       _safe_float(r, "brier"),
+            "live_n":           int(r.get("n_predictions") or 0),
+            "live_window_days": int(r["window_days"]) if r.get("window_days") is not None else None,
+            "live_computed_at": r.get("computed_at"),
+        }
+    except Exception as exc:
+        log.debug("live_metrics_fetch_failed error=%s", exc)
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -279,38 +334,53 @@ def _score_ticker(
     signals        = list(latest.get("signals") or [])
     last_updated   = latest.get("obs_date")
 
-    features = _extract_features(history, current_regime)
+    # Features come from finalized EOD rows only: the model is trained on
+    # is_final snapshots, so scoring today's intraday partial would shift the
+    # feature distribution (train/serve mismatch). Rows from before the
+    # is_final migration (key absent) count as final. The latest row above —
+    # final or not — still supplies the displayed regime and gate signals.
+    final_history = [r for r in history if r.get("is_final") is not False]
+    if not final_history:
+        final_history = history
+
+    features = _extract_features(final_history, current_regime)
 
     # ── Use supervised model if available ─────────────────────────────────
+    drivers: list[PredictionDriver] = []
     if inference_fn is not None:
         from .regime_ml_trainer import build_feature_vector
-        feat_vec = build_feature_vector(history)
-        if feat_vec is not None:
-            flip_prob, raw_stability = inference_fn(feat_vec)
-            # Flip raw_stability sign based on current regime so that:
-            #   pos regime + high flip_prob → negative score (at risk)
-            #   neg regime + high flip_prob → positive score (recovering)
-            if current_regime == "positive":
-                ml_score = raw_stability        # high stability → positive score
-            elif current_regime == "negative":
-                ml_score = -raw_stability       # high stability → negative score
-            else:
-                ml_score = 0.0
-            transition_prob  = flip_prob
-            confidence       = abs(flip_prob - 0.5) * 2   # margin from decision boundary
-            mt               = _model_meta.get("model_type", "logistic") if _model_meta else "logistic"
-            scoring_method   = f"supervised_{mt}"
+        feat_vec = build_feature_vector(final_history)
+    else:
+        feat_vec = None
+
+    if inference_fn is not None and feat_vec is not None:
+        flip_prob, raw_stability, contribs = inference_fn(feat_vec)
+        # Flip raw_stability sign based on current regime so that:
+        #   pos regime + high flip_prob → negative score (at risk)
+        #   neg regime + high flip_prob → positive score (recovering)
+        if current_regime == "positive":
+            ml_score = raw_stability        # high stability → positive score
+        elif current_regime == "negative":
+            ml_score = -raw_stability       # high stability → negative score
         else:
-            ml_score, transition_prob, confidence, scoring_method = (
-                *_heuristic_score(features, current_regime, len(history)), "heuristic"
-            )
+            ml_score = 0.0
+        transition_prob  = flip_prob
+        confidence       = abs(flip_prob - 0.5) * 2   # margin from decision boundary
+        mt               = _model_meta.get("model_type", "logistic") if _model_meta else "logistic"
+        scoring_method   = f"supervised_{mt}"
+        drivers          = _build_supervised_drivers(feat_vec, contribs)
     else:
         ml_score, transition_prob, confidence, scoring_method = (
             *_heuristic_score(features, current_regime, len(history)), "heuristic"
         )
+        drivers = _build_heuristic_drivers(features, current_regime)
 
     bucket     = _classify_bucket(current_regime, ml_score)
     ml_signals = _ml_signals(features, ml_score, bucket, scoring_method)
+    if drivers:
+        top = drivers[0]
+        direction = "pushing toward a flip" if top.push_flip > 0 else "anchoring the current regime"
+        ml_signals.append(f"Top driver: {top.label} ({top.value_text}) — {direction}")
 
     return TickerRegimeResult(
         ticker=ticker,
@@ -324,6 +394,7 @@ def _score_ticker(
         signals=signals + ml_signals,
         last_updated=last_updated,
         scoring_method=scoring_method,
+        drivers=drivers,
     )
 
 
@@ -402,6 +473,21 @@ def _compute_score(f: RegimeFeatures, current_regime: str) -> float:
     Returns a score in [-1, +1] where +1 = strong positive-gamma conviction.
     Each component is normalised to [-1, +1] before weighting.
     """
+    components, weights, total_w = _score_components(f)
+    if not components or total_w == 0:
+        return 0.0
+    weighted = sum(components[k] * weights[k] for k in components)
+    return _clamp(weighted / total_w, -1.0, 1.0)
+
+
+def _score_components(
+    f: RegimeFeatures,
+) -> tuple[dict[str, float], dict[str, float], float]:
+    """Normalised heuristic components, their weights, and the total weight.
+
+    Split out from _compute_score so the per-component contributions can also
+    feed the prediction-driver explanation.
+    """
     components: dict[str, float] = {}
 
     # 1. ZGL level — spot above ZGL is bullish (+)
@@ -449,9 +535,6 @@ def _compute_score(f: RegimeFeatures, current_regime: str) -> float:
     if f.price_roc5 is not None:
         components["roc5"] = _clamp(f.price_roc5 / 3.0, -1, 1)
 
-    if not components:
-        return 0.0
-
     weights = {
         "zgl_level":  _W_ZGL_LEVEL,
         "zgl_trend":  _W_ZGL_TREND,
@@ -467,11 +550,162 @@ def _compute_score(f: RegimeFeatures, current_regime: str) -> float:
     }
 
     total_w = sum(weights[k] for k in components)
-    if total_w == 0:
-        return 0.0
+    return components, weights, total_w
 
-    weighted = sum(components[k] * weights[k] for k in components)
-    return _clamp(weighted / total_w, -1.0, 1.0)
+
+# ---------------------------------------------------------------------------
+# Prediction drivers ("why this prediction")
+# ---------------------------------------------------------------------------
+
+_TOP_DRIVERS = 6
+
+_DRIVER_LABELS = {
+    "spot_to_zgl_pct":          "Zero-gamma distance",
+    "spot_to_zgl_trend":        "ZGL trend",
+    "ivp":                      "IV percentile",
+    "ivp_trend":                "IVP trend",
+    "hmm_state_num":            "Vol regime (HMM)",
+    "hmm_probability":          "HMM confidence",
+    "sma_aligned_num":          "SMA alignment",
+    "vix_dev_pct":              "VIX stress",
+    "regime_duration":          "Regime tenure",
+    "vix_term_structure_ratio": "VIX term structure",
+    "spot_to_vt_pct":           "Volatility trigger distance",
+    "breadth_proxy":            "Market breadth",
+    "gex_0dte_pct":             "0DTE gamma share",
+    "price_roc5":               "5-day momentum",
+}
+
+# Heuristic component key → ML feature key, so both scoring paths emit
+# drivers in the same vocabulary.
+_COMPONENT_FEATURE = {
+    "zgl_level":  "spot_to_zgl_pct",
+    "zgl_trend":  "spot_to_zgl_trend",
+    "sma":        "sma_aligned_num",
+    "hmm":        "hmm_state_num",
+    "ivp_trend":  "ivp_trend",
+    "vix_stress": "vix_dev_pct",
+    "ts_ratio":   "vix_term_structure_ratio",
+    "vt_dist":    "spot_to_vt_pct",
+    "breadth":    "breadth_proxy",
+    "dte0_pct":   "gex_0dte_pct",
+    "roc5":       "price_roc5",
+}
+
+
+def _driver_value_text(feature: str, v: float) -> str:
+    """Format the feature value the model saw, in trader-readable units."""
+    if feature == "spot_to_zgl_pct":
+        return f"{v:+.1f}% vs ZGL"
+    if feature == "spot_to_zgl_trend":
+        return f"{v:+.2f}%/obs"
+    if feature == "ivp":
+        return f"{v:.0f}th pct"
+    if feature == "ivp_trend":
+        return f"{v:+.1f} pts/obs"
+    if feature == "hmm_state_num":
+        if v >= 0.75:
+            return "high-vol state"
+        if v <= 0.25:
+            return "low-vol state"
+        return "state unknown"
+    if feature == "hmm_probability":
+        return f"{v * 100:.0f}% confidence"
+    if feature == "sma_aligned_num":
+        if v >= 0.75:
+            return "SMA10 > SMA50"
+        if v <= 0.25:
+            return "SMA10 < SMA50"
+        return "SMAs unknown"
+    if feature == "vix_dev_pct":
+        return f"VIX {v:+.1f}% vs 10-MA"
+    if feature == "regime_duration":
+        return f"{v:.0f} obs in regime"
+    if feature == "vix_term_structure_ratio":
+        return f"VIX/VIX3M {v:.2f}"
+    if feature == "spot_to_vt_pct":
+        return f"{v:+.1f}% vs VT"
+    if feature == "breadth_proxy":
+        return f"breadth z {v:+.2f}"
+    if feature == "gex_0dte_pct":
+        return f"{v:.0f}% of GEX"
+    if feature == "price_roc5":
+        return f"{v:+.1f}% in 5d"
+    return f"{v:.2f}"
+
+
+def _build_supervised_drivers(
+    feat_vec: list[float], contribs: list[float]
+) -> list[PredictionDriver]:
+    """Top feature contributions to the model's flip logit, largest first."""
+    from .regime_ml_trainer import FEATURE_NAMES
+
+    if len(contribs) != len(FEATURE_NAMES):
+        return []
+    ranked = sorted(
+        zip(FEATURE_NAMES, feat_vec, contribs),
+        key=lambda t: abs(t[2]),
+        reverse=True,
+    )
+    return [
+        PredictionDriver(
+            feature=name,
+            label=_DRIVER_LABELS.get(name, name),
+            value_text=_driver_value_text(name, val),
+            push_flip=round(float(c), 4),
+        )
+        for name, val, c in ranked[:_TOP_DRIVERS]
+        if abs(c) > 1e-6
+    ]
+
+
+def _build_heuristic_drivers(
+    f: RegimeFeatures, current_regime: str
+) -> list[PredictionDriver]:
+    """Heuristic component contributions, converted to flip-space.
+
+    Components are scored in conviction space (+1 = positive gamma), so the
+    conversion mirrors _transition_prob_from_score: in a positive regime a
+    negative component pushes toward a flip; in a negative regime a positive
+    component does (flipping = recovering).
+    """
+    if current_regime not in ("positive", "negative"):
+        return []
+    components, weights, total_w = _score_components(f)
+    if not components or total_w == 0:
+        return []
+
+    sign = -1.0 if current_regime == "positive" else 1.0
+    values = {
+        "zgl_level":  f.spot_to_zgl_pct,
+        "zgl_trend":  f.spot_to_zgl_trend,
+        "sma":        1.0 if f.sma_aligned else 0.0,
+        "hmm":        1.0 if f.hmm_state == "high_vol" else 0.0,
+        "ivp_trend":  f.ivp_trend,
+        "vix_stress": f.vix_dev_pct,
+        "ts_ratio":   f.vix_term_structure_ratio,
+        "vt_dist":    f.spot_to_vt_pct,
+        "breadth":    f.breadth_proxy,
+        "dte0_pct":   f.gex_0dte_pct,
+        "roc5":       f.price_roc5,
+    }
+
+    drivers = []
+    for key, comp in components.items():
+        push = sign * comp * weights[key] / total_w
+        if abs(push) < 1e-6:
+            continue
+        feature = _COMPONENT_FEATURE[key]
+        value   = values.get(key)
+        drivers.append(PredictionDriver(
+            feature=feature,
+            label=_DRIVER_LABELS.get(feature, feature),
+            value_text=_driver_value_text(feature, float(value) if value is not None else 0.0),
+            push_flip=round(push, 4),
+        ))
+
+    drivers.sort(key=lambda d: abs(d.push_flip), reverse=True)
+    return drivers[:_TOP_DRIVERS]
 
 
 def _classify_bucket(current_regime: str, ml_score: float) -> str:

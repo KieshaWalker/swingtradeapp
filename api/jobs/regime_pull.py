@@ -23,7 +23,7 @@ import httpx
 
 from core.config import settings
 from core.supabase_client import get_supabase
-from jobs.common import get_tickers, fetch_schwab_closes, market_session_guard
+from jobs.common import get_tickers, fetch_schwab_closes, is_eod_capture_run, market_session_guard
 from services.regime_service import classify_regime, compute_wilder_rsi
 from services.hmm_regime import classify_vix_regime
 
@@ -79,12 +79,20 @@ async def run_regime_pull() -> dict:
     results: dict[str, str] = {}
     sem = asyncio.Semaphore(_CONCURRENCY)
 
+    # The 4 PM ET close-capture cycle writes the finalized EOD snapshot;
+    # earlier intraday runs overwrite the same (ticker, obs_date) row but are
+    # excluded from ML training and supervised inference.
+    is_final = is_eod_capture_run()
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         # Fetch macro index histories in parallel
         # FRED series: VIXCLS=30-day VIX, VXVCLS=93-day VIX3M, VVIXCLS=VVIX (vol-of-vol)
+        # VIX gets 500 obs (~2 years): the HMM fits on the full series, and
+        # ~70 returns is far too few for stable 2-state identification. The
+        # 10-MA/RSI/deviation metrics only consume the tail either way.
         vix_closes, vix3m_closes, vvix_closes, (spy_closes, _), (rsp_closes, _) = (
             await asyncio.gather(
-                _fetch_fred_series(client, "VIXCLS"),
+                _fetch_fred_series(client, "VIXCLS", limit=500),
                 _fetch_fred_series(client, "VXVCLS"),
                 _fetch_fred_series(client, "VVIXCLS"),
                 fetch_schwab_closes(client, "SPY", days=25),
@@ -229,7 +237,7 @@ async def run_regime_pull() -> dict:
                     gex_0dte=iv.get("gex_0dte"),
                     gex_0dte_pct=iv.get("gex_0dte_pct"),
                 )
-                _upsert_regime_snapshot(db, today, regime)
+                _upsert_regime_snapshot(db, today, regime, is_final)
                 log.info("regime_ok ticker=%s bias=%s", ticker, regime.strategy_bias.value)
                 return ticker, "ok"
             except Exception as exc:
@@ -242,10 +250,23 @@ async def run_regime_pull() -> dict:
     # (routers/scheduler_trigger.py). Training data only changes once per day,
     # so retraining here on every hourly run was pure waste.
 
-    return {"status": "complete", "tickers": results, "date": today}
+    # On the close-capture run, log today's predictions (scored from the
+    # just-finalized snapshots) and reconcile pending ones whose 5-obs outcome
+    # window has closed. Failures here must never break the snapshot pipeline.
+    monitor: dict = {}
+    if is_final:
+        try:
+            from services.regime_ml_monitor import log_predictions, reconcile_predictions
+            monitor["predictions"]    = log_predictions(db)
+            monitor["reconciliation"] = reconcile_predictions(db)
+        except Exception as exc:
+            log.error("regime_ml_monitor_failed error=%r", exc, exc_info=True)
+            monitor["error"] = repr(exc)
+
+    return {"status": "complete", "tickers": results, "date": today, "is_final": is_final, "ml_monitor": monitor}
 
 
-def _upsert_regime_snapshot(db, today: str, regime) -> None:
+def _upsert_regime_snapshot(db, today: str, regime, is_final: bool) -> None:
     try:
         db.table("regime_snapshots").upsert(
             {
@@ -278,6 +299,7 @@ def _upsert_regime_snapshot(db, today: str, regime) -> None:
                 "vix_term_structure_ratio": regime.vix_term_structure_ratio,
                 "vvix_current":             regime.vvix_current,
                 "vvix_10ma":                regime.vvix_10ma,
+                "is_final":                 is_final,
             },
             on_conflict="ticker,obs_date",
         ).execute()

@@ -236,8 +236,8 @@ def regime_train_trigger(request: Request):
         )
     else:
         log.warning(
-            "regime_train_weekly: insufficient data (%d samples) — "
-            "need ≥80 labeled samples; skipping model update",
+            "regime_train_weekly: model not accepted (%d samples) — "
+            "needs ≥40 labeled samples and OOS AUC ≥0.52; skipping model update",
             result.n_samples,
         )
 

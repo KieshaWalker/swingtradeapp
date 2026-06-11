@@ -24,6 +24,15 @@ _MARKET_OPEN = time(9, 30)
 _MARKET_LAST = time(16, 30)
 
 
+def is_eod_capture_run() -> bool:
+    """True when the current run falls in the 4 PM ET close-capture window —
+    the last pipeline cycle of the session that market_session_guard admits.
+    Jobs use this to mark their daily upsert as the finalized EOD snapshot.
+    """
+    now_et = datetime.now(timezone.utc).astimezone(_ET)
+    return now_et.time() >= time(16, 0)
+
+
 def market_session_guard() -> Optional[str]:
     """Return a skip reason when outside US equity market hours (ET), else None.
 
