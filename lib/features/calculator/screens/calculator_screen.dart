@@ -1327,10 +1327,14 @@ class _HestonTabState extends State<_HestonTab> {
                       'Half-life of a vol shock = ln(2) / κ years.\n'
                       'κ = 2 → ~4-month half-life.  κ = 4 → ~2-month half-life.',
                       heading: 'What it controls'),
-                  _FormulaLine('1. Collect daily realized variance (σ²) for 1–2 years.\n'
-                      '2. Fit AR(1): σ²_t = a + b·σ²_{t-1}.\n'
-                      '3. κ ≈ −252 · ln(b).\n\n'
-                      'Example: b = 0.992 → κ ≈ −252 · ln(0.992) ≈ 2.0',
+                  _FormulaLine('The Kappa tab can estimate κ from price history: '
+                      'it builds non-overlapping 5-day realized variances and '
+                      'fits the autocovariance decay γₖ = C·bᵏ, then '
+                      'κ = −ln(b)/Δt.\n\n'
+                      'Caution: naive AR(1) OLS on realized variance '
+                      '(κ ≈ −252·ln b) is badly biased — RV measurement noise '
+                      'shrinks b and inflates κ several-fold. Use the '
+                      'lag-decay fit instead.',
                       heading: 'From historical variance'),
                   _FormulaLine('κ is most accurately estimated from the vol surface '
                       'term structure — the shape of ATM IV across maturities encodes '
@@ -2755,6 +2759,22 @@ class _KappaTabState extends State<_KappaTab> {
     }
   }
 
+  String _estimateSummary(Map<String, dynamic> e) {
+    final b  = (e['ar1_b'] as num).toDouble();
+    final r2 = (e['ar1_r2'] as num).toDouble();
+    final hl = (e['half_life_days'] as num).toDouble();
+    final buf = StringBuffer(
+        '${e['ticker']}: b=${b.toStringAsFixed(3)} over ${e['n_blocks']} '
+        '${e['block_days']}d blocks (lag-1 r² ${r2.toStringAsFixed(3)}) '
+        '→ half-life ${hl.toStringAsFixed(0)}d.');
+    final calK = e['calibrated_kappa'] as num?;
+    if (calK != null) {
+      buf.write(' Surface-calibrated κ = ${calK.toStringAsFixed(2)} '
+          '(risk-neutral, typically higher).');
+    }
+    return buf.toString();
+  }
+
   void _calculate() {
     final kappa    = double.tryParse(_kappaCtrl.text);
     final thetaVol = double.tryParse(_thetaCtrl.text);
@@ -2791,6 +2811,60 @@ class _KappaTabState extends State<_KappaTab> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // ── Estimate parameters from price history ──
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppTheme.elevatedColor.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: AppTheme.borderColor.withValues(alpha: 0.4)),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Estimate from price history',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13)),
+            const SizedBox(height: 4),
+            const Text(
+              'Fits the autocovariance decay of non-overlapping 5-day realized '
+              'variance (3y of closes) and fills κ, θ, v₀ and ξ below.',
+              style: TextStyle(color: AppTheme.neutralColor, fontSize: 12),
+            ),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: TextFormField(
+                controller: _tickerCtrl,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                    labelText: 'Ticker', hintText: 'SPY', isDense: true),
+                onFieldSubmitted: (_) => _estimateFromHistory(),
+              )),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: _estimating ? null : _estimateFromHistory,
+                child: _estimating
+                    ? const SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Estimate'),
+              ),
+            ]),
+            if (_estimateError != null) ...[
+              const SizedBox(height: 8),
+              Text(_estimateError!,
+                  style: const TextStyle(
+                      color: AppTheme.lossColor, fontSize: 12)),
+            ],
+            if (_estimate != null) ...[
+              const SizedBox(height: 8),
+              Text(_estimateSummary(_estimate!),
+                  style: const TextStyle(
+                      color: AppTheme.neutralColor, fontSize: 12, height: 1.4)),
+            ],
+          ]),
+        ),
+        const SizedBox(height: 16),
         Row(children: [
           Expanded(child: TextFormField(
             controller: _kappaCtrl,
