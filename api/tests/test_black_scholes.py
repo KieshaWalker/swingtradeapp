@@ -134,6 +134,30 @@ class TestBSVomma:
         assert v > 0, f"ATM vomma should be positive, got {v}"
 
 
+class TestBSCharm:
+    def test_charm_matches_finite_difference(self):
+        """Charm (per day) must match the 1-day finite difference of delta."""
+        spot, K, sigma, r = 100.0, 100.0, 0.20, 0.0433
+        for dte in (10, 30, 90):
+            T = dte / 365
+            F = _forward(spot, r, T)
+            charm = bs_charm(F, K, T, r, sigma, True)
+            T2 = (dte - 1) / 365
+            F2 = _forward(spot, r, T2)
+            fd = bs_delta(F2, K, T2, r, sigma, True) - bs_delta(F, K, T, r, sigma, True)
+            assert abs(charm - fd) < 5e-5, (
+                f"dte={dte}: charm {charm} vs 1-day delta decay {fd}"
+            )
+
+    def test_charm_same_for_call_and_put(self):
+        """dDelta/dt is identical for calls and puts (q=0)."""
+        T = 30 / 365
+        F = _forward(100.0, 0.0433, T)
+        c = bs_charm(F, 105.0, T, 0.0433, 0.25, True)
+        p = bs_charm(F, 105.0, T, 0.0433, 0.25, False)
+        assert abs(c - p) < TOLERANCE
+
+
 class TestHestonCorrection:
     def test_correction_finite(self):
         """Heston correction should be finite for all test cases."""

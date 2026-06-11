@@ -399,7 +399,8 @@ class _PositionSizerState extends State<_PositionSizer> {
     if (_maxRiskDollars == null || _lossPerContract == null || _lossPerContract == 0) {
       return null;
     }
-    return max(1, (_maxRiskDollars! / _lossPerContract!).floor());
+    // 0 means even one contract's stop-out exceeds the risk budget.
+    return (_maxRiskDollars! / _lossPerContract!).floor();
   }
 
   double? get _totalCost {
@@ -483,35 +484,63 @@ class _PositionSizerState extends State<_PositionSizer> {
             ),
           if (_recommendedContracts != null) ...[
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppTheme.profitColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: AppTheme.profitColor.withValues(alpha: 0.3)),
-              ),
-              child: Column(
-                children: [
-                  const Text('Recommended Contracts',
-                      style: TextStyle(color: AppTheme.neutralColor)),
-                  const SizedBox(height: 8),
-                  Text(
-                    '$_recommendedContracts',
-                    style: const TextStyle(
-                      fontSize: 48,
-                      fontWeight: FontWeight.w900,
-                      color: AppTheme.profitColor,
-                    ),
-                  ),
-                  if (_totalCost != null)
+            if (_recommendedContracts! < 1)
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppTheme.lossColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: AppTheme.lossColor.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  children: [
+                    const Text('Position too large',
+                        style: TextStyle(
+                            color: AppTheme.lossColor,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 8),
                     Text(
-                      'Total cost: \$${_totalCost!.toStringAsFixed(2)}',
+                      'Even 1 contract loses \$${_lossPerContract!.toStringAsFixed(2)} '
+                      'at your stop — more than the \$${_maxRiskDollars!.toStringAsFixed(2)} '
+                      'risk budget. Choose a cheaper option, tighten the stop, '
+                      'or skip the trade.',
                       style: const TextStyle(color: AppTheme.neutralColor),
+                      textAlign: TextAlign.center,
                     ),
-                ],
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppTheme.profitColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: AppTheme.profitColor.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  children: [
+                    const Text('Recommended Contracts',
+                        style: TextStyle(color: AppTheme.neutralColor)),
+                    const SizedBox(height: 8),
+                    Text(
+                      '$_recommendedContracts',
+                      style: const TextStyle(
+                        fontSize: 48,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.profitColor,
+                      ),
+                    ),
+                    if (_totalCost != null)
+                      Text(
+                        'Total cost: \$${_totalCost!.toStringAsFixed(2)}',
+                        style: const TextStyle(color: AppTheme.neutralColor),
+                      ),
+                  ],
+                ),
               ),
-            ),
           ],
         ],
       ],
@@ -715,9 +744,11 @@ class _BlackScholesTabState extends State<_BlackScholesTab> {
               'Theta (Θ): daily time decay in dollars. Long options lose value each day (negative theta).\n\n'
               'Vega (ν): price change per 1% IV move. High vega = sensitive to volatility changes.\n\n'
               'Rho (ρ): price change per 1% rate move. Less impactful on short-dated options.\n\n'
-              'Vanna: delta change per 1% IV move. Key for vol-skew hedging.\n\n'
+              'Vanna (∂Δ/∂σ): cross-sensitivity of delta to vol — divide by 100 '
+              'for the delta change per 1% IV move. Key for vol-skew hedging.\n\n'
               'Charm: delta change per day (delta decay). Important for overnight risk.\n\n'
-              'Vomma: vega change per 1% IV move (vol convexity). High vomma = benefits from vol-of-vol.',
+              'Vomma (∂ν/∂σ): vol convexity — per-unit vega change as IV moves. '
+              'Positive vomma = vega grows when IV rises (benefits from vol-of-vol).',
               heading: 'Greeks interpreted',
             ),
             _FormulaLine(
@@ -734,15 +765,16 @@ class _BlackScholesTabState extends State<_BlackScholesTab> {
   }
 
   Widget _greekGrid(Map<String, dynamic> g) {
+    // Backend returns per-unit vol/rate Greeks; vega & rho are shown per 1%.
     final greeks = [
       ('Delta (Δ)', g['delta'], false),
       ('Gamma (Γ)', g['gamma'], false),
       ('Theta (Θ) /day', g['theta'], true),
-      ('Vega (ν) /1%', g['vega'], false),
-      ('Rho (ρ) /1%', g['rho'], false),
-      ('Vanna', g['vanna'], false),
+      ('Vega (ν) /1%', (g['vega'] as num) / 100, false),
+      ('Rho (ρ) /1%', (g['rho'] as num) / 100, false),
+      ('Vanna (∂Δ/∂σ)', g['vanna'], false),
       ('Charm /day', g['charm'], true),
-      ('Vomma', g['vomma'], false),
+      ('Vomma (∂ν/∂σ)', g['vomma'], false),
     ];
     return GridView.count(
       crossAxisCount: 2,
@@ -791,7 +823,8 @@ class _SABRTabState extends State<_SABRTab> {
   final _fCtrl = TextEditingController(text: '100');
   final _kCtrl = TextEditingController(text: '100');
   final _tCtrl = TextEditingController(text: '0.25');
-  final _alphaCtrl = TextEditingController(text: '0.25');
+  // With beta = 0.5, sigma_ATM ~ alpha / sqrt(F): F=100 + 25% ATM vol -> alpha 2.5
+  final _alphaCtrl = TextEditingController(text: '2.50');
   final _rhoCtrl = TextEditingController(text: '-0.70');
   final _nuCtrl = TextEditingController(text: '0.40');
   // Beta is fixed at 0.5 (equity square-root CEV)
@@ -874,16 +907,18 @@ class _SABRTabState extends State<_SABRTab> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
               labelText: 'Alpha (α)',
-              helperText: 'ATM vol level ≈ IV',
+              helperText: 'α ≈ ATM IV × √F (β=0.5)',
               suffixIcon: const _InfoButton(
                 title: 'Estimating Alpha (α)',
                 lines: [
-                  _FormulaLine('α ≈ ATM implied vol for your expiry.\n'
-                      'If the 30-day ATM option shows 22% IV, start with α = 0.22.',
+                  _FormulaLine('With β = 0.5 the ATM vol is σ_ATM ≈ α / √F, '
+                      'so α ≈ ATM IV × √F.\n'
+                      'If the 30-day ATM option shows 22% IV and F = 100, '
+                      'start with α = 0.22 × √100 = 2.2.',
                       heading: 'Quick estimate'),
-                  _FormulaLine('For β = 0.5 (equity square-root model), a more precise '
-                      'starting point is α ≈ IV_ATM × F^{0.5}. But the ATM approximation '
-                      'is usually close enough to seed calibration.',
+                  _FormulaLine('In general α ≈ IV_ATM × F^{1−β}. Only for β = 1 '
+                      '(lognormal backbone) does α equal the ATM IV directly — '
+                      'with this tab\'s fixed β = 0.5 it must be scaled by √F.',
                       heading: 'Precise formula'),
                   _FormulaLine('SABR calibration fits α, ρ, and ν simultaneously to '
                       'minimize the IV error across all strikes for a given expiry. '
@@ -989,7 +1024,8 @@ class _SABRTabState extends State<_SABRTab> {
             ),
             _FormulaLine(
               'α (alpha): controls the overall level of implied volatility. '
-              'At-the-money, α ≈ ATM IV. Increase α → entire smile shifts up.\n\n'
+              'At-the-money, σ_ATM ≈ α / F^{1−β} (α ≈ ATM IV only when β = 1). '
+              'Increase α → entire smile shifts up.\n\n'
               'β (beta): CEV exponent controlling backbone shape. β=0 is normal model '
               '(absolute vol), β=1 is lognormal (Black-Scholes backbone), β=0.5 '
               'is square-root (equity standard). Fixed here at 0.5.\n\n'
@@ -1753,7 +1789,7 @@ class _TheoreticalPriceTabState extends State<_TheoreticalPriceTab> {
               color: Colors.white,
             ),
           _ResultRow(
-            label: 'Model Fair Value (blended)',
+            label: 'Model Fair Value',
             value: '\$${(res['model_fair_value'] as num).toStringAsFixed(4)}',
             color: AppTheme.profitColor,
           ),
@@ -1789,19 +1825,21 @@ class _TheoreticalPriceTabState extends State<_TheoreticalPriceTab> {
           title: 'About Theoretical / Fair Value',
           lines: [
             _FormulaLine(
-              'Model Fair Value = weighted average of BS, SABR, and (when available) '
-              'Heston prices. Edge = Broker Mid − Model Fair Value.\n\n'
-              'Positive edge (bps > 0): market is pricing the option above theoretical — '
-              'you are selling at a premium, or paying up to buy.\n'
-              'Negative edge (bps < 0): market prices below theoretical — '
-              'potential mispricing in your favour as a buyer.',
+              'Model Fair Value = Heston price when calibrated parameters are '
+              'available, otherwise SABR price plus a stochastic-vol correction.\n'
+              'Edge = (Model Fair Value − Broker Mid) / Broker Mid in bps.\n\n'
+              'Positive edge (bps > 0): market prices the option below theoretical — '
+              'potential mispricing in your favour as a buyer (BUY signal).\n'
+              'Negative edge (bps < 0): market prices the option above theoretical — '
+              'rich premium that favours the seller (SELL signal).',
               heading: 'Edge (basis points)',
             ),
             _FormulaLine(
               'BS is a single-vol model — it uses your input IV flat across all strikes. '
               'SABR adjusts for the vol smile at this specific strike. '
               'Heston incorporates stochastic vol dynamics from the calibrated surface. '
-              'The blended model price reflects all three, weighted by availability.',
+              'The model fair value uses Heston when a calibration exists for the '
+              'ticker, otherwise SABR with a first-order stochastic-vol correction.',
               heading: 'Why three models?',
             ),
             _FormulaLine(
@@ -1882,8 +1920,8 @@ class _EdgeBadge extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           positive
-              ? 'Market is above theoretical — selling edge.'
-              : 'Market is below theoretical — buying edge.',
+              ? 'Market is below theoretical — buying edge.'
+              : 'Market is above theoretical — selling edge.',
           style: TextStyle(
             color: positive ? AppTheme.profitColor : AppTheme.lossColor,
             fontSize: 12,
@@ -2479,15 +2517,16 @@ class _ImpliedVolTabState extends State<_ImpliedVolTab> {
   }
 
   Widget _ivGreekGrid(Map<String, dynamic> r) {
+    // Backend returns per-unit vol/rate Greeks; vega & rho are shown per 1%.
     final greeks = [
       ('Delta (Δ)', r['delta'], false),
       ('Gamma (Γ)', r['gamma'], false),
       ('Theta (Θ) /day', r['theta'], true),
-      ('Vega (ν) /1%', r['vega'], false),
-      ('Rho (ρ) /1%', r['rho'], false),
-      ('Vanna', r['vanna'], false),
+      ('Vega (ν) /1%', (r['vega'] as num) / 100, false),
+      ('Rho (ρ) /1%', (r['rho'] as num) / 100, false),
+      ('Vanna (∂Δ/∂σ)', r['vanna'], false),
       ('Charm /day', r['charm'], true),
-      ('Vomma', r['vomma'], false),
+      ('Vomma (∂ν/∂σ)', r['vomma'], false),
     ];
     return GridView.count(
       crossAxisCount: 2,

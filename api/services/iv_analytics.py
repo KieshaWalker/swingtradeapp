@@ -737,8 +737,8 @@ def _second_order_greeks(
     # Vanna = -gamma * S * sqrt(T) * d2
     vanna = -gamma * spot * sqrt_T * d2
 
-    # Charm = gamma * S * (r*d1/σ - d2/(2T)) / 365
-    charm = (-gamma * spot * (2 * r * T - d2 * sigma * sqrt_T) / (2 * 365)) if T > 0 else 0.0
+    # Charm = -gamma * S * (2rT - d2*σ*√T) / (2T), per calendar day (/365)
+    charm = (-gamma * spot * (2 * r * T - d2 * sigma * sqrt_T) / (2 * T * 365)) if T > 0 else 0.0
 
     # Volga = vega * d1 * d2 / σ  (sigma already checked >= sig_sqt/sqrt_T > 0)
     volga = vega * d1 * d2 / sigma

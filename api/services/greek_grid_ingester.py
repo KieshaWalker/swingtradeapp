@@ -104,7 +104,7 @@ def _second_order_approx(
     vanna = -phi * d2 / iv_decimal
     # Divide by 365 to express charm as delta-decay per calendar day,
     # matching the convention used in iv_analytics.py and greek_interpreter.py thresholds.
-    charm = -phi * (2 * DEFAULT_R * T - d2 * sig_sqt) / (2 * sig_sqt * 365)
+    charm = -phi * (2 * DEFAULT_R * T - d2 * sig_sqt) / (2 * T * sig_sqt * 365)
     vega_val = f * phi * sqrt_T
     volga = (vega_val * d1 * d2 / iv_decimal) if abs(iv_decimal) > 1e-8 else 0.0
 

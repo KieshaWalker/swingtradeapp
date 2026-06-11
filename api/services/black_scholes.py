@@ -131,17 +131,16 @@ def bs_vanna(F: float, K: float, T: float, sigma: float, is_call: bool = True) -
 
 
 def bs_charm(F: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> float:
-    """∂Δ/∂t — Charm (matches _bsCharm in fair_value_engine.dart exactly).
+    """∂Δ/∂t — Charm, delta decay per CALENDAR DAY (same for calls and puts, q=0).
 
-    Formula: -df * φ(d₁) * (2r·T - d₂·σ·√T) / (2·σ·√T)
+    Annual formula: -φ(d₁) * (2r·T - d₂·σ·√T) / (2·T·σ·√T), divided by 365.
     """
     sqrt_T = math.sqrt(T)
     sig_sqt = sigma * sqrt_T
     if sig_sqt < FV_SIGXT_GUARD or T < 1e-8:
         return 0.0
     d1, d2 = _d1d2(F, K, T, sigma)
-    df = math.exp(-r * T)
-    return -df * _pdf(d1) * (2 * r * T - d2 * sigma * sqrt_T) / (2 * sigma * sqrt_T)
+    return -_pdf(d1) * (2 * r * T - d2 * sigma * sqrt_T) / (2 * T * sigma * sqrt_T) / 365
 
 
 def bs_vomma(F: float, K: float, T: float, r: float, sigma: float, is_call: bool = True) -> float:
@@ -267,8 +266,8 @@ def bs_all_greeks(
     # Vanna = -φ(d1)*d2/σ
     vanna = -phi_d1 * d2 / sigma
 
-    # Charm = -df * φ(d1) * (2rT - d2*σ*√T) / (2σ*√T)
-    charm = -df * phi_d1 * (2 * r * T - d2 * sigma * sqrt_T) / (2 * sigma * sqrt_T)
+    # Charm = -φ(d1) * (2rT - d2*σ*√T) / (2T*σ*√T), per calendar day
+    charm = -phi_d1 * (2 * r * T - d2 * sigma * sqrt_T) / (2 * T * sigma * sqrt_T) / 365
 
     # Vomma = vega * d1 * d2 / σ
     vomma = vega * d1 * d2 / sigma
