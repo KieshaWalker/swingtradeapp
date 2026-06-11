@@ -244,6 +244,21 @@ class PythonApiClient {
         'v0': v0,
       });
 
+  /// Historical (P-measure) Heston parameter estimate from daily closes.
+  /// Returns {ticker, kappa, theta, xi, v0, long_run_vol, current_vol,
+  ///          half_life_days, feller_satisfied, ar1_b, ar1_r2, n_blocks,
+  ///          block_days, calibrated_kappa?, calibrated_rmse_iv?,
+  ///          calibrated_obs_date?, note}
+  /// Throws PythonApiException(422) when the history can't support the fit.
+  static Future<Map<String, dynamic>> hestonEstimateParams({
+    required String ticker,
+    int lookbackDays = 1095,
+  }) =>
+      _post('/heston/estimate-params', {
+        'ticker': ticker,
+        'lookback_days': lookbackDays,
+      });
+
   // ── Fair Value ─────────────────────────────────────────────────────────────
 
   /// Returns {bs_fair_value, sabr_fair_value, model_fair_value, edge_bps,

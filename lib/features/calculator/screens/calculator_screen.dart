@@ -2712,18 +2712,47 @@ class _KappaTab extends StatefulWidget {
 }
 
 class _KappaTabState extends State<_KappaTab> {
-  final _kappaCtrl = TextEditingController(text: '2.0');
-  final _thetaCtrl = TextEditingController(text: '20');
-  final _v0Ctrl    = TextEditingController(text: '20');
-  final _xiCtrl    = TextEditingController(text: '0.50');
-  final _dteCtrl   = TextEditingController(text: '30');
+  final _kappaCtrl  = TextEditingController(text: '2.0');
+  final _thetaCtrl  = TextEditingController(text: '20');
+  final _v0Ctrl     = TextEditingController(text: '20');
+  final _xiCtrl     = TextEditingController(text: '0.50');
+  final _dteCtrl    = TextEditingController(text: '30');
+  final _tickerCtrl = TextEditingController();
   Map<String, dynamic>? _result;
+
+  bool _estimating = false;
+  Map<String, dynamic>? _estimate;
+  String? _estimateError;
 
   @override
   void dispose() {
     _kappaCtrl.dispose(); _thetaCtrl.dispose(); _v0Ctrl.dispose();
-    _xiCtrl.dispose(); _dteCtrl.dispose();
+    _xiCtrl.dispose(); _dteCtrl.dispose(); _tickerCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _estimateFromHistory() async {
+    final ticker = _tickerCtrl.text.trim().toUpperCase();
+    if (ticker.isEmpty) return;
+    setState(() { _estimating = true; _estimateError = null; _estimate = null; });
+    try {
+      final res = await PythonApiClient.hestonEstimateParams(ticker: ticker);
+      if (!mounted) return;
+      setState(() {
+        _estimate = res;
+        _kappaCtrl.text = (res['kappa'] as num).toStringAsFixed(2);
+        _thetaCtrl.text =
+            ((res['long_run_vol'] as num) * 100).toStringAsFixed(1);
+        _v0Ctrl.text =
+            ((res['current_vol'] as num) * 100).toStringAsFixed(1);
+        _xiCtrl.text = (res['xi'] as num).toStringAsFixed(2);
+      });
+      _calculate();
+    } on PythonApiException catch (e) {
+      if (mounted) setState(() => _estimateError = e.message);
+    } finally {
+      if (mounted) setState(() => _estimating = false);
+    }
   }
 
   void _calculate() {
