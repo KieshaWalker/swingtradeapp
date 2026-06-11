@@ -2,7 +2,9 @@
 // features/calculator/screens/calculator_screen.dart — Trading calculators
 // =============================================================================
 // Widgets defined here:
-//   • CalculatorScreen         — scaffold + 8-tab TabBar
+//   • CalculatorScreen         — scaffold + 11-tab TabBar, optional split view
+//   • _SplitView / _CalcPane   — two independent panes, each with a calculator
+//                                dropdown (side-by-side wide, stacked narrow)
 //   • _PnLEstimator            — tab 1: estimate trade outcome
 //   • _PositionSizer           — tab 2: size a position by risk %
 //   • _BlackScholesTab         — tab 3: BS price + all Greeks via /bs backend
@@ -33,15 +35,35 @@ class CalculatorScreen extends StatefulWidget {
   State<CalculatorScreen> createState() => _CalculatorScreenState();
 }
 
+/// Calculator names shared by the TabBar (single view) and the per-pane
+/// dropdowns (split view). Order must match [_CalculatorScreenState._buildCalcs].
+const List<String> _calcNames = [
+  'P&L',
+  'Size',
+  'Black-Scholes',
+  'SABR',
+  'Heston',
+  'Forward Price',
+  'Theoretical Price',
+  'Intrinsic Value',
+  'Implied Vol',
+  'Kappa',
+  'Vomma',
+];
+
 class _CalculatorScreenState extends State<CalculatorScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
   double? _liveRate;
 
+  bool _split = false;
+  int _leftCalc = 0;
+  int _rightCalc = 2;
+
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 11, vsync: this);
+    _tabs = TabController(length: _calcNames.length, vsync: this);
     FredService().getSeries('SOFR30DAYAVG', limit: 1).then((series) {
       if (mounted && series.observations.isNotEmpty) {
         setState(() => _liveRate = series.observations.first.value);
@@ -55,52 +77,170 @@ class _CalculatorScreenState extends State<CalculatorScreen>
     super.dispose();
   }
 
+  List<Widget> _buildCalcs() => [
+        const _PnLEstimator(),
+        const _PositionSizer(),
+        _BlackScholesTab(initialRate: _liveRate),
+        const _SABRTab(),
+        _HestonTab(initialRate: _liveRate),
+        _ForwardPriceTab(initialRate: _liveRate),
+        _TheoreticalPriceTab(initialRate: _liveRate),
+        const _IntrinsicValueTab(),
+        _ImpliedVolTab(initialRate: _liveRate),
+        const _KappaTab(),
+        _VommaTab(initialRate: _liveRate),
+      ];
+
+  void _toggleSplit() {
+    setState(() {
+      if (!_split) {
+        // Carry the active tab into the left pane.
+        _leftCalc = _tabs.index;
+        if (_rightCalc == _leftCalc) {
+          _rightCalc = (_leftCalc + 1) % _calcNames.length;
+        }
+      } else {
+        // Return to single view on the left pane's calculator.
+        _tabs.index = _leftCalc;
+      }
+      _split = !_split;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Calculator'),
-        actions: const [AppMenuButton()],
-        bottom: TabBar(
-          controller: _tabs,
-          indicatorColor: AppTheme.profitColor,
-          indicatorWeight: 3,
-          indicatorSize: TabBarIndicatorSize.label,
-          labelColor: AppTheme.profitColor,
-          unselectedLabelColor: AppTheme.neutralColor,
-          isScrollable: true,
-          tabs: const [
-            Tab(text: 'P&L'),
-            Tab(text: 'Size'),
-            Tab(text: 'Black-Scholes'),
-            Tab(text: 'SABR'),
-            Tab(text: 'Heston'),
-            Tab(text: 'Forward Price'),
-            Tab(text: 'Theoretical Price'),
-            Tab(text: 'Intrinsic Value'),
-            Tab(text: 'Implied Vol'),
-            Tab(text: 'Kappa'),
-            Tab(text: 'Vomma'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabs,
-        children: [
-          const _PnLEstimator(),
-          const _PositionSizer(),
-          _BlackScholesTab(initialRate: _liveRate),
-          const _SABRTab(),
-          _HestonTab(initialRate: _liveRate),
-          _ForwardPriceTab(initialRate: _liveRate),
-          _TheoreticalPriceTab(initialRate: _liveRate),
-          const _IntrinsicValueTab(),
-          _ImpliedVolTab(initialRate: _liveRate),
-          const _KappaTab(),
-          _VommaTab(initialRate: _liveRate),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.vertical_split_rounded,
+                color: _split ? AppTheme.profitColor : null),
+            tooltip: _split ? 'Single view' : 'Split view',
+            onPressed: _toggleSplit,
+          ),
+          const AppMenuButton(),
         ],
+        bottom: _split
+            ? null
+            : TabBar(
+                controller: _tabs,
+                indicatorColor: AppTheme.profitColor,
+                indicatorWeight: 3,
+                indicatorSize: TabBarIndicatorSize.label,
+                labelColor: AppTheme.profitColor,
+                unselectedLabelColor: AppTheme.neutralColor,
+                isScrollable: true,
+                tabs: [for (final n in _calcNames) Tab(text: n)],
+              ),
       ),
+      body: _split
+          ? _SplitView(
+              leftCalc: _leftCalc,
+              rightCalc: _rightCalc,
+              onLeftChanged: (i) => setState(() => _leftCalc = i),
+              onRightChanged: (i) => setState(() => _rightCalc = i),
+              buildCalcs: _buildCalcs,
+            )
+          : TabBarView(
+              controller: _tabs,
+              children: _buildCalcs(),
+            ),
     );
+  }
+}
+
+/// Two independent calculator panes: side-by-side when wide, stacked when
+/// narrow. Each pane keeps its own input state via an IndexedStack, so
+/// switching calculators within a pane does not clear what you typed.
+class _SplitView extends StatelessWidget {
+  final int leftCalc;
+  final int rightCalc;
+  final ValueChanged<int> onLeftChanged;
+  final ValueChanged<int> onRightChanged;
+  final List<Widget> Function() buildCalcs;
+  const _SplitView({
+    required this.leftCalc,
+    required this.rightCalc,
+    required this.onLeftChanged,
+    required this.onRightChanged,
+    required this.buildCalcs,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final left = _CalcPane(
+        selected: leftCalc, onChanged: onLeftChanged, calculators: buildCalcs());
+    final right = _CalcPane(
+        selected: rightCalc, onChanged: onRightChanged, calculators: buildCalcs());
+
+    return LayoutBuilder(builder: (context, constraints) {
+      if (constraints.maxWidth >= 700) {
+        return Row(children: [
+          Expanded(child: left),
+          VerticalDivider(width: 1, color: AppTheme.borderColor),
+          Expanded(child: right),
+        ]);
+      }
+      return Column(children: [
+        Expanded(child: left),
+        Divider(height: 1, color: AppTheme.borderColor),
+        Expanded(child: right),
+      ]);
+    });
+  }
+}
+
+class _CalcPane extends StatelessWidget {
+  final int selected;
+  final ValueChanged<int> onChanged;
+  final List<Widget> calculators;
+  const _CalcPane({
+    required this.selected,
+    required this.onChanged,
+    required this.calculators,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppTheme.elevatedColor.withValues(alpha: 0.6),
+          border: Border(
+            bottom: BorderSide(color: AppTheme.borderColor.withValues(alpha: 0.4)),
+          ),
+        ),
+        child: Row(children: [
+          const Icon(Icons.calculate_outlined,
+              size: 16, color: AppTheme.neutralColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: selected,
+                isExpanded: true,
+                isDense: true,
+                dropdownColor: AppTheme.elevatedColor,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600),
+                items: [
+                  for (var i = 0; i < _calcNames.length; i++)
+                    DropdownMenuItem(value: i, child: Text(_calcNames[i])),
+                ],
+                onChanged: (v) {
+                  if (v != null) onChanged(v);
+                },
+              ),
+            ),
+          ),
+        ]),
+      ),
+      Expanded(child: IndexedStack(index: selected, children: calculators)),
+    ]);
   }
 }
 
