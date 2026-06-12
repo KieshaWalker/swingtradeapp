@@ -26,11 +26,14 @@ def _dte_from_key(key: str) ->Optional[int]:
         return None
 
 
-def parse_expirations(chain: dict) -> list[dict]:
+def parse_expirations(chain: dict, include_zero_dte: bool = False) -> list[dict]:
     """Convert Schwab callExpDateMap/putExpDateMap to a normalized expirations list.
 
     Returns: [{dte, calls: [contract, ...], puts: [contract, ...]}, ...]
-    sorted ascending by DTE, excluding dte <= 0.
+    sorted ascending by DTE. dte < 0 is always excluded; dte == 0 (same-day
+    expiries) is included only when include_zero_dte=True — IV/GEX analytics
+    need 0DTE rows for the 0DTE gamma split, while pricing/scoring jobs that
+    predate this flag keep the legacy dte > 0 behaviour.
     """
     call_map: dict[int, list[dict]] = {}
     put_map: dict[int, list[dict]] = {}
@@ -57,6 +60,7 @@ def parse_expirations(chain: dict) -> list[dict]:
         date_map.setdefault(dte, key.split(":")[0])
 
     all_dtes = sorted(set(call_map) | set(put_map))
+    min_dte = 0 if include_zero_dte else 1
     return [
         {
             "dte":            dte,
@@ -65,11 +69,11 @@ def parse_expirations(chain: dict) -> list[dict]:
             "puts":           put_map.get(dte, []),
         }
         for dte in all_dtes
-        if dte > 0
+        if dte >= min_dte
     ]
 
 
-def normalize_chain(chain: dict) -> dict:
+def normalize_chain(chain: dict, include_zero_dte: bool = False) -> dict:
     """Ensure chain has a populated "expirations" key.
 
     Idempotent — if "expirations" already exists and is non-empty, returns
@@ -78,5 +82,5 @@ def normalize_chain(chain: dict) -> dict:
     """
     if chain.get("expirations"):
         return chain
-    expirations = parse_expirations(chain)
+    expirations = parse_expirations(chain, include_zero_dte=include_zero_dte)
     return {**chain, "expirations": expirations}

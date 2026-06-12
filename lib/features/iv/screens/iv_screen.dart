@@ -2,9 +2,12 @@
 // features/iv/screens/iv_screen.dart
 // =============================================================================
 // IV Analytics screen — per-ticker view with:
-//   • IV Rank gauge (IVR + IVP + 52w range)
+//   • IV Rank gauge (IVR + IVP + 52w range, multi-window)
+//   • Volatility Risk Premium (IV vs realized vol — the buy/sell premium edge)
 //   • IV History chart (ATM IV, skew, GEX trend over time)
-//   • Volatility skew curve
+//   • IV Term Structure (contango / backwardation, event premium)
+//   • Volatility skew curve + 25Δ risk reversal / butterfly
+//   • Risk-Neutral Density (market-implied odds, tails, skewness)
 //   • Gamma Exposure (GEX) bar chart + gamma wall
 //   • Vanna / Charm / Volga dealer positioning
 //   • Strategy context card
@@ -16,12 +19,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
+import '../../../services/iv/iv_models.dart';
 import '../../../services/iv/iv_providers.dart';
 import '../widgets/gex_chart.dart';
 import '../widgets/iv_history_chart.dart';
 import '../widgets/iv_rank_gauge.dart';
+import '../widgets/rnd_chart.dart';
 import '../widgets/skew_chart.dart';
+import '../widgets/term_structure_chart.dart';
 import '../widgets/vanna_charm_chart.dart';
+import '../widgets/vrp_card.dart';
 import '../widgets/vvol_card.dart';
 
 class IvScreen extends ConsumerWidget {
@@ -83,6 +90,11 @@ class IvAnalyticsView extends ConsumerWidget {
               IvRankGauge(analysis: analysis),
               const SizedBox(height: 16),
 
+              // ── Volatility Risk Premium (IV vs RV) ───────────────────────
+              // Carries its own bottom spacing — collapses fully when the
+              // realized_vol_snapshots row is missing.
+              VrpCard(symbol: symbol, analysis: analysis),
+
               // ── Vol-of-vol rank ──────────────────────────────────────────
               VvolCard(analysis: analysis),
               const SizedBox(height: 16),
@@ -100,8 +112,16 @@ class IvAnalyticsView extends ConsumerWidget {
                     : const SizedBox.shrink(),
               ),
 
-              // ── Skew curve ───────────────────────────────────────────────
+              // ── Term structure (contango / backwardation) ────────────────
+              TermStructureChart(analysis: analysis),
+              const SizedBox(height: 16),
+
+              // ── Skew curve + 25Δ RR/BF ───────────────────────────────────
               SkewChart(analysis: analysis),
+              const SizedBox(height: 16),
+
+              // ── Risk-neutral density (market-implied odds) ───────────────
+              RndChart(analysis: analysis),
               const SizedBox(height: 16),
 
               // ── GEX chart ────────────────────────────────────────────────
@@ -175,15 +195,17 @@ class _ErrorView extends StatelessWidget {
 // ── Trader summary card ────────────────────────────────────────────────────────
 
 class _SummaryCard extends StatelessWidget {
-  final dynamic analysis; // IvAnalysis
+  final IvAnalysis analysis;
   const _SummaryCard({required this.analysis});
 
   @override
   Widget build(BuildContext context) {
-    // Build a concise strategy suggestion based on IVR + skew + GEX
-    final ivr   = analysis.ivRank as double?;
-    final skew  = analysis.skew  as double?;
-    final gex   = analysis.totalGex as double?;
+    // Build a concise strategy suggestion based on IVR + term + skew + GEX
+    final ivr   = analysis.ivRank;
+    final skew  = analysis.skew;
+    final gex   = analysis.totalGex;
+    final rr25  = analysis.skewRr25;
+    final slope = analysis.termSlopePp;
 
     final bullets = <String>[];
 
@@ -204,14 +226,29 @@ class _SummaryCard extends StatelessWidget {
       }
     }
 
-    // Skew-based suggestion
-    if (skew != null) {
-      if (skew > 8) {
-        bullets.add('Steep put skew signals elevated tail fear — '
-            'put spreads offer better risk/reward than naked puts.');
-      } else if (skew < 1) {
-        bullets.add('Flat/inverted skew — calls relatively cheap; '
-            'call spreads may offer better value than puts.');
+    // Term-structure suggestion
+    if (slope != null && analysis.termStructureLabel == 'backwardation') {
+      bullets.add('Term structure inverted (${slope.toStringAsFixed(1)}pp) — '
+          'near-dated vol is bid for an event or stress. Calendars that sell '
+          'the front month collect that premium; avoid holding long front-month '
+          'options through the catalyst.');
+    } else if (slope != null && slope > 4) {
+      bullets.add('Steep contango (+${slope.toStringAsFixed(1)}pp) — '
+          'far-dated vol carries heavy term premium; long calendars and LEAPS '
+          'are paying up for it.');
+    }
+
+    // Skew-based suggestion — prefer the 25Δ risk reversal when available
+    final skewMeasure = rr25 ?? skew;
+    if (skewMeasure != null) {
+      final tag = rr25 != null ? '25Δ RR' : 'skew';
+      if (skewMeasure > 8) {
+        bullets.add('Steep put skew ($tag ${skewMeasure.toStringAsFixed(1)}pp) '
+            'signals elevated tail fear — put spreads offer better risk/reward '
+            'than naked puts.');
+      } else if (skewMeasure < 1) {
+        bullets.add('Flat/inverted skew ($tag ${skewMeasure.toStringAsFixed(1)}pp) '
+            '— calls relatively cheap; call spreads may offer better value than puts.');
       }
     }
 
@@ -314,6 +351,60 @@ class _GreekGlossaryState extends State<_GreekGlossary> {
               'Use IVP > 60% as confirmation that IV is elevated before selling premium. '
               'IVP < 30% confirms IV is genuinely compressed — safe to buy options.',
       color:  Color(0xFF60A5FA),
+    ),
+    _GlossaryEntry(
+      term:   'Volatility Risk Premium (VRP)',
+      emoji:  '💰',
+      what:   'Implied vol minus realized vol — what options PRICE vs what the stock '
+              'actually MOVES. IV Rank compares IV to its own history; VRP compares it '
+              'to reality. Positive VRP = options overpriced relative to delivered moves.',
+      decide: 'IV/RV ≥ 1.3× → premium sellers have statistical edge (check for earnings '
+              'first — event premium explains some gaps). '
+              'IV/RV < 0.9× → the stock moves MORE than options price in: selling premium '
+              'is selling cheap insurance. Buy straddles/debit spreads instead.',
+      color:  Color(0xFF4ADE80),
+    ),
+    _GlossaryEntry(
+      term:   'IV Term Structure',
+      emoji:  '🗓️',
+      what:   'ATM IV plotted by expiration. Contango (upward) = normal, far-dated '
+              'options carry term premium. Backwardation (inverted) = near-dated vol '
+              'is bid — stress or an imminent catalyst. A kink at one expiry = '
+              'event premium (earnings, FOMC).',
+      decide: 'Backwardation → sell the rich front month via calendars; never hold '
+              'long front-month options through the event (IV crush). '
+              'Steep contango → long calendars are expensive; they need IV to rise. '
+              'Compare the kinked expiry\'s premium against your expected move to '
+              'judge if the event is over- or under-priced.',
+      color:  Color(0xFF818CF8),
+    ),
+    _GlossaryEntry(
+      term:   '25Δ Risk Reversal & Butterfly',
+      emoji:  '⚖️',
+      what:   'The institutional skew quotes. RR25 = IV(25Δ put) − IV(25Δ call): the '
+              'cost of downside fear vs upside greed, standardised by delta so it\'s '
+              'comparable across tickers. BF25 = wing average − ATM: how expensive '
+              'BOTH tails are vs the middle (smile convexity).',
+      decide: 'RR25 > 8pp → crash protection is rich: finance puts with put spreads, '
+              'or sell the fear via put ratio spreads. '
+              'RR25 near 0 or negative → calls are bid (squeeze positioning). '
+              'High BF25 → wings expensive: iron condors collect more; avoid buying '
+              'far OTM lottery tickets.',
+      color:  Color(0xFFFF6B8A),
+    ),
+    _GlossaryEntry(
+      term:   'Risk-Neutral Density (RND)',
+      emoji:  '🔔',
+      what:   'The full probability distribution the options market implies for the '
+              'stock at expiration, extracted from the smile (Breeden-Litzenberger). '
+              'Reads odds directly: P(close above any strike), crash tails, squeeze '
+              'tails, gap risk.',
+      decide: 'Negative skewness < −0.3 → the market pays up for crash insurance. '
+              'Positive skewness → squeeze tail priced in. '
+              'Excess kurtosis > 0.5 → gap risk priced: market expects small move OR '
+              'huge move, not medium. Compare P(above strike) to your own forecast — '
+              'trade where your odds diverge from the market\'s.',
+      color:  Color(0xFF818CF8),
     ),
     _GlossaryEntry(
       term:   'Volatility Skew',

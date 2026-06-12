@@ -24,6 +24,7 @@ from core.chain_utils import normalize_chain
 
 _log = logging.getLogger(__name__)
 
+import numpy as np
 from scipy.stats import norm
 
 from core.constants import (
@@ -114,20 +115,21 @@ class SecondOrderStrike:
     call_volga: float
     put_volga: float
 
-    @property
-    def dealer_vex(self) -> float:
-        """Dealer Vanna Exposure: (callOI*callVanna - putOI*putVanna) * 100. 
+    def dealer_vex(self, spot: float) -> float:
+        """Dealer Vanna Exposure in DOLLARS of delta per 1 vol-point IV move:
+        (callOI*callVanna - putOI*putVanna) * 100 * spot.
+        Per-contract vanna is stored per vol-point (see _second_order_greeks),
+        so x100 contract multiplier converts to shares and x spot dollarises.
         While Gamma is the sensitivity of Delta to Price, Vanna is the sensitivity of Delta to Volatility
         If the market is in a "Long Vanna" state (positive result), and implied volatility drops (a "vol crush"),
         dealers' deltas change in a way that forces them to buy the underlying. This is often why the market rallies after a major risk event—not because the news was "good,"
         but because the drop in IV forced dealers to buy back their hedges.
-        Result = 50,000: This means if implied volatility increases by 1 point (e.g., from 20% to 21%), 
-        market makers would need to buy 50,000 shares of the underlying asset to remain delta-neutral.
-        Result = -50,000: If IV increases by 1 point, market makers would need to sell 50,000 shares."""
-        return (self.call_oi * self.call_vanna - self.put_oi * self.put_vanna) * 100
+        Result = +$5M: if implied volatility increases by 1 point (e.g., from 20% to 21%),
+        market makers must buy $5M of the underlying to remain delta-neutral.
+        Result = -$5M: if IV increases by 1 point, market makers must sell $5M."""
+        return (self.call_oi * self.call_vanna - self.put_oi * self.put_vanna) * 100 * spot
 
-    @property
-    def dealer_cex(self) -> float:
+    def dealer_cex(self, spot: float) -> float:
         """Dealer Charm Exposure.
         
         Call Charm: OTM call deltas decay toward 0 over time; ITM call deltas decay toward 1.00.
@@ -146,14 +148,16 @@ class SecondOrderStrike:
            Weekend Effect" and OPEXCharm is most influential in the final days before an option expiration (OPEX).
            The "Charm Rally": In a typical "Long Gamma" environment where investors have bought puts to hedge, dealers are Short Puts.
              As those puts decay toward zero (Charm), dealers are forced to "un-hedge" by buying back the underlying. This is a major contributor to the "upward drift" often seen during expiration weeks.
-           Weekend Bleed: Because Charm is a function of time ($t$), a three-day weekend can represent a massive jump in delta decay, leading to significant re-hedging flows on Monday morning (or Friday afternoon in anticipation). 
-            
-            """
-        return (self.call_oi * self.call_charm - self.put_oi * self.put_charm) * 100
+           Weekend Bleed: Because Charm is a function of time ($t$), a three-day weekend can represent a massive jump in delta decay, leading to significant re-hedging flows on Monday morning (or Friday afternoon in anticipation).
+
+        Units: DOLLARS of delta per calendar day (charm is shares/day per
+        contract-share; x100 contract multiplier; x spot dollarises)."""
+        return (self.call_oi * self.call_charm - self.put_oi * self.put_charm) * 100 * spot
 
     @property
     def dealer_volga(self) -> float:
-        """Dealer Volga Exposure."""
+        """Dealer Volga Exposure: dollars of vega gained/lost per 1 vol-point
+        IV move (per-contract volga is $-vega per vol-point; x100 multiplier)."""
         return (self.call_oi * self.call_volga - self.put_oi * self.put_volga) * 100
 
 
@@ -182,7 +186,12 @@ class IvAnalysisResult:
     skew:Optional[float]
     skew_avg_52w:Optional[float]
     skew_z_score:Optional[float]
+    skew_rr25:Optional[float]      # 25Δ risk reversal: IV(25Δp) − IV(25Δc), vol pts
+    skew_bf25:Optional[float]      # 25Δ butterfly: wing avg − ATM IV, vol pts
     skew_curve: list[SkewPoint]
+    term_structure: list[dict]     # [{dte, expiry, atm_iv}] ascending by DTE
+    term_slope_pp:Optional[float]  # IV(~90d) − IV(front), vol pts
+    term_structure_label: str      # contango / backwardation / flat / unknown
     gex_strikes: list[GexStrike]
     total_gex:Optional[float]
     max_gex_strike:Optional[float]
@@ -234,7 +243,9 @@ def analyse(
     Returns:
         IvAnalysisResult with all computed analytics.
     """
-    chain = normalize_chain(chain)
+    # include_zero_dte: same-day expiries feed the 0DTE GEX split; they are
+    # filtered back out of ZGL / skew / RND inside their respective helpers.
+    chain = normalize_chain(chain, include_zero_dte=True)
 
     raw_rate = risk_free_rate if risk_free_rate is not None else DEFAULT_R
     r = raw_rate / 100 if raw_rate > 0.5 else raw_rate
@@ -272,6 +283,18 @@ def analyse(
     exp = _pick_expiration(expirations)
     skew_curve = _compute_skew_curve(exp, spot) if exp else []
     skew_val = _summarise_skew(skew_curve) if exp else None
+
+    # 25Δ risk reversal / butterfly on the same slice, anchored to that
+    # slice's own interpolated ATM IV so the BF measures pure convexity.
+    skew_rr25: Optional[float] = None
+    skew_bf25: Optional[float] = None
+    if exp:
+        slice_atm = _atm_iv_for_expiration(exp, spot)
+        skew_rr25, skew_bf25 = _compute_rr_bf_25d(exp, slice_atm)
+
+    # ── Term structure ─────────────────────────────────────────────────────────
+    term_structure = _compute_term_structure(expirations, spot)
+    term_slope_pp, term_structure_label = _term_slope(term_structure)
 
     skew_avg_52w:Optional[float] = None
     skew_z_score:Optional[float] = None
@@ -323,10 +346,10 @@ def analyse(
     max_vex_strike:Optional[float] = None
 
     if second_order:
-        total_vex = sum(s.dealer_vex for s in second_order)
-        total_cex = sum(s.dealer_cex for s in second_order)
+        total_vex = sum(s.dealer_vex(spot) for s in second_order)
+        total_cex = sum(s.dealer_cex(spot) for s in second_order)
         total_volga = sum(s.dealer_volga for s in second_order)
-        max_vex_strike = max(second_order, key=lambda s: abs(s.dealer_vex)).strike
+        max_vex_strike = max(second_order, key=lambda s: abs(s.dealer_vex(spot))).strike
 
     # ── Regime classification ──────────────────────────────────────────────────
     gamma_regime = GammaRegime.unknown
@@ -345,10 +368,14 @@ def analyse(
                             else VannaRegime.bearish_on_vol_crush)
 
     # ── Advanced GEX metrics ───────────────────────────────────────────────────
-    # Use longer-dated strikes for ZGL: 0DTE gamma is intraday noise for multi-day
-    # swing positioning. Longer-dated GEX gives a cleaner support/resistance picture.
+    # ZGL: prefer the spot-grid gamma-flip simulation (re-prices BS gamma at
+    # hypothetical spot levels). Fall back to the per-strike crossing method
+    # when contract data is too sparse. 0DTE excluded in both paths: intraday
+    # gamma is noise for multi-day swing positioning.
     zgl_source = gex_strikes_longer if gex_strikes_longer else gex_strikes
-    zero_gamma_level = _compute_zero_gamma_level(zgl_source, spot)
+    zero_gamma_level = _compute_gamma_flip(expirations, spot, r)
+    if zero_gamma_level is None:
+        zero_gamma_level = _compute_zero_gamma_level(zgl_source, spot)
     spot_to_zero_gamma_pct:Optional[float] = None
     if zero_gamma_level is not None and spot > 0:
         spot_to_zero_gamma_pct = (spot - zero_gamma_level) / spot * 100
@@ -363,9 +390,18 @@ def analyse(
         if volatility_trigger is not None:
             spot_to_vt_pct = (spot - volatility_trigger) / spot * 100
 
+    # Day-over-day ΔGEX. The snapshot endpoint upserts on every chain load, so
+    # history may already contain a row for TODAY — comparing against it would
+    # yield intraday drift, not the day-over-day change this field promises.
+    # Baseline = most recent row dated strictly before today.
     delta_gex:Optional[float] = None
-    if total_gex is not None and len(history) >= 2:
-        with_gex = [s for s in history if s.get("total_gex") is not None]
+    if total_gex is not None:
+        today_iso = datetime.now().date().isoformat()
+        with_gex = [
+            s for s in history
+            if s.get("total_gex") is not None
+            and str(s.get("date", ""))[:10] < today_iso
+        ]
         if with_gex:
             delta_gex = total_gex - float(with_gex[-1]["total_gex"])
 
@@ -411,7 +447,12 @@ def analyse(
         skew=skew_val,
         skew_avg_52w=skew_avg_52w,
         skew_z_score=skew_z_score,
+        skew_rr25=skew_rr25,
+        skew_bf25=skew_bf25,
         skew_curve=skew_curve,
+        term_structure=term_structure,
+        term_slope_pp=term_slope_pp,
+        term_structure_label=term_structure_label,
         gex_strikes=gex_strikes,
         total_gex=total_gex,
         max_gex_strike=max_gex_strike,
@@ -444,6 +485,38 @@ def analyse(
 
 # ── ATM IV from chain contracts ───────────────────────────────────────────────
 
+def _atm_iv_for_expiration(exp: dict, spot: float) -> float:
+    """Strike-interpolated ATM IV (%) for one expiration; 0.0 if no IV data.
+
+    Linearly interpolates the call/put-averaged IV between the two strikes
+    straddling spot. The old nearest-strike pick made the ATM IV series jump
+    discretely every time spot crossed a strike midpoint, injecting noise into
+    IVR/IVP; interpolation removes that artefact.
+    """
+    strike_ivs: dict[float, list[float]] = {}
+    for side in ("calls", "puts"):
+        for c in exp.get(side, []):
+            iv = float(c.get("volatility") or c.get("impliedVolatility") or 0)
+            if iv > 0:
+                strike_ivs.setdefault(float(c["strikePrice"]), []).append(iv)
+    if not strike_ivs:
+        return 0.0
+
+    mean_iv = {k: sum(v) / len(v) for k, v in strike_ivs.items()}
+    strikes = sorted(mean_iv)
+    below = [k for k in strikes if k <= spot]
+    above = [k for k in strikes if k >= spot]
+
+    if below and above:
+        k_lo, k_hi = below[-1], above[0]
+        if k_hi == k_lo:
+            return mean_iv[k_lo]
+        t = (spot - k_lo) / (k_hi - k_lo)
+        return mean_iv[k_lo] * (1 - t) + mean_iv[k_hi] * t
+    # Spot outside the listed strike range — use the nearest edge strike
+    return mean_iv[strikes[0]] if above else mean_iv[strikes[-1]]
+
+
 def _compute_atm_iv_from_chain(expirations: list[dict], spot: float) -> float:
     """Compute ATM IV from near-ATM contract IVs when the chain-level volatility field is 0.
 
@@ -455,20 +528,7 @@ def _compute_atm_iv_from_chain(expirations: list[dict], spot: float) -> float:
     exp = _pick_expiration(expirations)
     if not exp:
         return 0.0
-    strike_ivs: dict[float, list[float]] = {}
-    for c in exp.get("calls", []):
-        iv = float(c.get("volatility") or c.get("impliedVolatility") or 0)
-        if iv > 0:
-            strike_ivs.setdefault(float(c["strikePrice"]), []).append(iv)
-    for p in exp.get("puts", []):
-        iv = float(p.get("volatility") or p.get("impliedVolatility") or 0)
-        if iv > 0:
-            strike_ivs.setdefault(float(p["strikePrice"]), []).append(iv)
-    if not strike_ivs:
-        return 0.0
-    atm_strike = min(strike_ivs, key=lambda k: abs(k - spot))
-    ivs = strike_ivs[atm_strike]
-    return sum(ivs) / len(ivs)
+    return _atm_iv_for_expiration(exp, spot)
 
 
 # ── Expiration picker ─────────────────────────────────────────────────────────
@@ -479,6 +539,10 @@ def _pick_expiration(expirations: list[dict]) ->Optional[dict]:
     preferred = [e for e in expirations if int(e.get("dte", 0)) >= IV_MIN_DTE_PREF]
     if preferred:
         return min(preferred, key=lambda e: int(e.get("dte", 0)))
+    # Never fall back to a 0DTE slice — its IVs are too unstable for skew/ATM
+    nonzero = [e for e in expirations if int(e.get("dte", 0)) >= 1]
+    if nonzero:
+        return min(nonzero, key=lambda e: int(e.get("dte", 0)))
     return min(expirations, key=lambda e: int(e.get("dte", 0)))
 
 
@@ -511,6 +575,94 @@ def _compute_skew_curve(exp: dict, spot: float) -> list[SkewPoint]:
             put_iv=put_map.get(strike),
         ))
     return points
+
+
+def _compute_rr_bf_25d(
+    exp: dict, atm_iv: float
+) -> tuple[Optional[float], Optional[float]]:
+    """25Δ risk reversal and butterfly — the institutional skew quotes.
+
+    RR25 = IV(25Δ put) − IV(25Δ call)   (positive = downside fear premium)
+    BF25 = (IV(25Δ put) + IV(25Δ call)) / 2 − ATM IV   (smile convexity)
+
+    Uses Schwab contract deltas to locate the wings, so the measure is
+    moneyness-standardised and comparable across tickers and vol levels —
+    unlike the fixed ±% OTM band used by the legacy skew summary.
+
+    Returns (None, None) when no quote lands within 0.10 of the 25Δ target.
+    """
+    best_call: Optional[tuple[float, float]] = None  # (delta, iv)
+    best_put: Optional[tuple[float, float]] = None
+
+    for c in exp.get("calls", []):
+        iv = float(c.get("volatility") or c.get("impliedVolatility") or 0)
+        delta = float(c.get("delta") or 0)
+        if iv <= 0 or not (0.05 <= delta <= 0.50):
+            continue
+        if best_call is None or abs(delta - 0.25) < abs(best_call[0] - 0.25):
+            best_call = (delta, iv)
+
+    for p in exp.get("puts", []):
+        iv = float(p.get("volatility") or p.get("impliedVolatility") or 0)
+        delta = float(p.get("delta") or 0)
+        if iv <= 0 or not (-0.50 <= delta <= -0.05):
+            continue
+        if best_put is None or abs(delta + 0.25) < abs(best_put[0] + 0.25):
+            best_put = (delta, iv)
+
+    if best_call is None or best_put is None:
+        return None, None
+    if abs(best_call[0] - 0.25) > 0.10 or abs(best_put[0] + 0.25) > 0.10:
+        return None, None  # nearest quotes too far from 25Δ to be meaningful
+
+    rr25 = best_put[1] - best_call[1]
+    bf25 = (best_put[1] + best_call[1]) / 2 - atm_iv if atm_iv > 0 else None
+    return rr25, bf25
+
+
+# ── Term structure ────────────────────────────────────────────────────────────
+
+def _compute_term_structure(expirations: list[dict], spot: float) -> list[dict]:
+    """ATM IV per expiration: [{dte, expiry, atm_iv}, ...] ascending by DTE.
+
+    0DTE is excluded (gamma-driven IV prints distort the curve's front end).
+    """
+    points: list[dict] = []
+    for exp in sorted(expirations, key=lambda e: int(e.get("dte", 0))):
+        dte = int(exp.get("dte", 0))
+        if dte <= 0:
+            continue
+        iv = _atm_iv_for_expiration(exp, spot)
+        if iv > 0:
+            points.append({
+                "dte": dte,
+                "expiry": str(exp.get("expirationDate", "")),
+                "atm_iv": iv,
+            })
+    return points
+
+
+def _term_slope(points: list[dict]) -> tuple[Optional[float], str]:
+    """(slope in vol points, label) for the term structure.
+
+    Slope = IV(slice nearest 90 DTE) − IV(front slice ≥ 5 DTE).
+    > +1pp → contango (normal markets: near-dated vol cheaper than far-dated),
+    < −1pp → backwardation (stress or imminent event: near-dated vol bid over
+    far-dated), else flat.
+    """
+    if len(points) < 2:
+        return None, "unknown"
+    front = next((p for p in points if p["dte"] >= 5), points[0])
+    backs = [p for p in points if p["dte"] > front["dte"]]
+    if not backs:
+        return None, "unknown"
+    back = min(backs, key=lambda p: abs(p["dte"] - 90))
+    slope = back["atm_iv"] - front["atm_iv"]
+    if slope > 1.0:
+        return slope, "contango"
+    if slope < -1.0:
+        return slope, "backwardation"
+    return slope, "flat"
 
 
 def _summarise_skew(curve: list[SkewPoint]) ->Optional[float]:
@@ -594,6 +746,87 @@ def _compute_zero_gamma_level(gex_strikes: list[GexStrike], spot: float) ->Optio
     if not near:
         return None
     return min(near, key=lambda s: abs(s.dealer_gex(spot))).strike
+
+
+# ── Gamma Flip (spot-grid simulation) ────────────────────────────────────────
+
+def _compute_gamma_flip(
+    expirations: list[dict], spot: float, r: float
+) -> Optional[float]:
+    """Zero-gamma level via spot-level simulation (institutional method).
+
+    The per-strike crossing method asks "at which strike does today's GEX
+    profile change sign" — but dealer gamma at every strike CHANGES as spot
+    moves, so the honest question is "at what spot level does NET dealer gamma
+    flip sign". This re-prices Black-Scholes gamma for every contract across a
+    grid of hypothetical spot levels and locates the sign change of
+    Σ(callOI·Γ − putOI·Γ), interpolating linearly between grid points.
+
+    0DTE contracts are excluded: their gamma exists only intraday and pollutes
+    the multi-day flip level used for swing positioning.
+
+    Returns the flip level nearest to spot, or None if net gamma never
+    changes sign within ±IV_ZERO_GAMMA_NEAR_PCT of spot.
+    """
+    if spot <= 0:
+        return None
+
+    Ks: list[float] = []
+    Ts: list[float] = []
+    sigs: list[float] = []
+    ws: list[float] = []  # +callOI / -putOI (dealer long calls, short puts)
+
+    for exp in expirations:
+        dte = int(exp.get("dte", 0))
+        if dte <= 0:
+            continue
+        T = dte / 365.0
+        for side, sign in (("calls", 1.0), ("puts", -1.0)):
+            for c in exp.get(side, []):
+                oi = float(c.get("openInterest", 0))
+                iv = float(c.get("volatility") or c.get("impliedVolatility") or 0)
+                k = float(c.get("strikePrice", 0))
+                if oi <= 0 or iv <= 0 or k <= 0:
+                    continue
+                if abs(k - spot) / spot > IV_GEX_WINDOW_PCT:
+                    continue
+                Ks.append(k)
+                Ts.append(T)
+                sigs.append(iv / 100.0)
+                ws.append(sign * oi)
+
+    if len(Ks) < 4:
+        return None
+
+    K = np.asarray(Ks)
+    T = np.asarray(Ts)
+    sig = np.asarray(sigs)
+    w = np.asarray(ws)
+    sig_sqt = sig * np.sqrt(T)
+
+    levels = np.linspace(
+        spot * (1 - IV_ZERO_GAMMA_NEAR_PCT),
+        spot * (1 + IV_ZERO_GAMMA_NEAR_PCT),
+        41,
+    )
+    net = np.empty(len(levels))
+    for i, s_level in enumerate(levels):
+        d1 = (np.log(s_level / K) + (r + 0.5 * sig * sig) * T) / sig_sqt
+        gamma = norm.pdf(d1) / (s_level * sig_sqt)
+        net[i] = float(np.dot(w, gamma))
+
+    crossings: list[float] = []
+    for i in range(len(levels) - 1):
+        a, b = net[i], net[i + 1]
+        if a == 0.0:
+            crossings.append(float(levels[i]))
+        elif (a < 0 <= b) or (a > 0 >= b):
+            t = a / (a - b)
+            crossings.append(float(levels[i] + t * (levels[i + 1] - levels[i])))
+
+    if not crossings:
+        return None
+    return min(crossings, key=lambda x: abs(x - spot))
 
 
 # ── Volatility Trigger ───────────────────────────────────────────────────────
@@ -734,14 +967,18 @@ def _second_order_greeks(
     d1 = max(-50.0, min(50.0, d1))
     d2 = max(-50.0, min(50.0, d2))
 
-    # Vanna = -gamma * S * sqrt(T) * d2
-    vanna = -gamma * spot * sqrt_T * d2
+    # Vanna = -gamma * S * sqrt(T) * d2 = ∂Δ/∂σ (σ in absolute units, i.e. per
+    # 100 vol points). Scale by 0.01 so the stored value is per 1 vol point,
+    # matching the "1% IV move" convention used everywhere downstream.
+    vanna = -gamma * spot * sqrt_T * d2 * 0.01
 
     # Charm = -gamma * S * (2rT - d2*σ*√T) / (2T), per calendar day (/365)
     charm = (-gamma * spot * (2 * r * T - d2 * sigma * sqrt_T) / (2 * T * 365)) if T > 0 else 0.0
 
-    # Volga = vega * d1 * d2 / σ  (sigma already checked >= sig_sqt/sqrt_T > 0)
-    volga = vega * d1 * d2 / sigma
+    # Volga = vega * d1 * d2 / σ = ∂vega/∂σ. Schwab vega is already $ per
+    # vol-point, so this derivative is w.r.t. absolute σ; scale by 0.01 to get
+    # $-vega change per 1 vol-point IV move.
+    volga = vega * d1 * d2 / sigma * 0.01
 
     return vanna, charm, volga
 
@@ -849,7 +1086,10 @@ def _ivr_ivp(ivs: list[float], current: float) -> tuple[Optional[float], Optiona
     lo, hi = min(ivs), max(ivs)
     iv_range = hi - lo
     rank = 50.0 if iv_range < 0.001 else max(0.0, min(100.0, (current - lo) / iv_range * 100))
-    pct  = max(0.0, min(100.0, sum(1 for iv in ivs if iv <= current) / len(ivs) * 100))
+    # Strictly below: IVP is defined as "% of days where IV was LOWER than
+    # today" (see the glossary in iv_screen.dart). <= would count today's own
+    # already-persisted snapshot as a day below itself.
+    pct  = max(0.0, min(100.0, sum(1 for iv in ivs if iv < current) / len(ivs) * 100))
     return rank, pct
 
 

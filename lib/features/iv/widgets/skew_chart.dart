@@ -33,6 +33,33 @@ class SkewChart extends StatelessWidget {
           ),
         ),
 
+        // 25Δ quotes — the moneyness-standardised skew measures institutional
+        // desks actually quote (comparable across tickers and vol levels).
+        if (analysis.skewRr25 != null || analysis.skewBf25 != null) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              if (analysis.skewRr25 != null)
+                ChartStatChip(
+                  label: '25Δ Risk Reversal',
+                  value:
+                      '${analysis.skewRr25! >= 0 ? '+' : ''}${analysis.skewRr25!.toStringAsFixed(1)}pp',
+                  dotColor: analysis.skewRr25! > 5
+                      ? AppTheme.lossColor
+                      : AppTheme.profitColor,
+                ),
+              if (analysis.skewBf25 != null)
+                ChartStatChip(
+                  label: '25Δ Butterfly',
+                  value:
+                      '${analysis.skewBf25! >= 0 ? '+' : ''}${analysis.skewBf25!.toStringAsFixed(1)}pp',
+                ),
+            ],
+          ),
+        ],
+
         const SizedBox(height: 16),
 
         if (points.length < 3) ...[

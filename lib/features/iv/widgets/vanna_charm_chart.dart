@@ -153,6 +153,7 @@ class _VexChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final strikes = analysis.secondOrder;
+    final spot    = analysis.underlyingPrice ?? 0.0;
 
     return AnalyticsCard(
       title: 'VANNA EXPOSURE (VEX)',
@@ -167,12 +168,12 @@ class _VexChart extends StatelessWidget {
       children: [
           const SizedBox(height: 4),
           const Text(
-            'Dealer delta pressure per 1% IV move — positive = vol drop triggers buying',
+            '\$ dealer delta pressure per 1 vol-pt IV move — positive = vol drop triggers buying',
             style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
           ),
           const SizedBox(height: 14),
 
-          if (strikes.isEmpty)
+          if (strikes.isEmpty || spot <= 0)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 32),
               child: Center(
@@ -185,6 +186,7 @@ class _VexChart extends StatelessWidget {
               height: 160,
               child: _VexBarChart(
                 strikes:      strikes,
+                spot:         spot,
                 maxVexStrike: analysis.maxVexStrike,
               ),
             ),
@@ -216,15 +218,20 @@ class _VexChart extends StatelessWidget {
 
 class _VexBarChart extends StatelessWidget {
   final List<SecondOrderStrike> strikes;
+  final double spot;
   final double? maxVexStrike;
-  const _VexBarChart({required this.strikes, required this.maxVexStrike});
+  const _VexBarChart({
+    required this.strikes,
+    required this.spot,
+    required this.maxVexStrike,
+  });
 
   @override
   Widget build(BuildContext context) {
     // Take top 20 by absolute VEX, sorted by strike
     final indexed = strikes.asMap().entries.toList()
-      ..sort((a, b) =>
-          b.value.dealerVex.abs().compareTo(a.value.dealerVex.abs()));
+      ..sort((a, b) => b.value.dealerVex(spot).abs()
+          .compareTo(a.value.dealerVex(spot).abs()));
     final topSet = indexed.take(20).map((e) => e.key).toSet();
     final display = strikes.asMap().entries
         .where((e) => topSet.contains(e.key))
@@ -234,7 +241,7 @@ class _VexBarChart extends StatelessWidget {
     if (display.isEmpty) return const SizedBox.shrink();
 
     final absMax = display
-        .map((e) => e.value.dealerVex.abs())
+        .map((e) => e.value.dealerVex(spot).abs())
         .reduce((a, b) => a > b ? a : b);
     if (absMax == 0) return const SizedBox.shrink();
 
@@ -250,7 +257,7 @@ class _VexBarChart extends StatelessWidget {
           getTooltipItem: (group, _, rod, _) {
             final s = display[group.x].value;
             return BarTooltipItem(
-              '\$${s.strike.toStringAsFixed(0)}\nVEX: ${rod.toY >= 0 ? '+' : ''}${rod.toY.toStringAsFixed(0)}',
+              '\$${s.strike.toStringAsFixed(0)}\nVEX: ${_fmtDollars(rod.toY)}/vol-pt',
               const TextStyle(color: Colors.white, fontSize: 11),
             );
           },
@@ -293,7 +300,7 @@ class _VexBarChart extends StatelessWidget {
       ),
       barGroups: List.generate(display.length, (i) {
         final s     = display[i].value;
-        final vex   = s.dealerVex;
+        final vex   = s.dealerVex(spot);
         final isKey = maxVexStrike != null &&
             (s.strike - maxVexStrike!).abs() < 0.5;
         final color = vex >= 0
@@ -311,6 +318,15 @@ class _VexBarChart extends StatelessWidget {
         ]);
       }),
     ));
+  }
+
+  static String _fmtDollars(double v) {
+    final abs = v.abs();
+    final sign = v >= 0 ? '+' : '-';
+    if (abs >= 1e9) return '$sign\$${(abs / 1e9).toStringAsFixed(1)}B';
+    if (abs >= 1e6) return '$sign\$${(abs / 1e6).toStringAsFixed(1)}M';
+    if (abs >= 1e3) return '$sign\$${(abs / 1e3).toStringAsFixed(0)}K';
+    return '$sign\$${abs.toStringAsFixed(0)}';
   }
 }
 
@@ -339,9 +355,9 @@ class _CharmVolgaSummary extends StatelessWidget {
               Expanded(child: _statBlock(
                 label:    'Volga',
                 value:    analysis.totalVolga != null
-                    ? analysis.totalVolga!.toStringAsFixed(0)
+                    ? '${_VexBarChart._fmtDollars(analysis.totalVolga!)}/pt'
                     : '—',
-                subtitle: 'Vol convexity exposure',
+                subtitle: 'Vega change per 1 vol-pt IV move',
                 color:    const Color(0xFF60A5FA),
               )),
             ],
@@ -402,7 +418,8 @@ class _CharmVolgaSummary extends StatelessWidget {
     String text;
     if (volga == null) {
       text = 'Volga data unavailable.';
-    } else if (volga.abs() < 100) {
+    } else if (volga.abs() < 10000) {
+      // < $10K vega per vol-pt across the whole chain = negligible convexity
       text = 'Low Volga — options pricing is relatively insensitive to '
           'vol-of-vol. Skew and smile effects are muted.';
     } else if (volga > 0) {

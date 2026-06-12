@@ -84,24 +84,27 @@ class GexStrike {
 // =============================================================================
 // Vanna / Charm / Volga per-strike models
 // =============================================================================
-// All three are "second-order Greeks" derived from available Schwab data.
-// Formulas assume r≈0 and q≈0 (simplified Black-Scholes).
+// All three are second-order Greeks computed in the Python backend
+// (iv_analytics._second_order_greeks) under Black-Scholes with q≈0.
+// Per-contract units (per share):
 //
-//  Vanna  = ∂²V/∂S∂σ  = change in delta for a 1% change in IV
-//           Approximation: -gamma × spot × √T × d₂
-//           Dealer VEX: (callOI × callVanna - putOI × putVanna) × 100 × spot
-//           → When IV drops (vol crush), dealers BUY back delta → rally
-//           → When IV rises, dealers SELL delta → pressure
+//  Vanna  = ∂Δ/∂σ per 1 vol-point IV move: -gamma × spot × √T × d₂ × 0.01
+//           Dealer VEX ($ delta per 1 vol pt):
+//             (callOI × callVanna - putOI × putVanna) × 100 × spot
+//           → When IV drops (vol crush), positive VEX dealers BUY delta → rally
+//           → When IV rises, they SELL delta → pressure
 //
-//  Charm  = ∂Δ/∂t     = how dealer delta hedges decay each day (delta decay)
-//           Approximation: gamma × spot × (IV/100) × d₂ / (2√T × 365)
-//           Dealer CEX: (callOI × callCharm - putOI × putCharm) × 100 × spot
+//  Charm  = ∂Δ/∂t in delta per calendar day:
+//             -gamma × spot × (2rT - d₂σ√T) / (2T × 365)
+//           Dealer CEX ($ delta per day):
+//             (callOI × callCharm - putOI × putCharm) × 100 × spot
 //           → Positive CEX → dealers buy delta as time passes (AM session effect)
 //           → Negative CEX → dealers sell delta near close
 //
-//  Volga  = ∂²V/∂σ²   = change in vega for a 1% change in IV (vol convexity)
-//  (Vomma)  Approximation: vega × d₁ × d₂ / (IV/100)
-//           Dealer Volga Exposure (VolgaEX): (callOI - putOI) × volga × 100
+//  Volga  = ∂vega/∂σ per 1 vol-point IV move (vol convexity):
+//  (Vomma)  vega × d₁ × d₂ / σ × 0.01   (vega already $/vol-pt from Schwab)
+//           Dealer Volga Exposure ($ vega per vol pt):
+//             (callOI × callVolga - putOI × putVolga) × 100
 //           → High Volga → options very sensitive to vol-of-vol
 //           → Vanna-Volga surface steepness drives smile pricing
 // =============================================================================
@@ -136,21 +139,23 @@ class SecondOrderStrike {
     required this.putVolga,
   });
 
-  /// Net dealer Vanna Exposure in $ per 1-vol-point IV move
+  /// Net dealer Vanna Exposure in $ delta per 1-vol-point IV move.
+  /// Mirrors Python SecondOrderStrike.dealer_vex — per-contract vanna is
+  /// per-vol-point, ×100 contract multiplier, ×spot dollarises shares.
   /// Positive VEX → IV drop causes dealer BUYING (vol-crush rally)
   /// Negative VEX → IV drop causes dealer SELLING
-  double get dealerVex {
-    final callVex = callOi * callVanna * 100;
-    final putVex  = putOi  * putVanna  * 100;
+  double dealerVex(double spot) {
+    final callVex = callOi * callVanna * 100 * spot;
+    final putVex  = putOi  * putVanna  * 100 * spot;
     return callVex - putVex;
   }
 
-  /// Net dealer Charm Exposure in $ delta per day
+  /// Net dealer Charm Exposure in $ delta per day (mirrors Python dealer_cex)
   /// Positive CEX → time passing causes dealers to BUY delta
   /// Negative CEX → time passing causes dealers to SELL delta
-  double get dealerCex {
-    final callCex = callOi * callCharm * 100;
-    final putCex  = putOi  * putCharm  * 100;
+  double dealerCex(double spot) {
+    final callCex = callOi * callCharm * 100 * spot;
+    final putCex  = putOi  * putCharm  * 100 * spot;
     return callCex - putCex;
   }
 
@@ -295,6 +300,25 @@ class SkewPoint {
     moneyness: (j['moneyness'] as num).toDouble(),
     putIv:     (j['put_iv']    as num?)?.toDouble(),
     callIv:    (j['call_iv']   as num?)?.toDouble(),
+  );
+}
+
+/// One point on the IV term structure (ATM IV per expiration)
+class TermPoint {
+  final int dte;
+  final String expiry;
+  final double atmIv; // strike-interpolated ATM IV (%) for this expiration
+
+  const TermPoint({
+    required this.dte,
+    required this.expiry,
+    required this.atmIv,
+  });
+
+  factory TermPoint.fromJson(Map<String, dynamic> j) => TermPoint(
+    dte:    (j['dte']    as num).toInt(),
+    expiry: j['expiry']  as String? ?? '',
+    atmIv:  (j['atm_iv'] as num).toDouble(),
   );
 }
 
@@ -639,7 +663,14 @@ class IvAnalysis {
   final double? skew;           // current OTM put IV - OTM call IV
   final double? skewAvg52w;     // rolling avg skew
   final double? skewZScore;     // how extreme vs history
+  final double? skewRr25;       // 25Δ risk reversal: IV(25Δp) − IV(25Δc), vol pts
+  final double? skewBf25;       // 25Δ butterfly: wing avg − ATM IV, vol pts
   final List<SkewPoint> skewCurve;
+
+  // Term structure (ATM IV per expiration)
+  final List<TermPoint> termStructure;
+  final double? termSlopePp;        // IV(~90d) − IV(front), vol pts
+  final String termStructureLabel;  // contango / backwardation / flat / unknown
 
   // GEX
   final List<GexStrike> gexStrikes;
@@ -725,7 +756,12 @@ class IvAnalysis {
     this.skew,
     this.skewAvg52w,
     this.skewZScore,
+    this.skewRr25,
+    this.skewBf25,
     this.skewCurve = const [],
+    this.termStructure = const [],
+    this.termSlopePp,
+    this.termStructureLabel = 'unknown',
     this.gexStrikes = const [],
     this.totalGex,
     this.maxGexStrike,
@@ -812,6 +848,13 @@ class IvAnalysis {
       skew:               (j['skew']                as num?)?.toDouble(),
       skewAvg52w:         (j['skew_avg_52w']        as num?)?.toDouble(),
       skewZScore:         (j['skew_z_score']        as num?)?.toDouble(),
+      skewRr25:           (j['skew_rr25']           as num?)?.toDouble(),
+      skewBf25:           (j['skew_bf25']           as num?)?.toDouble(),
+      termStructure:      (j['term_structure'] as List? ?? [])
+                              .map((e) => TermPoint.fromJson(e as Map<String, dynamic>))
+                              .toList(),
+      termSlopePp:        (j['term_slope_pp']       as num?)?.toDouble(),
+      termStructureLabel: j['term_structure_label'] as String? ?? 'unknown',
       gexStrikes:         gexStrikes,
       totalGex:           (j['total_gex']           as num?)?.toDouble(),
       maxGexStrike:       (j['max_gex_strike']      as num?)?.toDouble(),
