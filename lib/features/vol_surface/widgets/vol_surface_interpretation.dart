@@ -2502,7 +2502,12 @@ class _ArbCardState extends State<_ArbCard> {
         old.snap.obsDateStr != widget.snap.obsDateStr ||
         old.snap.points.length != widget.snap.points.length) {
       final f = checkArbForSnap(widget.snap);
-      setState(() => _future = f);
+      // Block body on purpose: `() => _future = f` would *return* the Future
+      // (assignment expressions yield their value), tripping setState's
+      // "callback returned a Future" assertion.
+      setState(() {
+        _future = f;
+      });
     }
   }
 

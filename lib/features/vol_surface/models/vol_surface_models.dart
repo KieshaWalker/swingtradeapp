@@ -308,6 +308,27 @@ class VolSnapshot {
     return '$y-$m-$d';
   }
 
+  /// Identity is the natural key (ticker + observation date) — matches the
+  /// DB unique constraint and survives the lazy points-load instance swap.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VolSnapshot &&
+          other.ticker == ticker &&
+          other.obsDateStr == obsDateStr;
+
+  @override
+  int get hashCode => Object.hash(ticker, obsDateStr);
+
+  VolSnapshot copyWith({List<VolPoint>? points}) => VolSnapshot(
+        id:        id,
+        ticker:    ticker,
+        obsDate:   obsDate,
+        spotPrice: spotPrice,
+        points:    points ?? this.points,
+        parsedAt:  parsedAt,
+      );
+
   List<int> get dtes =>
       points.map((p) => p.dte).toSet().toList()..sort();
 

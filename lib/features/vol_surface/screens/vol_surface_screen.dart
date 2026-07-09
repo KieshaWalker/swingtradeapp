@@ -3,22 +3,39 @@
 // =============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
 import '../models/vol_surface_models.dart';
 import '../providers/vol_surface_provider.dart';
-import '../services/vol_surface_repository.dart';
 import '../widgets/vol_heatmap.dart';
 import '../widgets/vol_smile_chart.dart';
 import '../widgets/vol_skew_delta_grid.dart';
 import '../widgets/vol_surface_guide.dart';
 import '../widgets/vol_surface_interpretation.dart';
 
+/// IV convention passed to every chart on this screen.
+const _kIvMode = 'otm';
+
+const _kTabKeys   = ['heatmap', 'smile', 'daily'];
+const _kTabLabels = ['Heatmap', 'Smile', 'Daily Δ'];
+
+/// Vol-surface chrome palette. The feature keeps its dark "terminal" look
+/// (shared with the sibling vol_surface widgets) rather than AppTheme purple.
+abstract final class _C {
+  static const surface   = Color(0xFF111827); // bars, dropdown background
+  static const border    = Color(0xFF1f2937);
+  static const control   = Color(0xFF374151); // control borders, drag pill
+  static const accent    = Color(0xFF3b82f6);
+  static const text      = Color(0xFFd1d5db);
+  static const textDim   = Color(0xFF9ca3af);
+  static const textMuted = Color(0xFF6b7280);
+  static const textFaint = Color(0xFF4b5563);
+}
+
 class VolSurfaceScreen extends ConsumerStatefulWidget {
   /// When non-null the screen is scoped to a single ticker (pushed from
-  /// TickerProfileScreen). The sidebar is hidden and only that ticker's
-  /// snapshots are shown. When null the global multi-ticker view is shown.
+  /// TickerProfileScreen). When null the global view is shown, pinned to the
+  /// ticker with the most recent snapshot.
   final String? symbol;
 
   const VolSurfaceScreen({super.key, this.symbol});
@@ -32,13 +49,18 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
   VolSnapshot? _activeSnap;
   VolSnapshot? _prevSnap;
   bool _pointsLoading = false;
-  List<VolSnapshot> _snaps = [];
+
+  /// Bumped on every selection; in-flight point loads from a superseded
+  /// selection compare against it and drop their result instead of
+  /// clobbering the newer selection.
+  int _loadSeq = 0;
+
   late final TabController _tabs;
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: _kTabKeys.length, vsync: this);
   }
 
   @override
@@ -47,17 +69,18 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
     super.dispose();
   }
 
-  Future<void> _deleteSnap(VolSnapshot s) async {
-    await ref.read(volSurfaceProvider.notifier).delete(s);
-    if (!mounted) return;
-    if (_activeSnap?.ticker == s.ticker && _activeSnap?.obsDateStr == s.obsDateStr) {
-      setState(() { _activeSnap = null; _prevSnap = null; });
-    } else if (_prevSnap?.ticker == s.ticker && _prevSnap?.obsDateStr == s.obsDateStr) {
-      setState(() => _prevSnap = null);
-    }
+  List<VolSnapshot> _filterBySymbol(List<VolSnapshot> all) {
+    if (widget.symbol == null) return all;
+    final sym = widget.symbol!.toUpperCase();
+    return [for (final s in all) if (s.ticker == sym) s];
   }
 
+  /// Snapshot list as of now — for event handlers outside build.
+  List<VolSnapshot> _visibleSnaps() =>
+      _filterBySymbol(ref.read(volSurfaceProvider).valueOrNull ?? []);
+
   Future<void> _selectSnap(VolSnapshot s) async {
+    final seq = ++_loadSeq;
     setState(() {
       _activeSnap    = s;
       _pointsLoading = s.points.isEmpty && s.id != null;
@@ -65,55 +88,59 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
     });
     if (s.points.isEmpty && s.id != null) {
       try {
-        final pts = await VolSurfaceRepository(Supabase.instance.client).loadPoints(s.id!);
-        if (!mounted) return;
+        final pts =
+            await ref.read(volSurfaceRepositoryProvider).loadPoints(s.id!);
+        if (!mounted || seq != _loadSeq) return;
         setState(() {
-          _activeSnap = VolSnapshot(
-            id: s.id, ticker: s.ticker, obsDate: s.obsDate,
-            spotPrice: s.spotPrice, points: pts, parsedAt: s.parsedAt,
-          );
+          _activeSnap    = s.copyWith(points: pts);
           _pointsLoading = false;
         });
       } catch (e) {
         debugPrint('vol_surface: failed to load points for ${s.id}: $e');
-        if (mounted) setState(() => _pointsLoading = false);
+        if (!mounted || seq != _loadSeq) return;
+        setState(() => _pointsLoading = false);
+        _showLoadError(s);
+        return;
       }
     }
-    _findAndLoadPrevSnap(s);
+    _findAndLoadPrevSnap(s, seq);
   }
 
-  void _findAndLoadPrevSnap(VolSnapshot active) {
-    final prev = _snaps
-        .where((s) => s.ticker == active.ticker && s.obsDate.isBefore(active.obsDate))
+  void _showLoadError(VolSnapshot s) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Failed to load ${s.ticker} ${s.obsDateStr}'),
+      action: SnackBarAction(
+        label: 'Retry',
+        onPressed: () => _selectSnap(s),
+      ),
+    ));
+  }
+
+  void _findAndLoadPrevSnap(VolSnapshot active, int seq) {
+    final prev = _visibleSnaps()
+        .where((s) =>
+            s.ticker == active.ticker && s.obsDate.isBefore(active.obsDate))
         .fold<VolSnapshot?>(null, (best, s) =>
             best == null || s.obsDate.isAfter(best.obsDate) ? s : best);
     if (prev == null) {
       setState(() => _prevSnap = null);
       return;
     }
-    if (prev.points.isNotEmpty) {
-      setState(() => _prevSnap = prev);
-      return;
-    }
-    // Set placeholder with empty points so VolSkewDeltaGrid shows its spinner.
-    setState(() => _prevSnap = VolSnapshot(
-      id: prev.id, ticker: prev.ticker, obsDate: prev.obsDate,
-      spotPrice: prev.spotPrice, points: const [], parsedAt: prev.parsedAt,
-    ));
-    if (prev.id != null) _loadPrevPoints(prev);
+    // Empty points make VolSkewDeltaGrid show its spinner while they load.
+    setState(() => _prevSnap = prev);
+    if (prev.points.isEmpty && prev.id != null) _loadPrevPoints(prev, seq);
   }
 
-  Future<void> _loadPrevPoints(VolSnapshot s) async {
+  Future<void> _loadPrevPoints(VolSnapshot s, int seq) async {
     try {
-      final pts = await VolSurfaceRepository(Supabase.instance.client).loadPoints(s.id!);
-      if (!mounted) return;
-      setState(() => _prevSnap = VolSnapshot(
-        id: s.id, ticker: s.ticker, obsDate: s.obsDate,
-        spotPrice: s.spotPrice, points: pts, parsedAt: s.parsedAt,
-      ));
+      final pts =
+          await ref.read(volSurfaceRepositoryProvider).loadPoints(s.id!);
+      if (!mounted || seq != _loadSeq) return;
+      setState(() => _prevSnap = s.copyWith(points: pts));
     } catch (e) {
       debugPrint('vol_surface: failed to load prev points for ${s.id}: $e');
-      if (mounted) setState(() => _prevSnap = null);
+      if (!mounted || seq != _loadSeq) return;
+      setState(() => _prevSnap = null);
     }
   }
 
@@ -121,29 +148,30 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
   @override
   Widget build(BuildContext context) {
     final snapsAsync = ref.watch(volSurfaceProvider);
-    final allSnaps   = snapsAsync.valueOrNull ?? [];
-
-    final snaps = widget.symbol != null
-        ? allSnaps.where((s) => s.ticker == widget.symbol!.toUpperCase()).toList()
-        : allSnaps;
-    _snaps = snaps;
+    final snaps      = _filterBySymbol(snapsAsync.valueOrNull ?? []);
 
     // Auto-select most recent snapshot on first load.
     if (_activeSnap == null && snaps.isNotEmpty) {
       final latest = snaps.reduce((a, b) => a.obsDate.isAfter(b.obsDate) ? a : b);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _selectSnap(latest);
+        if (mounted && _activeSnap == null) _selectSnap(latest);
       });
     }
 
     final isTicker = widget.symbol != null;
+    // `hasValue` keeps existing charts visible during a refresh instead of
+    // blanking the whole area with a spinner.
+    final loading =
+        (snapsAsync.isLoading && !snapsAsync.hasValue) || _pointsLoading;
 
     return Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(isTicker ? '${widget.symbol!.toUpperCase()} Vol Surface' : 'Vol Surface'),
+            Text(isTicker
+                ? '${widget.symbol!.toUpperCase()} Vol Surface'
+                : 'Vol Surface'),
             if (_activeSnap != null)
               Text(
                 isTicker
@@ -170,465 +198,64 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
           if (!isTicker) const AppMenuButton(),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final showSidebar = !isTicker && constraints.maxWidth >= 700;
-          if (showSidebar) {
-            return Row(children: [
-              _Sidebar(
-                snaps:        snaps,
-                activeSnap:   _activeSnap,
-                onSelectSnap: _selectSnap,
-                onDeleteSnap: _deleteSnap,
-              ),
-              Expanded(
-                child: _MainPanel(
-                  tabs:               _tabs,
-                  snaps:              snaps,
-                  activeSnap:         _activeSnap,
-                  prevSnap:           _prevSnap,
-                  onActiveSnapChanged: _selectSnap,
-                  loading:            snapsAsync.isLoading || _pointsLoading,
-                ),
-              ),
-            ]);
-          }
-          return _NarrowLayout(
-            snaps:       snaps,
-            activeSnap:  _activeSnap,
-            prevSnap:    _prevSnap,
-            onSelectSnap: _selectSnap,
-            onDeleteSnap: _deleteSnap,
-            tabs:        _tabs,
-            loading:     snapsAsync.isLoading || _pointsLoading,
-          );
-        },
-      ),
+      body: snapsAsync.hasError && !snapsAsync.hasValue
+          ? _ErrorState(
+              error:   snapsAsync.error!,
+              onRetry: () => ref.invalidate(volSurfaceProvider),
+            )
+          : _MainPanel(
+              tabs:                _tabs,
+              snaps:               snaps,
+              activeSnap:          _activeSnap,
+              prevSnap:            _prevSnap,
+              onActiveSnapChanged: _selectSnap,
+              loading:             loading,
+            ),
     );
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Sidebar — ticker search + dataset list
+// Error state — provider load failed with nothing cached
 // ═══════════════════════════════════════════════════════════════════════════════
-class _Sidebar extends StatefulWidget {
-  final List<VolSnapshot>          snaps;
-  final VolSnapshot?               activeSnap;
-  final ValueChanged<VolSnapshot>  onSelectSnap;
-  final ValueChanged<VolSnapshot>  onDeleteSnap;
+class _ErrorState extends StatelessWidget {
+  final Object error;
+  final VoidCallback onRetry;
 
-  const _Sidebar({
-    required this.snaps,
-    required this.activeSnap,
-    required this.onSelectSnap,
-    required this.onDeleteSnap,
-  });
-
-  @override
-  State<_Sidebar> createState() => _SidebarState();
-}
-
-class _SidebarState extends State<_Sidebar> {
-  final _searchCtrl = TextEditingController();
-  String _filter = '';
-
-  @override
-  void dispose() {
-    _searchCtrl.dispose();
-    super.dispose();
-  }
+  const _ErrorState({required this.error, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _filter.isEmpty
-        ? widget.snaps
-        : widget.snaps
-            .where((s) =>
-                s.ticker.toUpperCase().contains(_filter.toUpperCase()))
-            .toList();
-
-    return SizedBox(
-      width: 264,
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF111827),
-          border: Border(right: BorderSide(color: Color(0xFF1f2937))),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ── Header ──
-            const Padding(
-              padding: EdgeInsets.fromLTRB(14, 14, 14, 10),
-              child: Text(
-                'DATASETS',
-                style: TextStyle(
-                    fontSize:    10,
-                    fontWeight:  FontWeight.w700,
-                    letterSpacing: 1.2,
-                    color:       Color(0xFF6b7280),
-                    fontFamily:  'monospace'),
-              ),
-            ),
-            // ── Ticker search ──
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-              child: TextField(
-                controller: _searchCtrl,
-                onChanged: (v) => setState(() => _filter = v),
-                style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFFd1d5db),
-                    fontFamily: 'monospace'),
-                decoration: InputDecoration(
-                  hintText: 'Search ticker…',
-                  hintStyle: const TextStyle(
-                      color: Color(0xFF4b5563), fontSize: 12),
-                  prefixIcon: const Icon(Icons.search_rounded,
-                      size: 15, color: Color(0xFF6b7280)),
-                  suffixIcon: _filter.isNotEmpty
-                      ? GestureDetector(
-                          onTap: () {
-                            _searchCtrl.clear();
-                            setState(() => _filter = '');
-                          },
-                          child: const Icon(Icons.close_rounded,
-                              size: 14, color: Color(0xFF6b7280)),
-                        )
-                      : null,
-                  filled: true,
-                  fillColor: const Color(0xFF0d1117),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: Color(0xFF374151)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: Color(0xFF374151)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: const BorderSide(color: Color(0xFF3b82f6)),
-                  ),
-                  isDense: true,
-                ),
-              ),
-            ),
-            const Divider(color: Color(0xFF1f2937), height: 1),
-            // ── Dataset list ──
-            Expanded(
-              child: filtered.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Text(
-                        _filter.isEmpty
-                            ? 'No datasets yet.\n\nOpen an options chain to auto-ingest a vol surface.'
-                            : 'No tickers match "$_filter".',
-                        style: const TextStyle(
-                            color:      Color(0xFF4b5563),
-                            fontSize:   11,
-                            fontStyle:  FontStyle.italic,
-                            height:     1.6),
-                      ),
-                    )
-                  : _GroupedDatasetList(
-                      snaps:        filtered,
-                      activeSnap:   widget.activeSnap,
-                      onSelectSnap: widget.onSelectSnap,
-                      onDeleteSnap: widget.onDeleteSnap,
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Dataset tile
-// ═══════════════════════════════════════════════════════════════════════════════
-class _DatasetTile extends StatelessWidget {
-  final VolSnapshot snap;
-  final bool active;
-  final VoidCallback onTap;
-  final VoidCallback onDelete;
-
-  const _DatasetTile({
-    required this.snap,
-    required this.active,
-    required this.onTap,
-    required this.onDelete,
-  });
-
-  static String _age(DateTime obsDate) {
-    final today = DateTime.now();
-    final days = DateTime(today.year, today.month, today.day)
-        .difference(DateTime(obsDate.year, obsDate.month, obsDate.day))
-        .inDays;
-    if (days <= 0) return '';
-    return '${days}d ago';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final age = _age(snap.obsDate);
-    final info = [
-      if (snap.points.isNotEmpty) '${snap.points.length} rows',
-      if (snap.spotPrice != null) '\$${snap.spotPrice!.toStringAsFixed(2)}',
-      if (age.isNotEmpty) age,
-    ].join(' · ');
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: active ? const Color(0x183b82f6) : Colors.transparent,
-          border: Border.all(
-            color: active
-                ? const Color(0x593b82f6)
-                : const Color(0xFF1f2937),
-          ),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  snap.obsDateStr,
-                  style: const TextStyle(
-                      color:      Color(0xFFf9fafb),
-                      fontSize:   12,
-                      fontWeight: FontWeight.w600,
-                      fontFamily: 'monospace'),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  info,
-                  style: const TextStyle(
-                      color:     Color(0xFF6b7280),
-                      fontSize:  10,
-                      fontFamily: 'monospace'),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close_rounded, size: 14),
-            color: const Color(0xFF6b7280),
-            onPressed: onDelete,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Grouped dataset list — collapsible ticker sections, clickable headers
-// ═══════════════════════════════════════════════════════════════════════════════
-class _GroupedDatasetList extends ConsumerStatefulWidget {
-  final List<VolSnapshot>          snaps;
-  final VolSnapshot?               activeSnap;
-  final ValueChanged<VolSnapshot>  onSelectSnap;
-  final ValueChanged<VolSnapshot>  onDeleteSnap;
-
-  const _GroupedDatasetList({
-    required this.snaps,
-    required this.activeSnap,
-    required this.onSelectSnap,
-    required this.onDeleteSnap,
-  });
-
-  @override
-  ConsumerState<_GroupedDatasetList> createState() =>
-      _GroupedDatasetListState();
-}
-
-class _GroupedDatasetListState extends ConsumerState<_GroupedDatasetList> {
-  final Set<String> _collapsed = {};
-
-  @override
-  Widget build(BuildContext context) {
-    final Map<String, List<VolSnapshot>> grouped = {};
-    for (final s in widget.snaps) {
-      grouped.putIfAbsent(s.ticker, () => []).add(s);
-    }
-    for (final v in grouped.values) {
-      v.sort((a, b) => b.obsDate.compareTo(a.obsDate));
-    }
-
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 8),
-      children: [
-        for (final ticker in grouped.keys) ...[
-          _TickerHeader(
-            ticker:    ticker,
-            count:     grouped[ticker]!.length,
-            collapsed: _collapsed.contains(ticker),
-            isActive:  widget.activeSnap?.ticker == ticker,
-            onTap: () => widget.onSelectSnap(grouped[ticker]!.first),
-            onToggle: () => setState(() {
-              if (_collapsed.contains(ticker)) {
-                _collapsed.remove(ticker);
-              } else {
-                _collapsed.add(ticker);
-              }
-            }),
-            onDeleteAll: () => _confirmDeleteTicker(context, ticker),
-          ),
-          if (!_collapsed.contains(ticker))
-            for (final s in grouped[ticker]!)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: _DatasetTile(
-                  snap:     s,
-                  active:   widget.activeSnap?.id == s.id ||
-                            (widget.activeSnap?.obsDateStr == s.obsDateStr &&
-                             widget.activeSnap?.ticker == s.ticker),
-                  onTap:    () => widget.onSelectSnap(s),
-                  onDelete: () => widget.onDeleteSnap(s),
-                ),
-              ),
-        ],
-      ],
-    );
-  }
-
-  Future<void> _confirmDeleteTicker(
-      BuildContext context, String ticker) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1f2e),
-        title: Text(
-          'Delete all $ticker snapshots?',
-          style: const TextStyle(color: Colors.white, fontSize: 15),
-        ),
-        content: Text(
-          'This will permanently remove all '
-          '${widget.snaps.where((s) => s.ticker == ticker).length} '
-          'surfaces for $ticker.',
-          style: const TextStyle(color: Colors.white60, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.white54)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete All',
-                style: TextStyle(color: Color(0xFFFF6B8A))),
-          ),
-        ],
-      ),
-    );
-    if (ok == true && mounted) {
-      await ref.read(volSurfaceProvider.notifier).deleteByTicker(ticker);
-    }
-  }
-}
-
-class _TickerHeader extends StatelessWidget {
-  final String ticker;
-  final int    count;
-  final bool   collapsed;
-  final bool   isActive;
-  final VoidCallback onTap;
-  final VoidCallback onToggle;
-  final VoidCallback onDeleteAll;
-
-  const _TickerHeader({
-    required this.ticker,
-    required this.count,
-    required this.collapsed,
-    required this.isActive,
-    required this.onTap,
-    required this.onToggle,
-    required this.onDeleteAll,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(8, 8, 8, 2),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: isActive
-            ? const Color(0x1A3b82f6)
-            : const Color(0xFF0d1117),
-        border: Border.all(
-            color: isActive
-                ? const Color(0x553b82f6)
-                : const Color(0xFF1f2937)),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Chevron — collapse/expand only; no outer tap wrapping this.
-          GestureDetector(
-            onTap: onToggle,
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Icon(
-                collapsed
-                    ? Icons.chevron_right_rounded
-                    : Icons.expand_more_rounded,
-                size: 16,
-                color: const Color(0xFF4b5563),
-              ),
+          const Icon(Icons.cloud_off_rounded, size: 28, color: _C.textFaint),
+          const SizedBox(height: 10),
+          const Text('Failed to load vol surfaces',
+              style: TextStyle(
+                  color:      _C.textDim,
+                  fontSize:   13,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              '$error',
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: _C.textFaint, fontSize: 11),
             ),
           ),
-          // Ticker label + count — the only area that selects the snapshot.
-          Expanded(
-            child: GestureDetector(
-              onTap: onTap,
-              behavior: HitTestBehavior.opaque,
-              child: Row(
-                children: [
-                  Text(
-                    ticker,
-                    style: TextStyle(
-                      color:         isActive
-                          ? const Color(0xFF60a5fa)
-                          : const Color(0xFF93c5fd),
-                      fontSize:      12,
-                      fontWeight:    FontWeight.w700,
-                      letterSpacing: 0.8,
-                      fontFamily:    'monospace',
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '$count',
-                    style: const TextStyle(
-                        color:      Color(0xFF4b5563),
-                        fontSize:   10,
-                        fontFamily: 'monospace'),
-                  ),
-                ],
-              ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: onRetry,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _C.textDim,
+              side: const BorderSide(color: _C.control),
             ),
-          ),
-          GestureDetector(
-            onTap: onDeleteAll,
-            behavior: HitTestBehavior.opaque,
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Icon(Icons.delete_outline_rounded,
-                  size: 14, color: Color(0xFF4b5563)),
-            ),
+            child: const Text('Retry', style: TextStyle(fontSize: 12)),
           ),
         ],
       ),
@@ -637,7 +264,7 @@ class _TickerHeader extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Main panel (wide layout)
+// Main panel — controls bar, chart area, resizable interpretation panel
 // ═══════════════════════════════════════════════════════════════════════════════
 class _MainPanel extends StatefulWidget {
   final TabController             tabs;
@@ -669,9 +296,9 @@ class _MainPanelState extends State<_MainPanel> {
   Widget build(BuildContext context) {
     return Column(children: [
       _ControlsBar(
-        tabs:               widget.tabs,
-        snaps:              widget.snaps,
-        activeSnap:         widget.activeSnap,
+        tabs:                widget.tabs,
+        snaps:               widget.snaps,
+        activeSnap:          widget.activeSnap,
         onActiveSnapChanged: widget.onActiveSnapChanged,
       ),
       Expanded(child: _ChartArea(
@@ -689,12 +316,12 @@ class _MainPanelState extends State<_MainPanel> {
           }),
           child: Container(
             height: 16,
-            color: const Color(0xFF111827),
+            color: _C.surface,
             child: Center(
               child: Container(
                 width: 36, height: 4,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF374151),
+                  color: _C.control,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -705,7 +332,7 @@ class _MainPanelState extends State<_MainPanel> {
           height: _interpHeight,
           child: VolSurfaceInterpretation(
             snap:   widget.activeSnap!,
-            ivMode: 'otm',
+            ivMode: _kIvMode,
           ),
         ),
       ],
@@ -767,13 +394,12 @@ class _ControlsBarState extends State<_ControlsBar> {
 
   @override
   Widget build(BuildContext context) {
-    const tabKeys   = ['heatmap', 'smile', 'daily'];
-    const tabLabels = ['Heatmap', 'Smile',  'Daily Δ'];
+    final active = widget.activeSnap;
 
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF111827),
-        border: Border(bottom: BorderSide(color: Color(0xFF1f2937))),
+        color: _C.surface,
+        border: Border(bottom: BorderSide(color: _C.border)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -783,9 +409,9 @@ class _ControlsBarState extends State<_ControlsBar> {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
             child: _SegmentedControl(
               options: List.generate(
-                  tabKeys.length, (i) => (tabKeys[i], tabLabels[i])),
-              selected: tabKeys[_tabIndex],
-              onSelected: (v) => widget.tabs.animateTo(tabKeys.indexOf(v)),
+                  _kTabKeys.length, (i) => (_kTabKeys[i], _kTabLabels[i])),
+              selected: _kTabKeys[_tabIndex],
+              onSelected: (v) => widget.tabs.animateTo(_kTabKeys.indexOf(v)),
             ),
           ),
           if (widget.snaps.isNotEmpty)
@@ -793,12 +419,12 @@ class _ControlsBarState extends State<_ControlsBar> {
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: _SnapSelect(
                 label: 'Date',
-                snaps: widget.activeSnap != null
+                snaps: active != null
                     ? widget.snaps
-                        .where((s) => s.ticker == widget.activeSnap!.ticker)
+                        .where((s) => s.ticker == active.ticker)
                         .toList()
                     : widget.snaps,
-                selected: widget.activeSnap,
+                selected: active,
                 onChanged: widget.onActiveSnapChanged,
               ),
             )
@@ -825,7 +451,7 @@ class _SegmentedControl extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF374151)),
+        border: Border.all(color: _C.control),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -846,7 +472,7 @@ class _SegmentedControl extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: selected == options[i].$1
-                      ? const Color(0xFF3b82f6)
+                      ? _C.accent
                       : Colors.transparent,
                   borderRadius: BorderRadius.horizontal(
                     left:  i == 0 ? const Radius.circular(5) : Radius.zero,
@@ -856,7 +482,7 @@ class _SegmentedControl extends StatelessWidget {
                   ),
                   border: i > 0
                       ? const Border(
-                          left: BorderSide(color: Color(0xFF374151)))
+                          left: BorderSide(color: _C.control))
                       : null,
                 ),
                 child: Text(
@@ -867,7 +493,7 @@ class _SegmentedControl extends StatelessWidget {
                     fontFamily: 'monospace',
                     color: selected == options[i].$1
                         ? Colors.white
-                        : const Color(0xFF9ca3af),
+                        : _C.textDim,
                   ),
                 ),
               ),
@@ -879,9 +505,9 @@ class _SegmentedControl extends StatelessWidget {
 }
 
 class _SnapSelect extends StatelessWidget {
-  final String                 label;
-  final List<VolSnapshot>      snaps;
-  final VolSnapshot?           selected;
+  final String                    label;
+  final List<VolSnapshot>         snaps;
+  final VolSnapshot?              selected;
   final ValueChanged<VolSnapshot> onChanged;
 
   const _SnapSelect({
@@ -899,19 +525,13 @@ class _SnapSelect extends StatelessWidget {
               fontSize:     10,
               fontWeight:   FontWeight.w700,
               letterSpacing: 0.8,
-              color:        Color(0xFF6b7280),
+              color:        _C.textMuted,
               fontFamily:   'monospace')),
       DropdownButton<VolSnapshot>(
-        value: selected == null
-            ? null
-            : snaps
-                .where((s) =>
-                    s.ticker == selected!.ticker &&
-                    s.obsDateStr == selected!.obsDateStr)
-                .firstOrNull,
+        value: selected != null && snaps.contains(selected) ? selected : null,
         hint: const Text('—',
             style: TextStyle(
-                color:     Color(0xFF6b7280),
+                color:     _C.textMuted,
                 fontSize:  11,
                 fontFamily: 'monospace')),
         items: snaps
@@ -925,9 +545,9 @@ class _SnapSelect extends StatelessWidget {
         onChanged: (s) {
           if (s != null) onChanged(s);
         },
-        dropdownColor: const Color(0xFF111827),
+        dropdownColor: _C.surface,
         style: const TextStyle(
-            color:     Color(0xFFd1d5db),
+            color:     _C.text,
             fontSize:  11,
             fontFamily: 'monospace'),
         underline: const SizedBox.shrink(),
@@ -967,24 +587,24 @@ class _ChartArea extends StatelessWidget {
                 key:       ValueKey('heatmap_${activeSnap!.id}'),
                 points:    activeSnap!.points,
                 spotPrice: activeSnap!.spotPrice,
-                ivMode:    'otm',
+                ivMode:    _kIvMode,
               )
-            : _empty('Select a ticker and date to view the surface'),
+            : _empty('Select a date to view the surface'),
         activeSnap != null
             ? VolSmileChart(
                 key:       ValueKey('smile_${activeSnap!.id}'),
                 points:    activeSnap!.points,
                 spotPrice: activeSnap!.spotPrice,
-                ivMode:    'otm',
+                ivMode:    _kIvMode,
               )
-            : _empty('Select a ticker and date to view the smile'),
+            : _empty('Select a date to view the smile'),
         activeSnap != null
             ? VolSkewDeltaGrid(
                 key:      ValueKey('daily_${activeSnap!.id}'),
                 snap:     activeSnap!,
                 prevSnap: prevSnap,
               )
-            : _empty('Select a ticker and date to view session changes'),
+            : _empty('Select a date to view session changes'),
       ],
     );
   }
@@ -992,87 +612,7 @@ class _ChartArea extends StatelessWidget {
   Widget _empty(String msg) => Center(
         child: Text(msg,
             style: const TextStyle(
-                color:     Color(0xFF4b5563),
+                color:     _C.textFaint,
                 fontSize:  13,
                 fontFamily: 'monospace')));
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Narrow layout
-// ═══════════════════════════════════════════════════════════════════════════════
-class _NarrowLayout extends StatefulWidget {
-  final List<VolSnapshot>         snaps;
-  final VolSnapshot?              activeSnap;
-  final VolSnapshot?              prevSnap;
-  final ValueChanged<VolSnapshot> onSelectSnap;
-  final ValueChanged<VolSnapshot> onDeleteSnap;
-  final TabController             tabs;
-  final bool                      loading;
-
-  const _NarrowLayout({
-    required this.snaps,
-    required this.activeSnap,
-    required this.prevSnap,
-    required this.onSelectSnap,
-    required this.onDeleteSnap,
-    required this.tabs,
-    required this.loading,
-  });
-
-  @override
-  State<_NarrowLayout> createState() => _NarrowLayoutState();
-}
-
-class _NarrowLayoutState extends State<_NarrowLayout> {
-  double _interpHeight = 220;
-  static const double _interpMin = 80;
-  static const double _interpMax = 440;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(children: [
-      _ControlsBar(
-        tabs:               widget.tabs,
-        snaps:              widget.snaps,
-        activeSnap:         widget.activeSnap,
-        onActiveSnapChanged: widget.onSelectSnap,
-      ),
-      Expanded(child: _ChartArea(
-        tabs:       widget.tabs,
-        activeSnap: widget.activeSnap,
-        prevSnap:   widget.prevSnap,
-        loading:    widget.loading,
-      )),
-      if (widget.activeSnap != null) ...[
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onVerticalDragUpdate: (d) => setState(() {
-            _interpHeight = (_interpHeight - d.delta.dy)
-                .clamp(_interpMin, _interpMax);
-          }),
-          child: Container(
-            height: 16,
-            color: const Color(0xFF111827),
-            child: Center(
-              child: Container(
-                width: 36, height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF374151),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          ),
-        ),
-        SizedBox(
-          height: _interpHeight,
-          child: VolSurfaceInterpretation(
-            snap:   widget.activeSnap!,
-            ivMode: 'otm',
-          ),
-        ),
-      ],
-    ]);
-  }
-}
-

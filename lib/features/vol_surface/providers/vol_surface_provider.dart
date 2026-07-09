@@ -10,27 +10,17 @@ import '../models/vol_surface_models.dart';
 import '../services/vol_surface_parser.dart';
 import '../services/vol_surface_repository.dart';
 
-final _repoProvider = Provider<VolSurfaceRepository>(
+final volSurfaceRepositoryProvider = Provider<VolSurfaceRepository>(
   (_) => VolSurfaceRepository(Supabase.instance.client),
 );
 
 class VolSurfaceNotifier extends AsyncNotifier<List<VolSnapshot>> {
   @override
   Future<List<VolSnapshot>> build() =>
-      ref.read(_repoProvider).loadAll();
+      ref.read(volSurfaceRepositoryProvider).loadAll();
 
   Future<void> save(VolSnapshot snap) async {
-    await ref.read(_repoProvider).save(snap);
-    ref.invalidateSelf();
-  }
-
-  Future<void> delete(VolSnapshot snap) async {
-    await ref.read(_repoProvider).delete(snap);
-    ref.invalidateSelf();
-  }
-
-  Future<void> deleteByTicker(String ticker) async {
-    await ref.read(_repoProvider).deleteByTicker(ticker);
+    await ref.read(volSurfaceRepositoryProvider).save(snap);
     ref.invalidateSelf();
   }
 }
