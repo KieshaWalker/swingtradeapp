@@ -32,17 +32,27 @@ class RealizedVolRepository {
   }
 
   /// Fetch the most recent [limit] snapshots for a ticker, oldest first.
+  ///
+  /// PostgREST caps every response at 1000 rows, so limits above that must be
+  /// paged — a single .limit(1008) call silently returns only 1000 rows.
   Future<List<RealizedVolSnapshot>> getHistory(
     String symbol, {
     int limit = 1008,
   }) async {
     try {
-      final rows = await _db
-          .from('realized_vol_snapshots')
-          .select()
-          .eq('symbol', symbol)
-          .order('date', ascending: false)
-          .limit(limit);
+      const pageSize = 1000;
+      final rows = <Map<String, dynamic>>[];
+      for (var offset = 0; offset < limit; offset += pageSize) {
+        final end = offset + pageSize > limit ? limit : offset + pageSize;
+        final page = await _db
+            .from('realized_vol_snapshots')
+            .select()
+            .eq('symbol', symbol)
+            .order('date', ascending: false)
+            .range(offset, end - 1);
+        rows.addAll(page);
+        if (page.length < end - offset) break;
+      }
 
       return rows.reversed
           .map((r) => RealizedVolSnapshot.fromJson(r))
@@ -78,14 +88,16 @@ class RealizedVolRepository {
     int limit = 252,
   }) async {
     try {
+      // Descending then reversed: ascending + limit would return the oldest
+      // rows once history outgrows the window.
       final rows = await _db
           .from('economy_quote_snapshots')
           .select()
           .eq('symbol', symbol)
-          .order('date', ascending: true)
+          .order('date', ascending: false)
           .limit(limit);
 
-      return List<Map<String, dynamic>>.from(rows);
+      return List<Map<String, dynamic>>.from(rows.reversed);
     } catch (e) {
       return [];
     }

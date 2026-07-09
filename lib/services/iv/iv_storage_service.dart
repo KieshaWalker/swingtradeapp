@@ -20,16 +20,20 @@ class IvStorageService {
 
   // ── Read ───────────────────────────────────────────────────────────────────
 
-  /// Returns up to 252 daily snapshots for [ticker], sorted ascending by date.
+  /// Returns up to the most recent 252 daily snapshots for [ticker],
+  /// sorted ascending by date.
+  ///
+  /// Fetch descending then reverse: ascending + limit would return the
+  /// oldest 252 days once history outgrows the window.
   Future<List<IvSnapshot>> getHistory(String ticker) async {
     final rows = await _db
         .from('iv_snapshots')
         .select()
         .eq('ticker', ticker)
-        .order('date', ascending: true)
+        .order('date', ascending: false)
         .limit(252);
 
-    return (rows as List)
+    return (rows as List).reversed
         .map((r) => IvSnapshot.fromJson(r as Map<String, dynamic>))
         .toList();
   }

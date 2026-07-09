@@ -54,27 +54,34 @@ class FredStorageService {
 
   // ── Read back helpers (used by macro score service) ───────────────────────
 
+  // Fetch descending then reverse: ascending + limit would return the oldest
+  // rows once a series outgrows the window.
+
   Future<List<Map<String, dynamic>>> getQuoteHistory(
     String symbol, {
     int limit = 252,
-  }) =>
-      _db
-          .from('economy_quote_snapshots')
-          .select('date, price')
-          .eq('symbol', symbol)
-          .order('date', ascending: true)
-          .limit(limit);
+  }) async {
+    final rows = await _db
+        .from('economy_quote_snapshots')
+        .select('date, price')
+        .eq('symbol', symbol)
+        .order('date', ascending: false)
+        .limit(limit);
+    return rows.reversed.toList();
+  }
 
   Future<List<Map<String, dynamic>>> getIndicatorHistory(
     String identifier, {
     int limit = 500,
-  }) =>
-      _db
-          .from('economy_indicator_snapshots')
-          .select('date, value')
-          .eq('identifier', identifier)
-          .order('date', ascending: true)
-          .limit(limit);
+  }) async {
+    final rows = await _db
+        .from('economy_indicator_snapshots')
+        .select('date, value')
+        .eq('identifier', identifier)
+        .order('date', ascending: false)
+        .limit(limit);
+    return rows.reversed.toList();
+  }
 
   String _fmt(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';

@@ -17,18 +17,29 @@ class GreekGridRepository {
   }
 
   /// Load all historical grid points for [ticker], oldest first.
+  ///
+  /// PostgREST caps every response at 1000 rows and truncates silently, so a
+  /// single unbounded select drops the newest dates once a ticker accumulates
+  /// >1000 rows (~45 trading days). Page until a short page marks the end.
   Future<List<GreekGridPoint>> loadAll(String ticker) async {
     final userId = _db.auth.currentUser?.id;
     if (userId == null) return [];
-    final rows = await _db
-        .from('greek_grid_snapshots')
-        .select()
-        .eq('user_id', userId)
-        .eq('ticker', ticker.toUpperCase())
-        .order('obs_date', ascending: true);
-    return (rows as List)
-        .map((r) => GreekGridPoint.fromJson(r as Map<String, dynamic>))
-        .toList();
+    const pageSize = 1000;
+    final points = <GreekGridPoint>[];
+    for (var offset = 0;; offset += pageSize) {
+      final rows = await _db
+          .from('greek_grid_snapshots')
+          .select()
+          .eq('user_id', userId)
+          .eq('ticker', ticker.toUpperCase())
+          .order('obs_date', ascending: true)
+          .order('id', ascending: true)
+          .range(offset, offset + pageSize - 1);
+      points.addAll((rows as List)
+          .map((r) => GreekGridPoint.fromJson(r as Map<String, dynamic>)));
+      if (rows.length < pageSize) break;
+    }
+    return points;
   }
 
   /// Delete rows where expiry_date < today − 30 days.

@@ -303,14 +303,34 @@ class EconomyStorageService {
 
   // ── Read ───────────────────────────────────────────────────────────────────
 
+  /// PostgREST caps every response at 1000 rows and truncates silently, so
+  /// full-history reads must page until a short page marks the end.
+  Future<List<Map<String, dynamic>>> _pageAll(
+    String table,
+    String columns,
+    String filterColumn,
+    String filterValue,
+  ) async {
+    const pageSize = 1000;
+    final rows = <Map<String, dynamic>>[];
+    for (var offset = 0;; offset += pageSize) {
+      final page = await _db
+          .from(table)
+          .select(columns)
+          .eq(filterColumn, filterValue)
+          .order('date', ascending: true)
+          .range(offset, offset + pageSize - 1);
+      rows.addAll(page);
+      if (page.length < pageSize) break;
+    }
+    return rows;
+  }
+
   Future<List<EconomicIndicatorPoint>> getIndicatorHistory(
       String identifier) async {
     try {
-      final rows = await _db
-          .from('economy_indicator_snapshots')
-          .select('identifier, date, value')
-          .eq('identifier', identifier)
-          .order('date', ascending: true);
+      final rows = await _pageAll('economy_indicator_snapshots',
+          'identifier, date, value', 'identifier', identifier);
       return rows.map<EconomicIndicatorPoint>((r) => EconomicIndicatorPoint(
             identifier: r['identifier'] as String,
             date: DateTime.parse(r['date'] as String),
@@ -323,11 +343,8 @@ class EconomyStorageService {
 
   Future<List<QuoteSnapshot>> getQuoteHistory(String symbol) async {
     try {
-      final rows = await _db
-          .from('economy_quote_snapshots')
-          .select('symbol, date, price, change_percent')
-          .eq('symbol', symbol)
-          .order('date', ascending: true);
+      final rows = await _pageAll('economy_quote_snapshots',
+          'symbol, date, price, change_percent', 'symbol', symbol);
       return rows.map<QuoteSnapshot>(QuoteSnapshot.fromRow).toList();
     } catch (_) {
       return [];
