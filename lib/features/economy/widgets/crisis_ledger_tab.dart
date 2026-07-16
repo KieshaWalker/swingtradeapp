@@ -135,6 +135,8 @@ class CrisisLedgerTab extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
             children: [
               _TallyCard(s: s),
+              const SizedBox(height: 8),
+              const _AboutCard(),
               const SizedBox(height: 16),
               _SectionHeader('Now vs prior bubbles'),
               _BubbleGauge(
@@ -181,12 +183,29 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               'SPY ${_fmt(s.spyOffAthPct)}% off 52-wk high · ${s.spyDaysSinceAth ?? "—"} sessions since',
           precedent: '9 of 10 crises broke from near-ATH',
+          eduWhat:
+              'Distance of SPY from its 52-week high. Crashes start from strength: '
+              'in 9 of the 10 index-era crises the market stood at or within weeks '
+              'of an all-time high when the break began (the exception, 1907, was '
+              'already down 25%).',
+          eduWatch:
+              'This signal alone means nothing — it is the arming condition for '
+              'everything below. A market far from its highs cannot "top."',
         ),
         _SignalRow(
           name: 'Valuation (CAPE)',
           verdict: s.verdicts['v_valuation']!,
           reading: 'CAPE ${_fmt(s.cape)}',
           precedent: "1929: 32.6 · 2000: 44.2 · 2022: 38.6",
+          eduWhat:
+              'Shiller cyclically-adjusted P/E: price against 10-year average real '
+              'earnings. Every reading above 35 in history clusters around 1929, '
+              '1999-2000, 2021, and now. High CAPE never times a top — it crossed '
+              'its 1929 record in 1997, three years early — but it sets the size '
+              'of the eventual repricing.',
+          eduWatch:
+              'Updated monthly by manual reseed (no free daily source). Fires ≥35, '
+              'partial ≥30.',
         ),
         _SignalRow(
           name: 'Leverage (margin debt)',
@@ -194,12 +213,32 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               '\$${_fmt(s.marginDebtBn, 0)}B · ${_fmt(s.marginDebtYoyPct, 0)}% YoY',
           precedent: 'Records marked the 1929, 2000, 2007, 2021 tops',
+          eduWhat:
+              'FINRA investor margin debt, year-over-year growth. Record leverage '
+              'marked all four great tops, and it is why those declines fed on '
+              'themselves: borrowed positions become forced sellers. The growth '
+              'rate matters more than the level — fast borrowing = late-cycle '
+              'conviction.',
+          eduWatch:
+              'Monthly FINRA release, manually reseeded. Fires ≥25% YoY, partial '
+              '≥10%.',
         ),
         _SignalRow(
           name: 'Speculative tier',
           verdict: s.verdicts['v_spec_tier']!,
           reading: 'Spec basket ${_fmt(s.specOffHighPct)}% off high',
           precedent: "Trusts '29 · Nifty '72 · dot-coms '00 · ARKK '21 — peaked first",
+          eduWhat:
+              "Each cycle's parabolic basket (currently the memory pair) measured "
+              'against its own high while the index holds near highs. In every '
+              'mania on record the speculative class topped before the index: '
+              "investment trusts in 1929, go-go funds in '68, the Nifty Fifty in "
+              "'72, profitless dot-coms in early 2000, ARKK/memes in Feb 2021 — "
+              'that one 11 months before the S&P.',
+          eduWatch:
+              'Fires when the basket is −20% off its high while SPY sits within '
+              '5% of its own. Firing = the canary died; the question becomes '
+              'absorption (rotation) vs contagion.',
         ),
       ];
 
@@ -210,12 +249,29 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               'Fed funds ${_fmt(s.fedFundsPct)}% · ${_fmt(s.fedFunds90dChgBps, 0)} bps / 90d',
           precedent: 'Tightening preceded 8 of 10 crises',
+          eduWhat:
+              '90-day change in the effective fed funds rate. Monetary tightening '
+              'into the peak preceded 8 of 10 index-era crises — 1929, 1937, '
+              "1969, 1973, 1987, 2000, 2007, 2022. The two exceptions were a pure "
+              'valuation break (1962) and a pandemic (2020).',
+          eduWatch:
+              'Fires at +50bp/90d. A hiking resumption while the structural '
+              'conditions above stay lit is the ledger\'s classic pre-break '
+              'configuration.',
         ),
         _SignalRow(
           name: 'Yield curve',
           verdict: s.verdicts['v_curve']!,
           reading: '10y–2y ${_fmt(s.t10y2yBps, 0)} bps',
           precedent: 'Inverted before 6 of 10',
+          eduWhat:
+              '10-year minus 2-year Treasury yield. Inversion preceded 6 of 10 '
+              'crises and every recession since 1955 with one false positive '
+              '(1966). Lead times run 6–24 months — it warns of the regime, '
+              'not the week.',
+          eduWatch:
+              'Fires on inversion (≤0), partial when flat (≤25bp). Level-based: '
+              'a curve flickering around zero reads calmer here than it is.',
         ),
         _SignalRow(
           name: 'Public credit',
@@ -223,6 +279,16 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               'HY ${_fmt(s.hyOasBps, 0)} bps (${_fmt(s.hyOas20dChgBps, 0)} 20d) · IG ${_fmt(s.igOasBps, 0)}',
           precedent: 'Jun-2007: record tights, then the turn',
+          eduWhat:
+              'High-yield option-adjusted spread over Treasuries: the public '
+              "market's price of default risk. The level never warned — spreads "
+              'sat at record tights in June 2007 — but the TURN off the tights '
+              'preceded the equity top by four months. Tight spreads are the '
+              'starting point of every credit cycle ending, not evidence of '
+              'safety.',
+          eduWatch:
+              'Fires above 400bp or on +50bp in 20 days — the turn, not the '
+              'level.',
         ),
         _SignalRow(
           name: 'Private credit',
@@ -230,6 +296,18 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               'BDCs ${_fmt(s.bdcOffHighPct)}% / managers ${_fmt(s.mgrOffHighPct)}% off high',
           precedent: 'Financials topped Feb-07 — 8 months before the index',
+          eduWhat:
+              'Listed BDCs (which hold private loans, so their shares price the '
+              'quarterly-marked books daily) and alternative-credit managers, '
+              'each vs their 52-week highs. Opaque credit is where this cycle\'s '
+              'buildout debt lives — the seat railroad bonds held in 1873 and '
+              'securitized mortgages in 2007, when credit-adjacent equities '
+              'topped 8 months before the index while spreads stayed serene.',
+          eduWatch:
+              'Fires when the weaker composite is −15% off its high and still '
+              'falling over 20 days. The escalation to watch: stress reaching '
+              'the funding system (2007) vs staying contained in one asset '
+              'class (1998).',
         ),
         _SignalRow(
           name: 'Breadth',
@@ -237,6 +315,17 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               'RSP/SPY ${_fmt(s.rspSpyOffHighPct)}% · IWM/SPY ${_fmt(s.iwmSpyOffHighPct)}% off ratio high',
           precedent: "A/D line peaked 2 yrs before the 2000 top",
+          eduWhat:
+              'Whether the average stock confirms the index: equal-weight S&P '
+              '(RSP) and small caps (IWM) against cap-weighted SPY. The NYSE '
+              'advance/decline line peaked in April 1998 — two years before the '
+              '2000 top; financials led 2007 down by months. But 1987 and 2020 '
+              'broke with clean breadth, so clean is necessary comfort, never '
+              'sufficient.',
+          eduWatch:
+              'Fires when RSP\'s own high goes 60+ sessions staler than SPY\'s '
+              '(partial at 20). The first tell if "absorption" of a sector '
+              'unwind is failing.',
         ),
       ];
 
@@ -433,19 +522,30 @@ class _BubbleGauge extends StatelessWidget {
       v >= 100 ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
 }
 
-class _SignalRow extends StatelessWidget {
-  final String name, verdict, reading, precedent;
+/// Signal row with tap-to-expand education: what the signal measures, why it
+/// earned a place in the checklist, and what would change its verdict.
+class _SignalRow extends StatefulWidget {
+  final String name, verdict, reading, precedent, eduWhat, eduWatch;
   const _SignalRow({
     required this.name,
     required this.verdict,
     required this.reading,
     required this.precedent,
+    required this.eduWhat,
+    required this.eduWatch,
   });
+
+  @override
+  State<_SignalRow> createState() => _SignalRowState();
+}
+
+class _SignalRowState extends State<_SignalRow> {
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final (color, label) = switch (verdict) {
+    final (color, label) = switch (widget.verdict) {
       'firing' => (theme.colorScheme.error, 'FIRING'),
       'partial' => (const Color(0xFFB8860B), 'PARTIAL'),
       'clean' => (const Color(0xFF2E7D52), 'CLEAN'),
@@ -453,33 +553,162 @@ class _SignalRow extends StatelessWidget {
     };
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(
-          width: 72,
-          padding: const EdgeInsets.symmetric(vertical: 3),
-          decoration: BoxDecoration(
-            border: Border.all(color: color),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(label,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.labelSmall
-                  ?.copyWith(color: color, fontWeight: FontWeight.w700)),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        borderRadius: BorderRadius.circular(6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 72,
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              decoration: BoxDecoration(
+                border: Border.all(color: color),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(label,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: color, fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child:
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(widget.name,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+                Text(widget.reading, style: theme.textTheme.bodySmall),
+                Text(widget.precedent,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                        fontStyle: FontStyle.italic)),
+              ]),
+            ),
+            Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                size: 18,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+          ]),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.only(left: 84, top: 8, right: 8),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(widget.eduWhat, style: theme.textTheme.bodySmall),
+                    const SizedBox(height: 6),
+                    Text('Watch: ${widget.eduWatch}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                            fontWeight: FontWeight.w500)),
+                  ]),
+            ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Expandable primer: how to read the screen, the conditions/catalysts
+/// framework, the two historical resolutions, and the base rates.
+class _AboutCard extends StatefulWidget {
+  const _AboutCard();
+
+  @override
+  State<_AboutCard> createState() => _AboutCardState();
+}
+
+class _AboutCardState extends State<_AboutCard> {
+  bool _expanded = false;
+
+  static const _sections = <(String, String)>[
+    (
+      'Conditions vs catalysts',
+      'Structural conditions (valuation, leverage, index posture, speculative '
+          'excess) are slow variables: they tell you which regime you are in, '
+          'and they can stay lit for years — CAPE first crossed its 1929 record '
+          'in 1997, three years before the top. Catalysts (Fed, curve, credit, '
+          'breadth) are fast variables: they tell you the ending has started. '
+          'Age never killed a bull in the record; catalysts did. The dangerous '
+          'configuration is a catalyst flipping while conditions stay lit.',
+    ),
+    (
+      'The two historical resolutions',
+      'When a periphery cracks while the core stays serene, history offers two '
+          'branches. 1998: peripheral credit stress (LTCM/Asia) was absorbed, '
+          'and the finale was a melt-up into March 2000. 2007: the periphery '
+          '(financials, down from February) WAS the core, discovered late; the '
+          'index made its last high in October. The distinguishing variable was '
+          'whether credit stress reached the funding system or stayed contained '
+          'in one asset class.',
+    ),
+    (
+      'Base rates (post-war S&P)',
+      'Bear market: −33% average over ~13 months. Recovery to the prior peak: '
+          '~1–2 years without a recession (1962, 1987, 2022), 5–25 years with '
+          'one (2008: 5.5y; 2000: 7+; 1929: 25). Regime matters for hedging: '
+          'in deflationary/demand busts (1929, 2000, 2008, 2020) Treasuries '
+          'rallied; in inflationary bears (1973, 2022) bonds fell with stocks '
+          'and nothing hedged.',
+    ),
+    (
+      'Reading the gauges',
+      'Grey markers show where prior bubbles peaked; the red marker is today. '
+          'The gauges compare levels — but note that for credit the historical '
+          'signal was always the TURN off the tights, never the level itself. '
+          'Verdicts: FIRING = the historical pre-crisis condition is present; '
+          'PARTIAL = approaching; CLEAN = absent; UNKNOWN = awaiting data '
+          '(CAPE and margin debt reseed monthly). Tap any signal for its '
+          'history.',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: InkWell(
+        onTap: () => setState(() => _expanded = !_expanded),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name,
-                style: theme.textTheme.bodyMedium
-                    ?.copyWith(fontWeight: FontWeight.w600)),
-            Text(reading, style: theme.textTheme.bodySmall),
-            Text(precedent,
+            Row(children: [
+              Icon(Icons.school_outlined,
+                  size: 18, color: theme.colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('How to read this screen',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+              ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+            ]),
+            if (_expanded) ...[
+              const SizedBox(height: 10),
+              for (final (title, body) in _sections) ...[
+                Text(title,
+                    style: theme.textTheme.labelMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 3),
+                Text(body, style: theme.textTheme.bodySmall),
+                const SizedBox(height: 12),
+              ],
+              Text(
+                'Calibration: thresholds derived from 13 U.S. market crises, '
+                '1873–2022. This screen reports historical pattern-matches — '
+                'it does not predict. Every signal has produced false positives '
+                'measured in years.',
                 style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                    fontStyle: FontStyle.italic)),
+                    fontStyle: FontStyle.italic,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55)),
+              ),
+            ],
           ]),
         ),
-      ]),
+      ),
     );
   }
 }
