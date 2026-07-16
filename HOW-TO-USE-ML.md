@@ -279,3 +279,9 @@ fails the 0.52 gate, the system falls back to the heuristic automatically.
 | `regime_ml_models` | Trained model weights + scaler + calibration (last 5 runs kept per type) |
 | `regime_ml_predictions` | Daily logged predictions; `realized_flip` back-filled by reconciliation |
 | `regime_ml_live_metrics` | Rolling live AUC / hit rate / Brier / reliability bins |
+
+
+
+
+
+

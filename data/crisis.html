@@ -1,0 +1,860 @@
+<title>The Crisis Ledger — U.S. Market Panics Side by Side</title>
+<style>
+  :root {
+    --bg: #EEF0EC; --surface: #E6EAE2; --ink: #20261F; --ink2: #4A5346;
+    --muted: #6E7767; --rule: #C9CEC2;
+    --brass: #96741F; --oxide: #96412F; --steel: #3968A6;
+    --note-bg: #E9E6D8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131714; --surface: #1C211D; --ink: #E5E7DE; --ink2: #B4BAA9;
+      --muted: #8A927F; --rule: #333B32;
+      --brass: #B08A2E; --oxide: #C96F55; --steel: #5A8ECB;
+      --note-bg: #201F17;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #131714; --surface: #1C211D; --ink: #E5E7DE; --ink2: #B4BAA9;
+    --muted: #8A927F; --rule: #333B32;
+    --brass: #B08A2E; --oxide: #C96F55; --steel: #5A8ECB;
+    --note-bg: #201F17;
+  }
+  :root[data-theme="light"] {
+    --bg: #EEF0EC; --surface: #E6EAE2; --ink: #20261F; --ink2: #4A5346;
+    --muted: #6E7767; --rule: #C9CEC2;
+    --brass: #96741F; --oxide: #96412F; --steel: #3968A6;
+    --note-bg: #E9E6D8;
+  }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: Charter, "Bitstream Charter", Georgia, "Times New Roman", serif;
+    line-height: 1.5; margin: 0; padding: 0 20px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 0 80px; }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--brass); margin: 0 0 14px;
+  }
+  h1 {
+    font-family: Didot, "Bodoni MT", "Bodoni 72", "Playfair Display", "Times New Roman", serif;
+    font-size: clamp(32px, 6vw, 50px); font-weight: 500; line-height: 1.08;
+    margin: 0 0 12px; text-wrap: balance;
+  }
+  .dek { font-size: 16.5px; color: var(--ink2); max-width: 68ch; margin: 0; }
+  h2 {
+    font-family: Didot, "Bodoni MT", "Bodoni 72", "Playfair Display", serif;
+    font-size: clamp(21px, 3.5vw, 27px); font-weight: 500; margin: 0 0 4px;
+    border-top: 2px solid var(--ink); padding-top: 14px;
+  }
+  section { margin-top: 56px; }
+  .sub { font-size: 14px; color: var(--muted); margin: 0 0 18px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+  /* at-a-glance bars */
+  .bars { display: grid; gap: 7px; margin-top: 14px; }
+  .barrow { display: grid; grid-template-columns: 108px 1fr 1fr; gap: 10px; align-items: center; }
+  .barrow .lab { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--ink2); text-align: right; font-variant-numeric: tabular-nums; }
+  .track { position: relative; height: 16px; }
+  .bar { position: absolute; top: 2px; bottom: 2px; left: 0; border-radius: 0 3px 3px 0; }
+  .bar.dd { background: var(--oxide); }
+  .bar.rec { background: var(--steel); }
+  .bar span {
+    position: absolute; left: calc(100% + 7px); top: 50%; transform: translateY(-50%);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: var(--ink2); white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .bars-head { display: grid; grid-template-columns: 108px 1fr 1fr; gap: 10px; margin-bottom: 2px; }
+  .bars-head div {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .bars-head div:first-child { text-align: right; }
+
+  /* master matrix */
+  .scroller { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); }
+  table.matrix { border-collapse: collapse; font-size: 13px; }
+  table.matrix th, table.matrix td {
+    padding: 9px 12px; vertical-align: top; text-align: left;
+    border-bottom: 1px solid var(--rule); border-right: 1px solid var(--rule);
+    min-width: 208px; max-width: 240px;
+  }
+  table.matrix thead th {
+    position: sticky; top: 0; background: var(--surface); z-index: 2;
+    font-family: Didot, "Bodoni MT", "Bodoni 72", serif; font-size: 15px; font-weight: 600;
+    border-bottom: 2px solid var(--ink);
+  }
+  table.matrix thead th small { display: block; font-family: ui-monospace, Menlo, monospace; font-size: 10px; color: var(--muted); font-weight: 400; letter-spacing: 0.06em; margin-top: 2px; }
+  table.matrix tbody th[scope="row"] {
+    position: sticky; left: 0; background: var(--surface); z-index: 1;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass);
+    min-width: 118px; max-width: 118px; font-weight: 600;
+  }
+  table.matrix thead th:first-child { left: 0; z-index: 3; background: var(--surface); }
+  table.matrix td { color: var(--ink2); }
+  table.matrix td strong { color: var(--ink); }
+  table.matrix td .neg { color: var(--oxide); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* signals table */
+  table.plain { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.plain th, table.plain td { padding: 10px 12px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+  table.plain thead th {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600;
+  }
+  table.plain td:first-child { font-weight: 700; color: var(--ink); }
+  table.plain td { color: var(--ink2); }
+
+  .statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }
+  .stat { background: var(--surface); border: 1px solid var(--rule); padding: 16px 18px; }
+  .stat .k {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 10.5px;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px;
+  }
+  .stat .v {
+    font-family: Didot, "Bodoni MT", "Bodoni 72", serif; font-size: 26px; color: var(--ink); margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .d { font-size: 13px; color: var(--ink2); margin: 4px 0 0; }
+
+  aside.note { margin: 22px 0 0; padding: 14px 18px; background: var(--note-bg); border-left: 3px solid var(--brass); font-size: 14px; color: var(--ink); }
+  footer { margin-top: 56px; padding-top: 14px; border-top: 1px solid var(--rule); font-size: 12.5px; color: var(--muted); font-family: ui-monospace, "SF Mono", Menlo, monospace; line-height: 1.7; }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Companion to “Iron &amp; Paper” · facts only</p>
+  <h1>The Crisis Ledger</h1>
+  <p class="dek">Thirteen U.S. market crises, 1873–2022, side by side: what prices and volume did in the months before, what broke, what warnings were visible, whether it recovered, and how long that took. Figures are the standard historical record; approximations are marked.</p>
+
+  <section>
+    <h2>At a glance</h2>
+    <p class="sub">peak-to-trough drawdown (main index) · years until the prior peak was reclaimed, nominal</p>
+    <div class="bars-head"><div>crisis</div><div>drawdown</div><div>years to reclaim peak</div></div>
+    <div class="bars">
+      <div class="barrow"><div class="lab">1873</div><div class="track"><div class="bar dd" style="width:67%"><span>≈−60% (rails)</span></div></div><div class="track"><div class="bar rec" style="width:24%"><span>≈6 y</span></div></div></div>
+      <div class="barrow"><div class="lab">1893</div><div class="track"><div class="bar dd" style="width:56%"><span>≈−50% (rails)</span></div></div><div class="track"><div class="bar rec" style="width:16%"><span>≈4 y</span></div></div></div>
+      <div class="barrow"><div class="lab">1907</div><div class="track"><div class="bar dd" style="width:54%"><span>−49% Dow</span></div></div><div class="track"><div class="bar rec" style="width:12%"><span>≈3 y</span></div></div></div>
+      <div class="barrow"><div class="lab">1929–32</div><div class="track"><div class="bar dd" style="width:100%"><span>−89% Dow</span></div></div><div class="track"><div class="bar rec" style="width:100%"><span>25.2 y</span></div></div></div>
+      <div class="barrow"><div class="lab">1937–38</div><div class="track"><div class="bar dd" style="width:55%"><span>−49% Dow</span></div></div><div class="track"><div class="bar rec" style="width:35%"><span>8.7 y</span></div></div></div>
+      <div class="barrow"><div class="lab">1962</div><div class="track"><div class="bar dd" style="width:31%"><span>−28% S&amp;P</span></div></div><div class="track"><div class="bar rec" style="width:7%"><span>1.8 y</span></div></div></div>
+      <div class="barrow"><div class="lab">1969–70</div><div class="track"><div class="bar dd" style="width:40%"><span>−36% S&amp;P</span></div></div><div class="track"><div class="bar rec" style="width:13%"><span>3.3 y</span></div></div></div>
+      <div class="barrow"><div class="lab">1973–74</div><div class="track"><div class="bar dd" style="width:54%"><span>−48% S&amp;P</span></div></div><div class="track"><div class="bar rec" style="width:30%"><span>7.5 y</span></div></div></div>
+      <div class="barrow"><div class="lab">1987</div><div class="track"><div class="bar dd" style="width:38%"><span>−34% S&amp;P</span></div></div><div class="track"><div class="bar rec" style="width:8%"><span>1.9 y</span></div></div></div>
+      <div class="barrow"><div class="lab">2000–02</div><div class="track"><div class="bar dd" style="width:55%"><span>−49% S&amp;P · −78% Nasdaq</span></div></div><div class="track"><div class="bar rec" style="width:29%"><span>7.2 y (Nasdaq 15.1)</span></div></div></div>
+      <div class="barrow"><div class="lab">2007–09</div><div class="track"><div class="bar dd" style="width:64%"><span>−57% S&amp;P</span></div></div><div class="track"><div class="bar rec" style="width:22%"><span>5.5 y</span></div></div></div>
+      <div class="barrow"><div class="lab">2020</div><div class="track"><div class="bar dd" style="width:38%"><span>−34% S&amp;P</span></div></div><div class="track"><div class="bar rec" style="width:2%"><span>0.5 y</span></div></div></div>
+      <div class="barrow"><div class="lab">2022</div><div class="track"><div class="bar dd" style="width:29%"><span>−25% S&amp;P · −36% Nasdaq</span></div></div><div class="track"><div class="bar rec" style="width:8%"><span>2.0 y</span></div></div></div>
+    </div>
+    <aside class="note">Every peak was eventually reclaimed in nominal terms. The dispersion is the story: 6 months (2020) to 25 years (1929). Inflation-adjusted recovery ran far longer in two cases — 1929 (~1958 real) and 1973 (real recovery not until the mid-1980s at the earliest).</aside>
+  </section>
+
+  <section>
+    <h2>The master matrix</h2>
+    <p class="sub">scroll → · thirteen crises · seventeen attributes each</p>
+    <div class="scroller">
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th></th>
+            <th>1873<small>Long Depression</small></th>
+            <th>1893<small>Railroad shakeout</small></th>
+            <th>1907<small>Bankers’ Panic</small></th>
+            <th>1929–32<small>Great Crash</small></th>
+            <th>1937–38<small>Fed relapse</small></th>
+            <th>1962<small>Kennedy Slide</small></th>
+            <th>1969–70<small>Go-Go bust</small></th>
+            <th>1973–74<small>Oil / Nifty bear</small></th>
+            <th>1987<small>Black Monday</small></th>
+            <th>2000–02<small>Dot-com</small></th>
+            <th>2007–09<small>GFC</small></th>
+            <th>2020<small>COVID crash</small></th>
+            <th>2022<small>Inflation bear</small></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Peak</th>
+            <td>No index yet; rail securities peak early 1873</td>
+            <td>Rail-heavy lists peak 1892</td>
+            <td>Dow <strong>103.0</strong> · Jan 1906</td>
+            <td>Dow <strong>381.17</strong> · Sep 3, 1929</td>
+            <td>Dow <strong>194.4</strong> · Mar 10, 1937</td>
+            <td>S&amp;P <strong>72.64</strong> · Dec 12, 1961</td>
+            <td>S&amp;P <strong>108.37</strong> · Nov 29, 1968</td>
+            <td>S&amp;P <strong>120.24</strong> · Jan 11, 1973</td>
+            <td>S&amp;P <strong>336.77</strong> · Aug 25, 1987</td>
+            <td>Nasdaq <strong>5048.62</strong> · Mar 10, 2000; S&amp;P 1527.46 · Mar 24</td>
+            <td>S&amp;P <strong>1565.15</strong> · Oct 9, 2007</td>
+            <td>S&amp;P <strong>3386.15</strong> · Feb 19, 2020</td>
+            <td>S&amp;P <strong>4796.56</strong> · Jan 3, 2022</td></tr>
+          <tr><th scope="row">Trough</th>
+            <td>Depression trough 1877–78</td>
+            <td>1896 (Bryan election scare)</td>
+            <td>Dow 53.0 · Nov 15, 1907</td>
+            <td>Dow 41.22 · Jul 8, 1932</td>
+            <td>Dow 98.95 · Mar 31, 1938</td>
+            <td>S&amp;P 52.32 · Jun 26, 1962</td>
+            <td>S&amp;P 69.29 · May 26, 1970</td>
+            <td>S&amp;P 62.28 · Oct 3, 1974</td>
+            <td>S&amp;P 223.92 · Dec 4, 1987</td>
+            <td>Nasdaq 1114.11 · Oct 10, 2002; S&amp;P 776.76 · Oct 9</td>
+            <td>S&amp;P 676.53 · Mar 9, 2009</td>
+            <td>S&amp;P 2237.40 · Mar 23, 2020</td>
+            <td>S&amp;P 3577.03 · Oct 12, 2022</td></tr>
+          <tr><th scope="row">Drawdown</th>
+            <td><span class="neg">≈−60%</span> typical rail equity</td>
+            <td><span class="neg">≈−50%</span> rail equity; many to zero</td>
+            <td><span class="neg">−48.5%</span></td>
+            <td><span class="neg">−89.2%</span></td>
+            <td><span class="neg">−49.1%</span></td>
+            <td><span class="neg">−28.0%</span></td>
+            <td><span class="neg">−36.1%</span></td>
+            <td><span class="neg">−48.2%</span> (Dow −45%)</td>
+            <td><span class="neg">−33.5%</span> (−20.5% in one day)</td>
+            <td><span class="neg">−49.1%</span> S&amp;P · <span class="neg">−77.9%</span> Nasdaq</td>
+            <td><span class="neg">−56.8%</span></td>
+            <td><span class="neg">−33.9%</span></td>
+            <td><span class="neg">−25.4%</span> S&amp;P · <span class="neg">−35.6%</span> Nasdaq</td></tr>
+          <tr><th scope="row">Decline length</th>
+            <td>Panic weeks; depression 65 months (NBER record)</td>
+            <td>~3 years of failures</td>
+            <td>22 months, staged (Mar &amp; Oct legs)</td>
+            <td>34 months</td>
+            <td>12.7 months</td>
+            <td>6.5 months</td>
+            <td>18 months</td>
+            <td>21 months</td>
+            <td>3.3 months (core damage in 4 days)</td>
+            <td>31 months</td>
+            <td>17 months</td>
+            <td>23 trading days — fastest ≥30% ever</td>
+            <td>9.3 months</td></tr>
+          <tr><th scope="row">Months before — price</th>
+            <td>5-yr boom: 33,000 rail miles laid; Vienna crashed May 1873, U.S. shrugged for 4 months</td>
+            <td>Mileage &amp; debt still growing into 1893; gold reserve sliding below $100M all 1892</td>
+            <td>Already <strong>−25%</strong> by Sep (Mar “rich man’s panic” first leg); money rates spiking a year</td>
+            <td><strong>+27%</strong> Jan–Sep 1929, +90% over two years; final high on narrowing leadership</td>
+            <td>1935–36 rally +80%; peak on rising commodity prices</td>
+            <td>1961 <strong>+27%</strong>, “-tronics” IPO mania, S&amp;P P/E ~22 — record</td>
+            <td>Conglomerate &amp; go-go fund mania 1967–68; speculative small caps led</td>
+            <td>Jan top on <strong>narrowest leadership of era</strong> — Nifty Fifty at 40–90× while median stock already fell through 1972</td>
+            <td><strong>+39% YTD</strong> at the Aug peak; rates rising all year (10Y 7.2%→10.2%); −10.4% the three days before Black Monday</td>
+            <td>Nasdaq <strong>+86% in 1999</strong>, +24% more in 10 weeks; record IPO pops; CAPE 44 — all-time high</td>
+            <td>Marginal new high Oct 2007 <strong>after</strong> credit froze (Aug 9); financials topped Feb 2007; housing down since 2006</td>
+            <td>All-time high Feb 19 <strong>with the epidemic already public</strong> (Wuhan locked down Jan 23)</td>
+            <td>2021 +27% with breadth narrowing; speculative tier (ARKK, SPACs, memes) topped <strong>Feb 2021 — 11 months before the index</strong></td></tr>
+          <tr><th scope="row">Volume signature</th>
+            <td>NYSE <strong>closed 10 days</strong> (Sep 20–30, 1873)</td>
+            <td>Failure-driven liquidation waves</td>
+            <td>Call money touched <strong>125%</strong>; trust runs, not exchange records</td>
+            <td>Black Thursday 12.9M shs; Black Tuesday <strong>16.4M</strong> — record stood ~39 yrs</td>
+            <td>Thin — participation never returned after 1932</td>
+            <td>May 29, 1962: heaviest volume since 1929</td>
+            <td>Back-office “paper crisis” 1968 — volume broke Wall St. settlement, exchanges closed Wednesdays</td>
+            <td>Volume shrank through the bear — attrition, not climax</td>
+            <td>Oct 19: <strong>604M shares</strong> — double the prior record; tape ran hours late</td>
+            <td>Record Nasdaq volume Q1 2000 — retail day-trading era peak</td>
+            <td>Record 11.5B consolidated shares Oct 10, 2008; VIX 89 intraday</td>
+            <td>4 circuit-breaker halts in 8 sessions (Mar 9/12/16/18); VIX close 82.69</td>
+            <td>Meme/option volume peaked with the spec tier (early 2021), fading into the index top</td></tr>
+          <tr><th scope="row">Proximate trigger</th>
+            <td><strong>Jay Cooke &amp; Co. fails</strong> Sep 18, 1873 — NP bonds unsellable</td>
+            <td><strong>Philadelphia &amp; Reading fails</strong> Feb 20, 1893; gold-reserve scare</td>
+            <td>Failed United Copper corner (Oct 16) → run on <strong>Knickerbocker Trust</strong> (Oct 22)</td>
+            <td>No single event: Hatry collapse (London, Sep 20), margin-call cascade Oct 24–29</td>
+            <td><strong>Fed doubles reserve requirements</strong> 1936–37 + fiscal contraction</td>
+            <td>No external event — valuation break; JFK–U.S. Steel clash Apr 10 accelerated it</td>
+            <td>1969 credit crunch; then <strong>Penn Central fails</strong> Jun 21, 1970 → commercial-paper crisis</td>
+            <td>Bear began Jan; <strong>OPEC embargo Oct 17, 1973</strong> (oil $3→$12) broke it open</td>
+            <td><strong>Portfolio-insurance forced selling</strong> (~$60–90B); Baker dollar comments that weekend; no fundamental news</td>
+            <td>No single event: Mar 2000 — MSFT antitrust ruling, Barron’s cash-burn cover, IPO window shut</td>
+            <td>Sequence: New Century → BNP freeze (Aug 07) → Bear Stearns (Mar 08) → <strong>Lehman Sep 15, 2008</strong> → AIG, money funds break the buck</td>
+            <td><strong>Pandemic</strong> + Saudi–Russia oil war (Mar 8)</td>
+            <td><strong>Inflation 9.1% + fastest Fed hiking since 1980</strong> (0→4.25% in 9 mo); Ukraine invasion Feb 24</td></tr>
+          <tr><th scope="row">Underlying causes</th>
+            <td>Rail overbuild on bonded debt; European credit contraction; silver demonetized (“Crime of ’73”)</td>
+            <td>Decade of overbuild; watered capital; fixed charges unpayable at any competitive rate</td>
+            <td>No central bank; trust companies levered outside clearing-house rules; 1906 SF earthquake drained gold</td>
+            <td>Leverage pyramid (broker loans $8.5B, investment trusts); Fed at 6%; recession began Aug 1929 — <em>before</em> the crash</td>
+            <td>Premature tightening into a fragile recovery — the textbook policy error</td>
+            <td>Valuation excess alone — the rare “clean” re-rating</td>
+            <td>Vietnam + Great Society deficits → inflation → tight money; conglomerate accounting games</td>
+            <td>Bretton Woods collapse, two dollar devaluations, CPI 3.4%→12.3%, Watergate</td>
+            <td>Rates up 300bp in 9 months, twin deficits, crowded mechanical strategy sold into its own delta</td>
+            <td>Capex bubble (telecom ~$2T lost; &lt;5% of fiber lit); profitless-growth valuations; Fed at 6.5%</td>
+            <td>Housing/credit bubble; securitization chain (ABX, CDOs); bank leverage 30:1+; regulatory failure</td>
+            <td>Exogenous shock into record-long expansion; Treasury basis-trade unwind amplified it</td>
+            <td>Pandemic stimulus (~$5T) + supply chains → inflation; duration crash hit bonds AND stocks (worst 60/40 since 1937)</td></tr>
+          <tr><th scope="row">Warnings visible before</th>
+            <td>Cooke’s bond placements failing for months; Vienna crash 4 months prior</td>
+            <td>Receiverships rising 1892; gold outflows public monthly</td>
+            <td>Bank of England restricted U.S. finance bills 1906; rate stress all 1907</td>
+            <td>Curve inverted 1928; broker loans parabolic and published weekly; Babson warning Sep 5; rails never confirmed the final high</td>
+            <td>Gold sterilization announced; reserve-requirement doublings pre-announced</td>
+            <td>Record P/E; IPO froth; margin rule tightened 1961</td>
+            <td>Curve inverted Dec 1968; A/D line peaked early 1968; go-go funds closing to new money</td>
+            <td>Curve inverted Jun 1973; breadth negative through all of 1972; CPI accelerating for a year</td>
+            <td>10Y yield +300bp; dollar-accord strain public; record specialist shorts; Oct 14–16 −10% warning leg</td>
+            <td>Curve inverted Feb 2000; NYSE A/D line had peaked Apr 1998 — two-year divergence; insider selling records; margin debt record Mar 2000</td>
+            <td>Curve inverted 2006; housing rolling since ’05–06; credit spreads widening from Jun 07; financials −15% before index peak</td>
+            <td>Curve inverted Aug 2019 (recession signal, cause exogenous); epidemic public 4 weeks pre-peak</td>
+            <td>CAPE ~38; margin debt record Oct 2021 ($935B); spec tier −50% before index peak; Fed pivot telegraphed Nov 2021</td></tr>
+          <tr><th scope="row">Inflation (CPI)</th>
+            <td>Secular deflation — prices fell ~20% across the decade (post-greenback contraction)</td>
+            <td>Deflation ≈−2 to −4%/yr; falling prices made fixed rail debt unpayable</td>
+            <td>+4% (1907) → −2% (1908)</td>
+            <td>~0% at the peak → <strong>−8.9% (’31), −10.3% (’32)</strong>; cumulative ≈−27%</td>
+            <td>+3.6% (’37) → −2.1% (’38)</td>
+            <td>+1.2% — quiescent</td>
+            <td>1.6% (’65) → 5.5% (’69) → 5.9% (’70)</td>
+            <td>3.4% (’72) → 6.2% (’73) → <strong>11.0% (’74)</strong>, peak 12.3%</td>
+            <td>1.1% (’86) → 4.4% (late ’87) — reflation scare drove the rate rise</td>
+            <td>3.4% (2000) — contained throughout</td>
+            <td>4.1% (’07); oil $147 Jul ’08 → 5.6% headline → <strong>−0.4% (’09)</strong></td>
+            <td>1.4% → 0.1% (May ’20) — disinflationary shock; the stimulus seeded 2021</td>
+            <td>7.0% (Dec ’21) → <strong>9.1% (Jun ’22)</strong> — 40-year high → 6.5% (Dec ’22)</td></tr>
+          <tr><th scope="row">Bonds &amp; rates</th>
+            <td>Rail bonds defaulted en masse; call money spiked; governments held</td>
+            <td>Rail bonds in default; Treasury gold crisis — Morgan syndicate bond rescue 1895</td>
+            <td>No Fed. Call money touched <strong>125%</strong>; clearing-house scrip substituted for cash</td>
+            <td>Long Treasuries rallied (flight to quality); Baa corporate yields 5.9% → <strong>11%+</strong> by ’32 — credit destroyed</td>
+            <td>Yields ~2.7%, stable — bonds fine</td>
+            <td>10Y ~4%, steady; mild bond rally</td>
+            <td>10Y 6% → 7.9%; bonds fell <strong>with</strong> stocks until the Penn Central rescue, then rallied</td>
+            <td>10Y 6.4% → 8%+, Fed funds 13% (Jul ’74) — deeply negative real returns; <strong>no hedge</strong></td>
+            <td>The cause and the cure: 10Y 7.2%→10.2% pre-crash, collapsed on Black Monday — bonds rallied hard</td>
+            <td>10Y 6.8% → 3.6%; Fed 6.5% → 1.25% — Treasuries hedged perfectly</td>
+            <td>10Y 5.3% → 2.1%; Fed 5.25% → 0; HY spreads ≈2,000bp — Treasuries the great hedge, credit crushed</td>
+            <td>10Y 1.9% → <strong>0.31%</strong> record low; Treasury market briefly seized (basis unwind) until unlimited QE</td>
+            <td><strong>The anomaly:</strong> 10Y 1.5% → 4.25%; long Treasuries −30%+ — worst bond year on record; nothing hedged</td></tr>
+          <tr><th scope="row">Valuation at peak</th>
+            <td>— (no index; rail interest coverage collapsing)</td>
+            <td>— (fixed charges exceeded earnings across the industry)</td>
+            <td>CAPE ≈20</td>
+            <td>CAPE <strong>32.6</strong> — record to date; div yield 2.9% vs call money 8%+</td>
+            <td>CAPE ≈22</td>
+            <td>CAPE ≈22; trailing P/E 22 — postwar record</td>
+            <td>CAPE ≈22–24</td>
+            <td>CAPE ≈18.7 headline — but Nifty Fifty at 40–90×</td>
+            <td>CAPE ≈18; trailing P/E ~21 after the +39% sprint</td>
+            <td>CAPE <strong>44.2 — all-time record</strong>; S&amp;P yield 1.1%; Nasdaq P/E &gt;100</td>
+            <td>CAPE 27.3; banks “cheap” at 10× on peak, fictitious earnings</td>
+            <td>CAPE ≈31 at the Feb top</td>
+            <td>CAPE <strong>38.6</strong> — second-highest ever, after 2000 only</td></tr>
+          <tr><th scope="row">Recession?</th>
+            <td>Yes — 65 months, longest NBER contraction ever</td>
+            <td>Yes — double-dip 1893–97; unemployment ~18%</td>
+            <td>Yes — sharp, 13 months</td>
+            <td>Great Depression: GDP −26%, unemployment 25%, 9,000+ bank failures</td>
+            <td>Yes — industrial production −32%</td>
+            <td><strong>No</strong></td>
+            <td>Yes — mild (Dec 69–Nov 70)</td>
+            <td>Yes — Nov 73–Mar 75, severe</td>
+            <td><strong>No</strong> — crash without recession</td>
+            <td>Yes — mild (Mar–Nov 2001)</td>
+            <td>Yes — Dec 07–Jun 09, worst since 1930s</td>
+            <td>Yes — 2 months, deepest &amp; shortest ever</td>
+            <td><strong>No</strong> (through 2024)</td></tr>
+          <tr><th scope="row">Time to reclaim peak</th>
+            <td>Boom resumes 1879–81 (≈6 y)</td>
+            <td>≈4 y — 1897 reorganizations + gold inflows</td>
+            <td>≈2 y to near peak (1909); durably above by 1915–16</td>
+            <td><strong>25.2 years</strong> — Nov 23, 1954 (real: ~1958)</td>
+            <td>8.7 y — 1945, under wartime economy</td>
+            <td>1.8 y — Sep 1963</td>
+            <td>3.3 y — Mar 1972</td>
+            <td>7.5 y nominal (Jul 1980); <strong>real recovery mid-1980s+</strong></td>
+            <td>1.9 y — Jul 1989</td>
+            <td>S&amp;P 7.2 y (touched May 2007, durable 2013); <strong>Nasdaq 15.1 y</strong> (Apr 23, 2015)</td>
+            <td>5.5 y — Mar 28, 2013</td>
+            <td><strong>0.5 y</strong> — Aug 18, 2020, fastest ever</td>
+            <td>2.0 y — Jan 19, 2024</td></tr>
+          <tr><th scope="row">Preceding bull</th>
+            <td>Post-Civil-War rail boom, 1865–73 (~8 y)</td>
+            <td>1880s buildout — biggest construction decade ever</td>
+            <td>1904–06, ≈+65%</td>
+            <td>Aug 1921–Sep 1929: 8.1 y, Dow <strong>+497%</strong></td>
+            <td>1932–37: +372% off the 1932 low</td>
+            <td>Secular 1949–61: S&amp;P +436%</td>
+            <td>1962–68 (+80%), speculative finish</td>
+            <td>May 1970–Jan 1973: 2.6 y, +74%</td>
+            <td>Aug 1982–Aug 1987: 5.0 y, +229%</td>
+            <td>Oct 1990–Mar 2000: 9.5 y, <strong>+417%</strong> — longest at the time</td>
+            <td>Oct 2002–Oct 2007: 5.0 y, +101%</td>
+            <td>Mar 2009–Feb 2020: <strong>131 months, +401% — longest ever</strong></td>
+            <td>Mar 2020–Jan 2022: 21 months, +114%</td></tr>
+          <tr><th scope="row">Structural aftermath</th>
+            <td>Receivership wave; clearing-house scrip; no central bank until…</td>
+            <td>Morganization; six-system consolidation; gold standard affirmed 1900</td>
+            <td><strong>Federal Reserve Act 1913</strong> (via Aldrich–Vreeland 1908)</td>
+            <td>Glass–Steagall ’33, Securities Acts ’33–34, <strong>SEC</strong>, FDIC, margin Reg T</td>
+            <td>Doctrine: never tighten into a fragile recovery — cited by every Fed since</td>
+            <td>SEC Special Study of Markets</td>
+            <td>SIPC (1970); Fed backstops commercial paper — precedent set</td>
+            <td>ERISA ’74; May Day ’75 commission deregulation; first index funds</td>
+            <td><strong>Circuit breakers</strong> (1988); Brady Report; Greenspan liquidity pledge — the “Fed put” born</td>
+            <td>Reg FD 2000, <strong>Sarbanes–Oxley 2002</strong>; analyst-conflict settlements</td>
+            <td>TARP, ZIRP for 7 years, QE 1–3, <strong>Dodd–Frank 2010</strong>, Basel III</td>
+            <td>Unlimited-QE precedent; $5T fiscal; retail-options era begins</td>
+            <td>Rate shock aftershock: SVB/regional-bank failures Mar 2023 → BTFP facility</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Signals that recurred</h2>
+    <p class="sub">how often each warning appeared before the break · counting the 10 index-era crises (1907–2022)</p>
+    <table class="plain">
+      <thead><tr><th>Signal</th><th>Preceded</th><th>Exceptions</th></tr></thead>
+      <tbody>
+        <tr><td>Monetary tightening into the peak</td><td>1929, 1937, 1969, 1973, 1987, 2000, 2007, 2022 — <strong>8 of 10</strong></td><td>1962 (valuation only), 2020 (exogenous)</td></tr>
+        <tr><td>Inverted yield curve before the peak</td><td>1929 (’28), 1969 (’68), 1973, 2000 (Feb), 2007 (’06), 2020 (Aug ’19) — <strong>6 of 10</strong></td><td>1937, 1962, 1987; 2022 inverted after the peak (Jul ’22)</td></tr>
+        <tr><td>Record margin/leverage at or near the top</td><td>1929 (broker loans $8.5B), 2000 (Mar record), 2007, 2021 ($935B, Oct)</td><td>Data thin before 1929</td></tr>
+        <tr><td>Breadth divergence / narrowing leadership</td><td>1929 (rails never confirmed), 1969 (A/D peaked early ’68), 1972–73 (Nifty two-tier), 2000 (A/D peaked Apr ’98), 2007 (financials first), 2021–22 (spec tier −50% first)</td><td>1987, 2020 — broad right into the top</td></tr>
+        <tr><td>Speculative class peaked before the index</td><td>Investment trusts ’29 · go-go funds ’68 · Nifty premiums ’72 · dot-coms with no revenue (Q1 ’00 IPOs) · ARKK/SPACs/memes Feb ’21</td><td>—</td></tr>
+        <tr><td>Index at/near all-time high weeks before the break</td><td>1929, 1937, 1962, 1973, 1987, 2000, 2007, 2020, 2022 — <strong>9 of 10</strong></td><td>1907 (already −25% when the panic hit)</td></tr>
+        <tr><td>Record volume on the crash days themselves</td><td>1929 (16.4M), 1962 (May 29), 1987 (604M), 2008 (11.5B), 2020 (halts)</td><td>1973–74 — attrition bear, volume shrank instead</td></tr>
+        <tr><td>Credit stress visible before equity peak</td><td>1873 (bond placements failing), 1907 (money rates), 2007 (BNP freeze Aug 07, spreads from Jun)</td><td>1987, 2020 — equity broke first</td></tr>
+        <tr><td>Treasuries hedged the equity crash</td><td>1929–32, 1987, 2000–02, 2007–09, 2020 — the deflationary / demand-shock busts</td><td><strong>1969–70, 1973–74, 2022 — the inflationary bears: bonds fell too, 60/40 failed</strong></td></tr>
+      </tbody>
+    </table>
+    <aside class="note">Two crash archetypes separate cleanly: <strong>recession bears</strong> (1929, 1973, 2007 — slow declines, deep, slow recoveries) and <strong>event/technical crashes without recession</strong> (1962, 1987, 2022 — faster, shallower, recovered in ~2 years). 2020 is its own category: exogenous shock, policy-reversed in weeks.</aside>
+  </section>
+
+  <section>
+    <h2>Base rates</h2>
+    <p class="sub">S&amp;P 500, post-1945 convention (−20% = bear)</p>
+    <div class="statgrid">
+      <div class="stat"><p class="k">Average bull market</p><p class="v">≈5 years</p><p class="d">gain ≈ +150–180%; longest 131 months (2009–20), shortest 21 (2020–22)</p></div>
+      <div class="stat"><p class="k">Average bear market</p><p class="v">≈13 months</p><p class="d">decline ≈ −33%; deepest −57% (2007–09), shortest 33 days (2020)</p></div>
+      <div class="stat"><p class="k">Median time to reclaim peak</p><p class="v">≈2 years</p><p class="d">recession bears run 5–25 years; non-recession bears ~1–2</p></div>
+      <div class="stat"><p class="k">Bears with recession</p><p class="v">7 of 10</p><p class="d">index era; the three without (1962, 1987, 2022) recovered fastest</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Near-misses &amp; structure events</h2>
+    <p class="sub">not full bears — included for completeness</p>
+    <table class="plain">
+      <thead><tr><th>Event</th><th>Damage</th><th>Cause</th></tr></thead>
+      <tbody>
+        <tr><td>May 6, 2010 — Flash Crash</td><td>Dow −9% intraday, mostly recovered same day</td><td>Large E-mini sell algorithm + HFT liquidity withdrawal</td></tr>
+        <tr><td>Aug–Oct 2011</td><td>S&amp;P −19.4%</td><td>U.S. debt-ceiling standoff / downgrade; eurozone crisis</td></tr>
+        <tr><td>Aug 2015 / Jan 2016</td><td>−12% and −13% legs</td><td>China devaluation; oil collapse</td></tr>
+        <tr><td>Feb 5, 2018 — “Volmageddon”</td><td>VIX doubled in a day; XIV (short-vol ETN) wiped out −96%</td><td>Crowded short-volatility structure</td></tr>
+        <tr><td>Q4 2018</td><td>S&amp;P −19.8% (Dec 24 low)</td><td>Fed hiking + QT + trade war; Powell pivoted Jan 2019</td></tr>
+        <tr><td>Mar 2023</td><td>Regional banks; SIVB −60% in a day, then seized</td><td>Duration losses from the 2022 rate shock — the aftershock</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    Conventions: Dow Jones Industrial Average used before 1957, S&amp;P 500 after; Nasdaq Composite where noted. “Time to reclaim peak” is nominal price, dividends excluded; real (inflation-adjusted) recoveries noted where materially longer. Pre-1907 entries predate broad indices — figures are typical railroad-equity outcomes and marked approximate (≈). Dates and levels per the standard historical record (NBER, NYSE, S&amp;P Dow Jones); minor sourcing variations of ±1 day / ±0.5% exist across references.
+  </footer>
+</div>
+
+<title>Iron &amp; Paper — The Railroad Boom &amp; Bust Timeline</title>
+<style>
+  :root {
+    --bg: #EEF0EC; --surface: #E6EAE2; --ink: #20261F; --ink2: #4A5346;
+    --muted: #6E7767; --rule: #C9CEC2;
+    --brass: #96741F; --oxide: #96412F; --steel: #3968A6;
+    --note-bg: #E9E6D8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131714; --surface: #1C211D; --ink: #E5E7DE; --ink2: #B4BAA9;
+      --muted: #8A927F; --rule: #333B32;
+      --brass: #B08A2E; --oxide: #C96F55; --steel: #5A8ECB;
+      --note-bg: #201F17;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #131714; --surface: #1C211D; --ink: #E5E7DE; --ink2: #B4BAA9;
+    --muted: #8A927F; --rule: #333B32;
+    --brass: #B08A2E; --oxide: #C96F55; --steel: #5A8ECB;
+    --note-bg: #201F17;
+  }
+  :root[data-theme="light"] {
+    --bg: #EEF0EC; --surface: #E6EAE2; --ink: #20261F; --ink2: #4A5346;
+    --muted: #6E7767; --rule: #C9CEC2;
+    --brass: #96741F; --oxide: #96412F; --steel: #3968A6;
+    --note-bg: #E9E6D8;
+  }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: Charter, "Bitstream Charter", Georgia, "Times New Roman", serif;
+    line-height: 1.55; margin: 0; padding: 0 20px;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 56px 0 80px; }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--brass); margin: 0 0 14px;
+  }
+  h1 {
+    font-family: Didot, "Bodoni MT", "Bodoni 72", "Playfair Display", "Times New Roman", serif;
+    font-size: clamp(34px, 6vw, 52px); font-weight: 500; line-height: 1.08;
+    margin: 0 0 12px; text-wrap: balance; letter-spacing: 0.005em;
+  }
+  .dek { font-size: 17px; color: var(--ink2); max-width: 62ch; margin: 0 0 8px; }
+  .dek em { color: var(--ink); }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 26px 0 0; }
+  .legend span {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink2);
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .d-brass { background: var(--brass); } .d-oxide { background: var(--oxide); }
+  .d-steel { background: var(--steel); } .d-plain { background: var(--muted); }
+
+  figure.chart { margin: 44px 0 8px; padding: 22px 18px 14px; background: var(--surface); border: 1px solid var(--rule); }
+  figure.chart figcaption {
+    font-size: 14px; color: var(--ink2); margin-top: 10px; max-width: 66ch;
+  }
+  figure.chart .chart-title {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink2); margin: 0 0 12px;
+  }
+  .chartbox { position: relative; }
+  .chartbox svg { display: block; width: 100%; height: auto; }
+  #tip {
+    position: absolute; pointer-events: none; display: none;
+    background: var(--ink); color: var(--bg); font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; padding: 4px 8px; border-radius: 3px; white-space: nowrap; transform: translate(-50%, -130%);
+  }
+
+  section.era { margin-top: 64px; }
+  .era-head { border-top: 2px solid var(--ink); padding-top: 14px; }
+  .era-head .num {
+    font-family: Didot, "Bodoni MT", "Bodoni 72", "Playfair Display", serif;
+    font-size: 15px; letter-spacing: 0.22em; color: var(--brass);
+  }
+  .era-head h2 {
+    font-family: Didot, "Bodoni MT", "Bodoni 72", "Playfair Display", serif;
+    font-size: clamp(24px, 4vw, 31px); font-weight: 500; margin: 4px 0 4px; text-wrap: balance;
+  }
+  .era-head .span {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; color: var(--muted); letter-spacing: 0.08em;
+  }
+  .era-intro { color: var(--ink2); font-size: 15.5px; margin: 10px 0 0; max-width: 64ch; }
+
+  ol.events { list-style: none; margin: 26px 0 0; padding: 0; }
+  ol.events li.ev {
+    display: grid; grid-template-columns: 84px 22px 1fr; gap: 0 10px;
+    position: relative; padding-bottom: 26px;
+  }
+  ol.events li.ev:last-child { padding-bottom: 6px; }
+  .ev .when {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12.5px; color: var(--ink2); padding-top: 3px; text-align: right;
+  }
+  .ev .rail { position: relative; }
+  .ev .rail::before {
+    content: ""; position: absolute; left: 50%; top: 22px; bottom: -4px;
+    width: 2px; margin-left: -1px; background: var(--rule);
+  }
+  .ev:last-child .rail::before { display: none; }
+  .ev .node {
+    position: absolute; left: 50%; top: 6px; width: 11px; height: 11px;
+    margin-left: -5.5px; border-radius: 50%; background: var(--muted);
+    box-shadow: 0 0 0 3px var(--bg);
+  }
+  .ev.boom .node { background: var(--brass); }
+  .ev.bust .node { background: var(--oxide); }
+  .ev.reorg .node { background: var(--steel); }
+  .ev h3 { font-size: 16.5px; font-weight: 700; margin: 0 0 3px; font-family: inherit; }
+  .ev p { margin: 0; font-size: 15px; color: var(--ink2); max-width: 62ch; }
+  .ev p strong { color: var(--ink); }
+  .tick {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10.5px; letter-spacing: 0.08em; padding: 1.5px 7px;
+    border: 1px solid var(--rule); border-radius: 999px; color: var(--ink2);
+    white-space: nowrap; vertical-align: 2px; margin-left: 6px;
+  }
+
+  aside.ledger {
+    margin: 30px 0 0 0; padding: 16px 20px 17px; background: var(--note-bg);
+    border-left: 3px solid var(--brass);
+  }
+  aside.ledger .lab {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--brass); margin: 0 0 7px;
+  }
+  aside.ledger p { margin: 0; font-style: italic; font-size: 15px; color: var(--ink); max-width: 62ch; }
+
+  .coda { margin-top: 72px; border-top: 2px solid var(--ink); padding-top: 20px; }
+  .coda h2 {
+    font-family: Didot, "Bodoni MT", "Bodoni 72", "Playfair Display", serif;
+    font-size: clamp(22px, 4vw, 28px); font-weight: 500; margin: 4px 0 12px;
+  }
+  .coda p { font-size: 15.5px; color: var(--ink2); max-width: 66ch; }
+  .coda p strong { color: var(--ink); }
+  footer {
+    margin-top: 48px; padding-top: 14px; border-top: 1px solid var(--rule);
+    font-size: 12.5px; color: var(--muted); font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (max-width: 560px) {
+    ol.events li.ev { grid-template-columns: 64px 18px 1fr; }
+    .ev .when { font-size: 11px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">A timeline, with the insider ledger</p>
+  <h1>Iron &amp; Paper</h1>
+  <p class="dek">The railroad boom and its supposed bust, 1825–2026. At each stage, the <em>insider ledger</em> records who held the information edge and how the public’s capital was taken — because the pattern of the gap matters more than any single panic.</p>
+  <div class="legend">
+    <span><i class="dot d-brass"></i>Boom / mania</span>
+    <span><i class="dot d-oxide"></i>Panic / wipeout</span>
+    <span><i class="dot d-steel"></i>Reorganization</span>
+    <span><i class="dot d-plain"></i>Context</span>
+  </div>
+
+  <figure class="chart">
+    <p class="chart-title">U.S. rail network, route-miles (approx.) · 1830 – 2026</p>
+    <div class="chartbox" id="chartbox">
+      <svg viewBox="0 0 720 224" role="img" aria-label="Line chart of United States railroad route mileage from 1830 to 2026, rising to a 254,000-mile peak in 1916 and declining to roughly 140,000 miles today. Panic years 1873 and 1893 are marked; mileage kept growing through both.">
+        <g stroke="var(--rule)" stroke-width="1">
+          <line x1="20" y1="190" x2="700" y2="190"></line>
+          <line x1="20" y1="111" x2="700" y2="111" opacity="0.5"></line>
+          <line x1="20" y1="33"  x2="700" y2="33"  opacity="0.5"></line>
+        </g>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="10" fill="var(--muted)">
+          <text x="14" y="194" text-anchor="end">0</text>
+          <text x="14" y="115" text-anchor="end">128k</text>
+          <text x="14" y="37"  text-anchor="end">254k</text>
+          <text x="36"  y="208" text-anchor="middle">1830</text>
+          <text x="240" y="208" text-anchor="middle">1890</text>
+          <text x="443" y="208" text-anchor="middle">1950</text>
+          <text x="680" y="208" text-anchor="middle">2020</text>
+        </g>
+        <g stroke="var(--oxide)" stroke-width="1" stroke-dasharray="3 3" opacity="0.8">
+          <line x1="182" y1="33" x2="182" y2="190"></line>
+          <line x1="250" y1="33" x2="250" y2="190"></line>
+        </g>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="10" fill="var(--oxide)">
+          <text x="178" y="26" text-anchor="middle">1873</text>
+          <text x="254" y="26" text-anchor="middle">1893</text>
+        </g>
+        <polyline fill="none" stroke="var(--ink)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+          points="37,190 71,188.3 105,184.5 138,171.2 172,157.4 206,132.6 240,89.3 274,71.2 328,33.7 375,36.8 443,52.2 511,63.8 544,89.1 612,101.4 680,103.8 700,103.8"></polyline>
+        <circle cx="328" cy="33.7" r="4.5" fill="var(--brass)" stroke="var(--bg)" stroke-width="2"></circle>
+        <circle cx="700" cy="103.8" r="4.5" fill="var(--steel)" stroke="var(--bg)" stroke-width="2"></circle>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="11" fill="var(--ink)">
+          <text x="336" y="30">1916 peak · 254k mi</text>
+          <text x="696" y="96" text-anchor="end">today · ~140k mi</text>
+        </g>
+      </svg>
+      <div id="tip"></div>
+    </div>
+    <figcaption>The thesis in one line: mileage kept growing straight through the panics of 1873 and 1893 — the busts were financial, not operational. Nearly half the peak network was later abandoned; the surviving half became a monopoly cash machine.</figcaption>
+  </figure>
+
+  <!-- ERA I -->
+  <section class="era">
+    <div class="era-head">
+      <span class="num">I</span>
+      <h2>The British Prologue</h2>
+      <span class="span">1825 – 1850 · the template bubble</span>
+      <p class="era-intro">Everything that happens in America happens in Britain first, in miniature and twenty years early: the transformative technology, the parliamentary land rush, the retail mania, the fraud at the center, the wipeout.</p>
+    </div>
+    <ol class="events">
+      <li class="ev"><span class="when">1825</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Stockton &amp; Darlington opens</h3><p>The first public steam railway. Within five years the Liverpool &amp; Manchester proves intercity rail works — and pays.</p></div></li>
+      <li class="ev boom"><span class="when">1845–46</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Railway Mania peaks</h3><p>Parliament passes <strong>272 railway acts in 1846 alone</strong>; railway investment reaches roughly 7% of national income. Shares double. Clergy, widows, and the Brontë sisters subscribe.</p></div></li>
+      <li class="ev bust"><span class="when">1847–49</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Collapse — and Hudson exposed</h3><p>Railway shares lose half to two-thirds. George Hudson, the “Railway King” controlling a third of English mileage, is revealed to have paid dividends out of capital — the original promoter’s Ponzi.</p></div></li>
+    </ol>
+    <aside class="ledger"><p class="lab">Insider ledger</p>
+      <p>Hudson held the books, the board seats, and the parliamentary committees. The public saw dividends; only insiders knew they were paid from new subscriptions. The gap was accounting access — and it was total.</p></aside>
+  </section>
+
+  <!-- ERA II -->
+  <section class="era">
+    <div class="era-head">
+      <span class="num">II</span>
+      <h2>Antebellum America</h2>
+      <span class="span">1827 – 1861 · charters that still trade</span>
+      <p class="era-intro">The American roads begin as state-chartered civic projects. Two charters from this era survive inside tickers on today’s tape.</p>
+    </div>
+    <ol class="events">
+      <li class="ev boom"><span class="when">1827</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Baltimore &amp; Ohio chartered <span class="tick">→ CSX</span></h3><p>America’s first common-carrier railroad. Its lineage runs unbroken through the Chessie System into CSX.</p></div></li>
+      <li class="ev boom"><span class="when">1850</span><span class="rail"><span class="node"></span></span>
+        <div><h3>First federal land grant</h3><p>The Illinois Central receives public land to finance construction — the model that will eventually hand the industry <strong>130+ million federal acres</strong>.</p></div></li>
+      <li class="ev bust"><span class="when">1857</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Panic of 1857</h3><p>Ohio Life Insurance &amp; Trust fails, stuffed with western railroad paper. First proof that rail securities can take the whole banking system down with them.</p></div></li>
+      <li class="ev"><span class="when">1859</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Atchison, Topeka &amp; Santa Fe chartered <span class="tick">→ BNSF</span></h3><p>Survives to become half of BNSF — publicly traded until Berkshire took it private in 2009.</p></div></li>
+    </ol>
+    <aside class="ledger"><p class="lab">Insider ledger</p>
+      <p>The edge here was legislative: knowing which route a charter or land grant would bless before it passed. Town-site speculation along rumored alignments was the era’s insider trade.</p></aside>
+  </section>
+
+  <!-- ERA III -->
+  <section class="era">
+    <div class="era-head">
+      <span class="num">III</span>
+      <h2>The Transcontinental Era</h2>
+      <span class="span">1862 – 1873 · glory, graft, and the first great crash</span>
+      <p class="era-intro">The Civil War Congress underwrites a continental railroad with loans and land. The construction is heroic; the financing is a crime scene.</p>
+    </div>
+    <ol class="events">
+      <li class="ev boom"><span class="when">1862</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Pacific Railway Act <span class="tick">→ UNP</span></h3><p>Lincoln signs; the Union Pacific is chartered. Bonds and land grants flow — much of the paper sold to European savers.</p></div></li>
+      <li class="ev boom"><span class="when">1868–72</span><span class="rail"><span class="node"></span></span>
+        <div><h3>The Erie War</h3><p>Drew, Fisk, and Gould literally print fresh Erie shares in a back room to defeat Vanderbilt’s takeover, then flee to New Jersey with the ledgers.</p></div></li>
+      <li class="ev boom"><span class="when">1869</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Golden Spike, Promontory Summit</h3><p>The continent is joined. In the five postwar years the industry lays <strong>33,000 miles of new track</strong>.</p></div></li>
+      <li class="ev bust"><span class="when">1872</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Crédit Mobilier exposed</h3><p>Union Pacific’s construction shell skimmed tens of millions; congressmen — including a future president — held its discounted stock while voting the subsidies.</p></div></li>
+      <li class="ev bust"><span class="when">Sep 1873</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Jay Cooke fails — Panic of 1873</h3><p>The financier of the Northern Pacific can no longer place railroad bonds. The NYSE closes for ten days; a <strong>65-month depression</strong> follows; dozens of roads default. The 1877 Great Railroad Strike grows from the wage cuts.</p></div></li>
+    </ol>
+    <aside class="ledger"><p class="lab">Insider ledger</p>
+      <p>Cooke’s partners knew the Northern Pacific bonds had stopped selling months before the public did. The Erie ring manufactured the very shares outsiders were buying. The construction-company skim meant insiders were paid from the capital account before a single fare was collected — the promoters’ profit was the <em>building</em>, not the operating.</p></aside>
+  </section>
+
+  <!-- ERA IV -->
+  <section class="era">
+    <div class="era-head">
+      <span class="num">IV</span>
+      <h2>The Great Overbuild</h2>
+      <span class="span">1879 – 1893 · capacity as a weapon</span>
+      <p class="era-intro">The biggest physical buildout in economic history — roughly 70,000 miles added in the 1880s. By the end, roads are built not to serve traffic but to threaten rivals into buying them.</p>
+    </div>
+    <ol class="events">
+      <li class="ev boom"><span class="when">1887</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Construction peaks · ~13,000 miles in one year</h3><p>Parallel “blackmail” lines proliferate — the West Shore exists largely to force Vanderbilt’s New York Central to absorb it. Rate wars destroy pricing on watered capital.</p></div></li>
+      <li class="ev"><span class="when">1883</span><span class="rail"><span class="node"></span></span>
+        <div><h3>The day of two noons</h3><p>The railroads impose national time zones on the country by private agreement. Standard gauge follows — 13,000 miles of Southern track regauged over two days in 1886.</p></div></li>
+      <li class="ev reorg"><span class="when">1887</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Interstate Commerce Commission</h3><p>The first federal regulatory agency, created for this industry alone. Wall Street itself — the analysts, the bond desks, the Dow (nine of its first eleven stocks were rails) — is largely railroad infrastructure.</p></div></li>
+    </ol>
+    <aside class="ledger"><p class="lab">Insider ledger</p>
+      <p>The visible tell outsiders ignored: miles-laid-per-year versus traffic. Supply was compounding faster than demand and everyone could count it — the data was published. The insiders’ real edge was knowing their own fixed charges were unpayable, and selling securities into the boom anyway.</p></aside>
+  </section>
+
+  <!-- ERA V -->
+  <section class="era">
+    <div class="era-head">
+      <span class="num">V</span>
+      <h2>The Great Shakeout</h2>
+      <span class="span">1893 – 1897 · a quarter of the system in receivership</span>
+      <p class="era-intro">Relative to the economy, a bigger financial extinction than 2008 — and the freight never stopped moving.</p>
+    </div>
+    <ol class="events">
+      <li class="ev bust"><span class="when">Feb 1893</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Philadelphia &amp; Reading fails — Panic of 1893</h3><p>Then Erie, Northern Pacific, Union Pacific, Santa Fe. By mid-decade <strong>150+ railroads, roughly a quarter of national mileage, sit in receivership</strong>. The Pullman Strike follows in 1894.</p></div></li>
+      <li class="ev reorg"><span class="when">1893–97</span><span class="rail"><span class="node"></span></span>
+        <div><h3>“Morganization”</h3><p>J.P. Morgan’s syndicates reorganize the wrecks: fixed charges slashed, old equity extinguished, voting trusts installed. Bondholders take haircuts; the public’s original capital is gone.</p></div></li>
+      <li class="ev reorg"><span class="when">1897</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Union Pacific sold at foreclosure <span class="tick">→ UNP</span></h3><p>The marquee name of the boom is bought out of bankruptcy and rebuilt by E.H. Harriman. Today’s UNP descends from this reorganized company — not from the 1860s shareholders.</p></div></li>
+    </ol>
+    <aside class="ledger"><p class="lab">Insider ledger</p>
+      <p>Morgan’s tables set the reorganization terms: who was diluted, who got the new senior paper, who bought the equity at the bottom. The insiders of the bust were not the insiders of the boom — the edge migrated from promotion to <em>restructuring</em>. Outsiders who’d held through were wiped precisely when the assets became good.</p></aside>
+  </section>
+
+  <!-- ERA VI -->
+  <section class="era">
+    <div class="era-head">
+      <span class="num">VI</span>
+      <h2>Consolidation &amp; the Cash Machine</h2>
+      <span class="span">1897 – 1916 · the fortunes are made after the wipeout</span>
+      <p class="era-intro">Consolidated from hundreds of warring roads into a handful of systems with rational pricing, the industry finally earns its capital back — for its new owners.</p>
+    </div>
+    <ol class="events">
+      <li class="ev boom"><span class="when">May 1901</span><span class="rail"><span class="node"></span></span>
+        <div><h3>The Northern Pacific corner</h3><p>Harriman versus Hill &amp; Morgan for control; NP touches <strong>$1,000 intraday</strong> as shorts are obliterated and the rest of the market crashes to fund margin calls.</p></div></li>
+      <li class="ev reorg"><span class="when">1904</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Northern Securities dissolved</h3><p>The Supreme Court breaks up the Hill–Morgan holding company — the first great antitrust strike. By ~1906, six groups control most U.S. mileage anyway.</p></div></li>
+      <li class="ev"><span class="when">1916</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Peak network · 254,037 route-miles</h3><p>The physical maximum. Nearly half of it will eventually be abandoned — capital genuinely incinerated, not merely transferred.</p></div></li>
+    </ol>
+    <aside class="ledger"><p class="lab">Insider ledger</p>
+      <p>Harriman took reorganized UP — bought from exhausted holders — and produced one of the era’s great compounding runs. After consolidation the edge stopped being informational and became <em>structural</em>: monopoly rights-of-way, visible to anyone. The gap closed; the returns stayed.</p></aside>
+  </section>
+
+  <!-- ERA VII -->
+  <section class="era">
+    <div class="era-head">
+      <span class="num">VII</span>
+      <h2>The Long Decline</h2>
+      <span class="span">1917 – 1979 · regulated into the ground</span>
+      <p class="era-intro">Trucks, cars, airlines, and a regulator that froze rates. Six decades of below-cost-of-capital returns end in the biggest bankruptcy in American history to that date.</p>
+    </div>
+    <ol class="events">
+      <li class="ev"><span class="when">1917–20</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Wartime nationalization</h3><p>The USRA runs the railroads for WWI — a preview of how tightly the ICC will bind them for fifty more years.</p></div></li>
+      <li class="ev bust"><span class="when">Jun 1970</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Penn Central fails</h3><p>The merged remains of the New York Central and the Pennsylvania — the two proudest names of the golden age — file the largest U.S. corporate bankruptcy to date.</p></div></li>
+      <li class="ev reorg"><span class="when">1976–80</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Conrail, then the Staggers Act</h3><p>Washington assembles Conrail from the northeastern wrecks, then deregulates pricing in 1980 — the hinge on which the entire modern industry turns.</p></div></li>
+    </ol>
+    <aside class="ledger"><p class="lab">Insider ledger</p>
+      <p>Penn Central’s management knew the cash was gone long before the paper said so — the commercial-paper holders of 1970 were the era’s bagholders. The lesson repeats: in a declining regulated industry, the reported numbers lag the insiders’ knowledge by quarters.</p></aside>
+  </section>
+
+  <!-- ERA VIII -->
+  <section class="era">
+    <div class="era-head">
+      <span class="num">VIII</span>
+      <h2>The Renaissance</h2>
+      <span class="span">1980 – today · the survivors compound</span>
+      <p class="era-intro">Deregulation plus consolidation down to a handful of Class I systems turns the 1800s infrastructure into some of the best-compounding equity of the modern market.</p>
+    </div>
+    <ol class="events">
+      <li class="ev reorg"><span class="when">1980–99</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Merger wave <span class="tick">CSX</span> <span class="tick">NSC</span></h3><p>The industry consolidates to a few Class I railroads; Conrail is privatized (1987) and split between CSX and Norfolk Southern (1999). Canadian National IPOs in 1995.</p></div></li>
+      <li class="ev boom"><span class="when">Nov 2009</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Berkshire buys BNSF · ~$44B</h3><p>Buffett takes the Santa Fe / Great Northern / Northern Pacific lineage private, calling it “an all-in wager on the economic future of the United States.”</p></div></li>
+      <li class="ev boom"><span class="when">2023</span><span class="rail"><span class="node"></span></span>
+        <div><h3>CPKC created <span class="tick">CPKC</span></h3><p>Canadian Pacific (chartered 1881 — the one major road that <strong>never</strong> went bankrupt) merges with Kansas City Southern: the first single network spanning Canada, the U.S., and Mexico.</p></div></li>
+      <li class="ev"><span class="when">2026</span><span class="rail"><span class="node"></span></span>
+        <div><h3>Still on the tape</h3><p><strong>UNP · CSX · NSC · CPKC · CNI</strong> — the surviving handful of a four-hundred-company Cambrian explosion, operating monopoly rights-of-way their dead competitors paid to grade.</p></div></li>
+    </ol>
+    <aside class="ledger"><p class="lab">Insider ledger</p>
+      <p>The modern edge is fully public: pricing power, operating ratios, rights-of-way — all in the filings. The information gap that defined the 1800s is gone here; what remains is the discipline to own boring monopolies through whole cycles. That part was never secret.</p></aside>
+  </section>
+
+  <div class="coda">
+    <h2>What the outsider could always see</h2>
+    <p>In every cycle on this line, the ruinous facts were public before the panic: miles laid per year versus traffic carried, fixed charges versus earnings, promoters selling paper while preaching the technology. The insiders’ true edges — Hudson’s books, Cooke’s unsold bonds, Morgan’s reorganization tables — were unclosable from outside. <strong>The closable gap was never the secret; it was the discipline to read supply, positioning, and issuance — and to remember that a correct technology thesis has never once protected the capital that financed its overbuild.</strong></p>
+    <p>Canals before railroads, railroads before fiber, fiber before whatever is being overbuilt now. The utility always survives. The question is only whose capital structure does.</p>
+  </div>
+
+  <footer>Dates and figures are approximate, compiled from standard histories of the period. Ticker lineages reflect merger and reorganization descent — not continuous shareholder ownership.</footer>
+</div>
+
+<script>
+(function(){
+  var pts = [
+    [1830,0.04,37,190],[1840,2.8,71,188.3],[1850,9,105,184.5],[1860,30.6,138,171.2],
+    [1870,52.9,172,157.4],[1880,93.2,206,132.6],[1890,163.6,240,89.3],[1900,193,274,71.2],
+    [1916,254,328,33.7],[1930,249,375,36.8],[1950,224,443,52.2],[1970,205,511,63.8],
+    [1980,164,544,89.1],[2000,144,612,101.4],[2020,140,680,103.8]
+  ];
+  var box = document.getElementById('chartbox');
+  var svg = box.querySelector('svg');
+  var tip = document.getElementById('tip');
+  svg.addEventListener('mousemove', function(e){
+    var r = svg.getBoundingClientRect();
+    var x = (e.clientX - r.left) / r.width * 720;
+    var best = pts[0], d = 1e9;
+    for (var i=0;i<pts.length;i++){ var dd = Math.abs(pts[i][2]-x); if (dd<d){d=dd;best=pts[i];} }
+    tip.style.display='block';
+    tip.style.left = (best[2]/720*r.width) + 'px';
+    tip.style.top  = (best[3]/224*r.height) + 'px';
+    tip.textContent = best[0] + ' · ' + (best[1]>=1 ? Math.round(best[1])+'k mi' : Math.round(best[1]*1000)+' mi');
+  });
+  svg.addEventListener('mouseleave', function(){ tip.style.display='none'; });
+})();
+</script>

@@ -65,3 +65,5 @@ vol_surface_tool/dist/
 api/.venv/
 **/__pycache__/
 *.pyc
+
+*.data/
