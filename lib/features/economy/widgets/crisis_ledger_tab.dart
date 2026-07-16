@@ -10,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../screens/crisis_history_screen.dart';
+
 // ─── Model ────────────────────────────────────────────────────────────────
 
 class CrisisSnapshot {
@@ -137,6 +139,22 @@ class CrisisLedgerTab extends ConsumerWidget {
               _TallyCard(s: s),
               const SizedBox(height: 8),
               const _AboutCard(),
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.history_edu_outlined),
+                  title: const Text('The Evidence — 13 crises, 1873–2022',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                      'Full case files: lead-ups, triggers, warnings, and '
+                      'which of their signals are firing today'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const CrisisHistoryScreen()),
+                  ),
+                ),
+              ),
               const SizedBox(height: 16),
               _SectionHeader('Now vs prior bubbles'),
               _BubbleGauge(
