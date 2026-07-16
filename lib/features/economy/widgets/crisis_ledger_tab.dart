@@ -80,6 +80,157 @@ final crisisChecklistProvider =
       .toList();
 });
 
+// ─── Prediction markets (Polymarket, snapshotted daily by crisis_pull) ────
+
+class PredictionMarket {
+  final DateTime obsDate;
+  final String eventSlug, eventTitle, question;
+  final double? yesProbability;
+  final double volumeUsd;
+
+  PredictionMarket.fromJson(Map<String, dynamic> j)
+      : obsDate = DateTime.parse(j['obs_date'] as String),
+        eventSlug = j['event_slug'] as String,
+        eventTitle = (j['event_title'] as String?) ?? '',
+        question = j['question'] as String,
+        yesProbability = j['yes_probability'] == null
+            ? null
+            : (j['yes_probability'] as num).toDouble(),
+        volumeUsd = ((j['volume_usd'] as num?) ?? 0).toDouble();
+}
+
+final predictionMarketsProvider =
+    FutureProvider<List<PredictionMarket>>((ref) async {
+  final rows = await Supabase.instance.client
+      .from('prediction_market_snapshots')
+      .select()
+      .order('obs_date', ascending: false)
+      .limit(60);
+  final all = (rows as List)
+      .map((r) => PredictionMarket.fromJson(r as Map<String, dynamic>))
+      .toList();
+  if (all.isEmpty) return all;
+  final latest = all.first.obsDate;
+  return all.where((m) => m.obsDate == latest).toList();
+});
+
+/// Card of real-money forward probabilities. Pass a [slugFilter] to show a
+/// subset (e.g. only the data-center moratorium market on the AI Cycle tab).
+class PredictionMarketsCard extends ConsumerWidget {
+  final String? slugFilter;
+  final String? footnote;
+  const PredictionMarketsCard({super.key, this.slugFilter, this.footnote});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final async = ref.watch(predictionMarketsProvider);
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (markets) {
+        var shown = slugFilter == null
+            ? markets
+            : markets.where((m) => m.eventSlug.contains(slugFilter!)).toList();
+        if (shown.isEmpty) return const SizedBox.shrink();
+        shown = [...shown]..sort((a, b) {
+            final t = a.eventTitle.compareTo(b.eventTitle);
+            return t != 0 ? t : b.volumeUsd.compareTo(a.volumeUsd);
+          });
+        final byEvent = <String, List<PredictionMarket>>{};
+        for (final m in shown) {
+          byEvent.putIfAbsent(m.eventTitle, () => []).add(m);
+        }
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Prediction markets — what real money expects',
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+              Text(
+                  'Polymarket YES prices, snapshotted daily · '
+                  '${shown.first.obsDate.toIso8601String().split("T").first}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                      color:
+                          theme.colorScheme.onSurface.withValues(alpha: 0.55))),
+              const SizedBox(height: 10),
+              for (final entry in byEvent.entries) ...[
+                Text(entry.key,
+                    style: theme.textTheme.labelMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                for (final m in entry.value)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Row(children: [
+                      Expanded(
+                        child: Text(_shorten(m.question),
+                            style: theme.textTheme.bodySmall),
+                      ),
+                      SizedBox(
+                        width: 60,
+                        child: LayoutBuilder(builder: (context, box) {
+                          final p = (m.yesProbability ?? 0).clamp(0.0, 1.0);
+                          return Container(
+                            height: 8,
+                            alignment: Alignment.centerLeft,
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                            child: Container(
+                              width: box.maxWidth * p,
+                              decoration: BoxDecoration(
+                                color: p >= 0.5
+                                    ? theme.colorScheme.error
+                                    : theme.colorScheme.primary,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                      SizedBox(
+                        width: 46,
+                        child: Text(
+                          m.yesProbability == null
+                              ? '—'
+                              : '${(m.yesProbability! * 100).toStringAsFixed(m.yesProbability! < 0.10 ? 1 : 0)}%',
+                          textAlign: TextAlign.right,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ]),
+                  ),
+                const SizedBox(height: 8),
+              ],
+              if (footnote != null)
+                Text(footnote!,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                        fontStyle: FontStyle.italic,
+                        color: theme.colorScheme.onSurface
+                            .withValues(alpha: 0.55))),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  static String _shorten(String q) => q
+      .replaceFirst('Will the Fed ', '')
+      .replaceFirst('Will there be ', '')
+      .replaceFirst('Fed Rate Hike by ', 'Hike by ')
+      .replaceFirst(' after the September 2026 meeting?', ' (Sept)')
+      .replaceFirst(' Meeting?', '')
+      .replaceFirst('Will any state enact a data center moratorium by December 31?',
+          'Any state enacts a data-center moratorium by Dec 31');
+}
+
 // ─── Historical bubble benchmarks (fixed facts; see Crisis Ledger) ────────
 
 class _BubbleMark {
@@ -172,6 +323,15 @@ class CrisisLedgerTab extends ConsumerWidget {
                 now: s.hyOasBps,
                 marks: _hyMarks,
                 nowLabel: s.hyOasBps?.toStringAsFixed(0),
+              ),
+              const SizedBox(height: 16),
+              const PredictionMarketsCard(
+                slugFilter: 'fed',
+                footnote:
+                    'A hike materializing flips the Fed-tightening catalyst '
+                    '(signal preceded 8 of 10 crises) while structural '
+                    'conditions are lit — the ledger\'s classic pre-break '
+                    'configuration.',
               ),
               const SizedBox(height: 16),
               _SectionHeader('Structural conditions (slow variables)'),

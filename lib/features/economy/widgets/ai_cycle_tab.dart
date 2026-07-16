@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'crisis_ledger_tab.dart' show PredictionMarketsCard;
+
 class SectorFact {
   final String ticker, universe, metric, unit;
   final DateTime periodEnd;
@@ -68,6 +70,13 @@ class AiCycleTab extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
             children: [
               _HyperscalerCapexCard(facts: facts),
+              const SizedBox(height: 16),
+              const PredictionMarketsCard(
+                slugFilter: 'moratorium',
+                footnote:
+                    'Regulatory risk on the buildout, priced by real money — '
+                    'the 1887 ICC moment arriving as a tradeable probability.',
+              ),
               const SizedBox(height: 16),
               _UniverseTable(
                 title: 'Supply — semiconductor complex',

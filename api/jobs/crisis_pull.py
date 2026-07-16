@@ -47,6 +47,15 @@ _SPEC_BASKET = ["MU", "SNDK"]
 
 _LOOKBACK_DAYS = 260  # ~52 trading weeks for high-water tracking
 
+# Polymarket event slugs snapshotted daily alongside the checklist:
+# real-money forward probabilities for the Fed-policy catalyst and
+# data-center regulatory risk. Read-only public Gamma API.
+_POLYMARKET_SLUGS = [
+    "fed-rate-hike-by",
+    "fed-decision-in-september-762",
+    "will-any-state-enact-a-data-center-moratorium-by-december-31-20260707003733282",
+]
+
 
 async def _fetch_fred_series(
     client: httpx.AsyncClient,
@@ -108,6 +117,51 @@ def _chg_pct(series: list[float], sessions: int) -> Optional[float]:
     return (series[-1] / series[-1 - sessions] - 1) * 100
 
 
+async def _snapshot_polymarket(client: httpx.AsyncClient, db, obs_date: str) -> int:
+    """Snapshot configured Polymarket events. Failures are logged, never fatal —
+    a Polymarket outage must not break the checklist write."""
+    import json as _json
+
+    rows = []
+    for slug in _POLYMARKET_SLUGS:
+        try:
+            resp = await client.get(
+                "https://gamma-api.polymarket.com/events",
+                params={"slug": slug},
+                timeout=20.0,
+            )
+            if resp.status_code != 200 or not resp.json():
+                log.warning("polymarket_fetch_failed slug=%s status=%s", slug, resp.status_code)
+                continue
+            event = resp.json()[0]
+            for m in event.get("markets", []):
+                outcomes = _json.loads(m.get("outcomes") or "[]")
+                prices = _json.loads(m.get("outcomePrices") or "[]")
+                if "Yes" not in outcomes or len(prices) != len(outcomes):
+                    continue
+                yes_p = float(prices[outcomes.index("Yes")])
+                rows.append({
+                    "obs_date": obs_date,
+                    "event_slug": slug,
+                    "event_title": event.get("title"),
+                    "question": m.get("question"),
+                    "yes_probability": round(yes_p, 4),
+                    "volume_usd": int(float(m.get("volumeNum") or 0)),
+                    "closed": bool(m.get("closed")),
+                })
+        except Exception as exc:
+            log.warning("polymarket_error slug=%s error=%r", slug, exc)
+    if rows:
+        try:
+            db.table("prediction_market_snapshots").upsert(
+                rows, on_conflict="obs_date,event_slug,question"
+            ).execute()
+        except Exception as exc:
+            log.warning("polymarket_upsert_failed error=%r", exc)
+            return 0
+    return len(rows)
+
+
 async def run_crisis_pull() -> dict:
     now_et = datetime.now(timezone.utc).astimezone(_ET)
     if now_et.weekday() >= 5:
@@ -131,6 +185,7 @@ async def run_crisis_pull() -> dict:
             fetch_schwab_closes(client, sym, days=_LOOKBACK_DAYS) for sym in equity_symbols
         ]
         results = await asyncio.gather(*fred_tasks, *equity_tasks)
+        pm_rows = await _snapshot_polymarket(client, db, obs_date)
 
     hy_oas, ig_oas, t10y2y, dff, cpi, cpi_core = results[: len(fred_tasks)]
     closes = {
@@ -307,4 +362,5 @@ async def run_crisis_pull() -> dict:
     )
     return {"status": "ok", "obs_date": obs_date,
             "structural_lit": row["structural_lit"],
-            "catalysts_firing": row["catalysts_firing"]}
+            "catalysts_firing": row["catalysts_firing"],
+            "prediction_markets": pm_rows}
