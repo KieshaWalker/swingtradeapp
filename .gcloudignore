@@ -1,0 +1,16 @@
+# Keep Cloud Build source uploads small: only the api/ tree matters for the
+# image build (see api/cloudbuild.yaml), everything else is dead weight.
+.git/
+.dart_tool/
+build/
+web/
+ios/
+android/
+macos/
+node_modules/
+vol_surface_tool/
+api/venv/
+api/__pycache__/
+**/__pycache__/
+data/
+notes/

@@ -204,11 +204,34 @@ async def run_fundamentals_pull() -> dict:
             if not rows:
                 errors.append(f"{ticker}:no_data")
                 return
+            # Filers can report the same quarter as both a discrete 3-month
+            # duration and a fiscal-YTD duration ending on the same date —
+            # dedupe on the upsert key or Postgres rejects the batch (21000).
+            # Prefer as-reported rows over derived ones, then latest filed.
+            unique: dict = {}
+            for r in rows:
+                k = (r["metric"], r["period_type"], r["period_end"])
+                cur = unique.get(k)
+                if (
+                    cur is None
+                    or (cur["derived"] and not r["derived"])
+                    or (cur["derived"] == r["derived"]
+                        and (r.get("filed") or "") > (cur.get("filed") or ""))
+                ):
+                    unique[k] = r
+            rows = list(unique.values())
             for r in rows:
                 r.update({"ticker": ticker, "cik": cik, "universe": universe})
-            db.table("sector_fundamentals").upsert(
-                rows, on_conflict="ticker,metric,period_type,period_end"
-            ).execute()
+            try:
+                db.table("sector_fundamentals").upsert(
+                    rows, on_conflict="ticker,metric,period_type,period_end"
+                ).execute()
+            except Exception as exc:
+                # Isolate failures: one company's bad batch must not kill the
+                # gather (and with it the shared HTTP client) for the rest.
+                errors.append(f"{ticker}:upsert_failed:{exc}")
+                log.warning("fundamentals_pull: %s upsert failed: %r", ticker, exc)
+                return
             written += len(rows)
             log.info("fundamentals_pull: %s rows=%d rev_tag=%s cap_tag=%s",
                      ticker, len(rows), rev_tag, cap_tag)
