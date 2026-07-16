@@ -208,6 +208,14 @@ upsert_job crisis-pull \
   --attempt-deadline=600s \
   --description="Market-level crisis-signal checklist → crisis_checklist_snapshots (Mon-Fri 21:10 UTC)"
 
+# Job 12 — EDGAR fundamentals (weekly)
+upsert_job fundamentals-pull \
+  "${COMMON_FLAGS[@]}" \
+  --schedule="0 12 * * 0" \
+  --uri="${SERVICE_URL}/jobs/fundamentals-pull" \
+  --attempt-deadline=900s \
+  --description="EDGAR XBRL revenue/capex for AI-cycle universes -> sector_fundamentals (Sun 12:00 UTC)"
+
 # Job 8a — Weekly vol period snapshot
 upsert_job vol-period-weekly \
   "${COMMON_FLAGS[@]}" \

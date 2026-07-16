@@ -145,6 +145,18 @@ async def regime_pull_trigger(request: Request):
     return result
 
 
+@router.post("/fundamentals-pull")
+async def fundamentals_pull_trigger(request: Request):
+    """Job — EDGAR XBRL revenue/capex for AI-cycle universes → sector_fundamentals.
+    Cron: 0 12 * * 0  (weekly, Sunday 12:00 UTC)
+    """
+    _verify_scheduler(request)
+    from jobs.fundamentals_pull import run_fundamentals_pull
+    result = await run_fundamentals_pull()
+    log.info("fundamentals_pull_complete result=%s", result)
+    return result
+
+
 @router.post("/crisis-pull")
 async def crisis_pull_trigger(request: Request):
     """Job — market-level crisis-signal checklist → crisis_checklist_snapshots.
