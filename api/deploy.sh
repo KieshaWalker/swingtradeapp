@@ -195,6 +195,14 @@ upsert_job expected-move-pull \
   --attempt-deadline=900s \
   --description="EOD expected move bands → expected_move_snapshots (Mon-Fri 9 PM UTC)"
 
+# Job 11 — Crisis checklist (EOD, market-level)
+upsert_job crisis-pull \
+  "${COMMON_FLAGS[@]}" \
+  --schedule="10 21 * * 1-5" \
+  --uri="${SERVICE_URL}/jobs/crisis-pull" \
+  --attempt-deadline=600s \
+  --description="Market-level crisis-signal checklist → crisis_checklist_snapshots (Mon-Fri 21:10 UTC)"
+
 # Job 8a — Weekly vol period snapshot
 upsert_job vol-period-weekly \
   "${COMMON_FLAGS[@]}" \

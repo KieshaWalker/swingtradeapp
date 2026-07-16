@@ -145,6 +145,22 @@ async def regime_pull_trigger(request: Request):
     return result
 
 
+@router.post("/crisis-pull")
+async def crisis_pull_trigger(request: Request):
+    """Job — market-level crisis-signal checklist → crisis_checklist_snapshots.
+    Cron: 10 21 * * 1-5  (16:10 ET close-capture, Mon-Fri)
+
+    Runs ONCE per day after the close. Global (not per-ticker/user): FRED
+    credit/curve/CPI series + Schwab closes for breadth, private-credit, and
+    speculative-tier baskets, scored against the 13-crisis ledger thresholds.
+    """
+    _verify_scheduler(request)
+    from jobs.crisis_pull import run_crisis_pull
+    result = await run_crisis_pull()
+    log.info("crisis_pull_complete result=%s", result)
+    return result
+
+
 @router.post("/expected-move-pull")
 async def expected_move_pull_trigger(request: Request):
     """Job 9 — EOD chain → expected_move_snapshots (daily/weekly/monthly bands).

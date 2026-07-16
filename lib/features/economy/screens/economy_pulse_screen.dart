@@ -32,6 +32,7 @@ import '../widgets/bea_tab.dart';
 import '../widgets/eia_tab.dart';
 import '../widgets/census_tab.dart';
 import '../widgets/fred_tab.dart';
+import '../widgets/crisis_ledger_tab.dart';
 
 class EconomyPulseScreen extends ConsumerStatefulWidget {
   const EconomyPulseScreen({super.key});
@@ -285,6 +286,7 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
                 ref.invalidate(fredRetailSalesProvider);
                 ref.invalidate(fredRecessionProbProvider);
                 ref.invalidate(fredHousingStartsProvider);
+                ref.invalidate(crisisChecklistProvider);
               },
             ),
             const AppMenuButton(),
@@ -300,6 +302,7 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
               Tab(text: 'EIA'),
               Tab(text: 'Census'),
               Tab(text: 'FRED'),
+              Tab(text: 'Crisis'),
             ],
           ),
         ),
@@ -334,6 +337,7 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
             const EiaTab(),
             const CensusTab(),
             const FredTab(),
+            const CrisisLedgerTab(),
           ],
         ),
       ),
