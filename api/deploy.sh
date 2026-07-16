@@ -90,6 +90,11 @@ SERVICE_URL=$(gcloud run services describe "${SERVICE}" \
 echo "Service URL: ${SERVICE_URL}"
 
 # ── Helper: create-or-update a scheduler job ──────────────────────────────────
+# NOTE: the API's _verify_scheduler requires an X-Job-Secret header matching
+# PYTHON_API_SECRET. Newly *created* jobs get 403s until the header is set:
+#   gcloud scheduler jobs update http <job> --location=us-central1 \
+#     --update-headers="X-Job-Secret=<PYTHON_API_SECRET value>"
+# (updates preserve existing headers, so re-running this script is safe)
 upsert_job() {
   local name=$1; shift
   gcloud scheduler jobs create http "${name}" "$@" \
