@@ -33,6 +33,7 @@ import '../widgets/eia_tab.dart';
 import '../widgets/census_tab.dart';
 import '../widgets/fred_tab.dart';
 import '../widgets/crisis_ledger_tab.dart';
+import '../widgets/ai_cycle_tab.dart';
 
 class EconomyPulseScreen extends ConsumerStatefulWidget {
   const EconomyPulseScreen({super.key});
@@ -228,7 +229,7 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
     final pulseAsync = ref.watch(economyPulseProvider);
 
     return DefaultTabController(
-      length: 8,
+      length: 9,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Economy Pulse'),
@@ -287,6 +288,7 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
                 ref.invalidate(fredRecessionProbProvider);
                 ref.invalidate(fredHousingStartsProvider);
                 ref.invalidate(crisisChecklistProvider);
+                ref.invalidate(sectorFundamentalsProvider);
               },
             ),
             const AppMenuButton(),
@@ -303,6 +305,7 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
               Tab(text: 'Census'),
               Tab(text: 'FRED'),
               Tab(text: 'Crisis'),
+              Tab(text: 'AI Cycle'),
             ],
           ),
         ),
@@ -338,6 +341,7 @@ class _EconomyPulseScreenState extends ConsumerState<EconomyPulseScreen> {
             const CensusTab(),
             const FredTab(),
             const CrisisLedgerTab(),
+            const AiCycleTab(),
           ],
         ),
       ),
