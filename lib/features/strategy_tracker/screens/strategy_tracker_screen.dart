@@ -20,6 +20,7 @@ import '../../../core/widgets/app_menu_button.dart';
 import '../models/strategy_models.dart';
 import '../providers/strategy_tracker_provider.dart';
 import '../widgets/add_strategy_sheet.dart';
+import 'mu_playbook_screen.dart';
 
 // ── Shared sheet launcher ─────────────────────────────────────────────────────
 
@@ -57,6 +58,19 @@ class StrategyTrackerScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
             children: [
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.auto_graph),
+                  title: const Text('MU Composite Playbook',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                      'Backtested rules, live position, options reality'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const MuPlaybookScreen())),
+                ),
+              ),
+              const SizedBox(height: 12),
               _SummaryHeader(setups: setups),
               const SizedBox(height: 16),
               for (final s in setups) _StrategyCard(setup: s),
