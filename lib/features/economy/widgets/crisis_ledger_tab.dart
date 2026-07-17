@@ -22,6 +22,7 @@ class CrisisSnapshot {
   final double? fedFundsPct, fedFunds90dChgBps, t10y2yBps;
   final double? cpiYoyPct, cpiCoreYoyPct;
   final double? hyOasBps, igOasBps, hyOas20dChgBps;
+  final double? hygIef20dPct, lqdIef20dPct, tlt20dPct;
   final double? rspSpyOffHighPct, iwmSpyOffHighPct;
   final double? bdcOffHighPct, bdc20dPct, mgrOffHighPct, mgr20dPct;
   final double? specOffHighPct;
@@ -45,6 +46,9 @@ class CrisisSnapshot {
         hyOasBps = _d(j['hy_oas_bps']),
         igOasBps = _d(j['ig_oas_bps']),
         hyOas20dChgBps = _d(j['hy_oas_20d_chg_bps']),
+        hygIef20dPct = _d(j['hyg_ief_20d_pct']),
+        lqdIef20dPct = _d(j['lqd_ief_20d_pct']),
+        tlt20dPct = _d(j['tlt_20d_pct']),
         rspSpyOffHighPct = _d(j['rsp_spy_off_high_pct']),
         iwmSpyOffHighPct = _d(j['iwm_spy_off_high_pct']),
         bdcOffHighPct = _d(j['bdc_off_high_pct']),
@@ -759,7 +763,8 @@ class CrisisLedgerTab extends ConsumerWidget {
           name: 'Public credit',
           verdict: s.verdicts['v_public_credit']!,
           reading:
-              'HY ${_fmt(s.hyOasBps, 0)} bps (${_fmt(s.hyOas20dChgBps, 0)} 20d) · IG ${_fmt(s.igOasBps, 0)}',
+              'HY ${_fmt(s.hyOasBps, 0)} bps (${_fmt(s.hyOas20dChgBps, 0)} 20d) · IG ${_fmt(s.igOasBps, 0)} · '
+              'traded: HYG/IEF ${_fmt(s.hygIef20dPct)}%, LQD/IEF ${_fmt(s.lqdIef20dPct)}%, TLT ${_fmt(s.tlt20dPct)}% /20d',
           precedent: 'Jun-2007: record tights, then the turn',
           eduWhat:
               'High-yield option-adjusted spread over Treasuries: the public '

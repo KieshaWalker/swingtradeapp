@@ -54,9 +54,13 @@ store_secret() {
 # Falls back to a timestamp if git isn't available.
 TAG=$(git -C "$(dirname "$0")/.." rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)
 echo "Building image with Cloud Build (tag: ${TAG})..."
+# --gcs-log-dir: Cloud Build intermittently rejects builds that set a custom
+# service account unless the logs bucket is pinned explicitly (observed
+# 2026-07-16; identical config passes/fails at random without it).
 gcloud builds submit \
   --config=api/cloudbuild.yaml \
   --substitutions="_REGION=${REGION},_SERVICE=${SERVICE},_ARTIFACT_REPO=${ARTIFACT_REPO},_TAG=${TAG}" \
+  --gcs-log-dir="gs://${PROJECT_ID}_cloudbuild/logs" \
   --project="${PROJECT_ID}" \
   .
 

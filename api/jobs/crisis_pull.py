@@ -216,7 +216,10 @@ async def run_crisis_pull() -> dict:
     obs_date = now_et.date().isoformat()
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        equity_symbols = ["SPY", "RSP", "IWM"] + _BDC_BASKET + _MGR_BASKET + _SPEC_BASKET
+        equity_symbols = (
+            ["SPY", "RSP", "IWM", "HYG", "LQD", "IEF", "TLT"]
+            + _BDC_BASKET + _MGR_BASKET + _SPEC_BASKET
+        )
         fred_tasks = [
             _fetch_fred_series(client, "BAMLH0A0HYM2"),        # HY OAS, percent
             _fetch_fred_series(client, "BAMLC0A0CM"),          # IG OAS, percent
@@ -270,6 +273,19 @@ async def run_crisis_pull() -> dict:
         if rsp_days_since_high is not None and spy_days_since_ath is not None
         else None
     )
+
+    # --- traded bond market: credit-ETF ratios + duration trend --------------
+    # Same-day confirmation of the (1-day-lagged) FRED OAS signal: the ratios
+    # turning down is the traded market smelling credit stress before the
+    # published spread moves. TLT trend = health of the deflationary-bust hedge.
+    def _ratio_series(a: str, b: str) -> list[float]:
+        sa, sb = closes.get(a) or [], closes.get(b) or []
+        n = min(len(sa), len(sb))
+        return [sa[-n:][i] / sb[-n:][i] for i in range(n) if sb[-n:][i] > 0]
+
+    hyg_ief = _ratio_series("HYG", "IEF")
+    lqd_ief = _ratio_series("LQD", "IEF")
+    tlt = closes.get("TLT") or []
 
     # --- private credit & spec composites ------------------------------------
     bdc = _composite([closes.get(s) or [] for s in _BDC_BASKET])
@@ -365,6 +381,11 @@ async def run_crisis_pull() -> dict:
         "hy_oas_bps": round(hy_bps, 1) if hy_bps is not None else None,
         "ig_oas_bps": round(ig_bps, 1) if ig_bps is not None else None,
         "hy_oas_20d_chg_bps": round(hy_20d_chg, 1) if hy_20d_chg is not None else None,
+        "hyg_ief_ratio": round(hyg_ief[-1], 6) if hyg_ief else None,
+        "hyg_ief_off_high_pct": round(_off_high_pct(hyg_ief), 2) if hyg_ief else None,
+        "hyg_ief_20d_pct": round(_chg_pct(hyg_ief, 20), 2) if len(hyg_ief) > 20 else None,
+        "lqd_ief_20d_pct": round(_chg_pct(lqd_ief, 20), 2) if len(lqd_ief) > 20 else None,
+        "tlt_20d_pct": round(_chg_pct(tlt, 20), 2) if len(tlt) > 20 else None,
         "rsp_spy_ratio": round(rsp_spy[-1], 6) if rsp_spy else None,
         "rsp_spy_off_high_pct": round(_off_high_pct(rsp_spy), 2) if rsp_spy else None,
         "iwm_spy_ratio": round(iwm_spy[-1], 6) if iwm_spy else None,
