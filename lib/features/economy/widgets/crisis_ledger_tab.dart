@@ -161,51 +161,7 @@ class PredictionMarketsCard extends ConsumerWidget {
                     style: theme.textTheme.labelMedium
                         ?.copyWith(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 4),
-                for (final m in entry.value)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: Row(children: [
-                      Expanded(
-                        child: Text(_shorten(m.question),
-                            style: theme.textTheme.bodySmall),
-                      ),
-                      SizedBox(
-                        width: 60,
-                        child: LayoutBuilder(builder: (context, box) {
-                          final p = (m.yesProbability ?? 0).clamp(0.0, 1.0);
-                          return Container(
-                            height: 8,
-                            alignment: Alignment.centerLeft,
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.onSurface
-                                  .withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                            child: Container(
-                              width: box.maxWidth * p,
-                              decoration: BoxDecoration(
-                                color: p >= 0.5
-                                    ? theme.colorScheme.error
-                                    : theme.colorScheme.primary,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                          );
-                        }),
-                      ),
-                      SizedBox(
-                        width: 46,
-                        child: Text(
-                          m.yesProbability == null
-                              ? '—'
-                              : '${(m.yesProbability! * 100).toStringAsFixed(m.yesProbability! < 0.10 ? 1 : 0)}%',
-                          textAlign: TextAlign.right,
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ]),
-                  ),
+                for (final m in entry.value) _PmRow(market: m),
                 const SizedBox(height: 8),
               ],
               if (footnote != null)
@@ -229,6 +185,354 @@ class PredictionMarketsCard extends ConsumerWidget {
       .replaceFirst(' Meeting?', '')
       .replaceFirst('Will any state enact a data center moratorium by December 31?',
           'Any state enacts a data-center moratorium by Dec 31');
+}
+
+/// Full daily history for one market question (for the sparkline).
+final pmHistoryProvider =
+    FutureProvider.family<List<(DateTime, double)>, String>((ref, question) async {
+  final rows = await Supabase.instance.client
+      .from('prediction_market_snapshots')
+      .select('obs_date,yes_probability')
+      .eq('question', question)
+      .order('obs_date', ascending: true)
+      .limit(730);
+  return (rows as List)
+      .where((r) => r['yes_probability'] != null)
+      .map((r) => (
+            DateTime.parse(r['obs_date'] as String),
+            (r['yes_probability'] as num).toDouble(),
+          ))
+      .toList();
+});
+
+class PmAlert {
+  final String id, eventSlug, question, direction;
+  final double threshold;
+  final DateTime? triggeredAt;
+  final double? triggeredProbability;
+
+  PmAlert.fromJson(Map<String, dynamic> j)
+      : id = j['id'] as String,
+        eventSlug = j['event_slug'] as String,
+        question = j['question'] as String,
+        direction = j['direction'] as String,
+        threshold = (j['threshold'] as num).toDouble(),
+        triggeredAt = j['triggered_at'] == null
+            ? null
+            : DateTime.parse(j['triggered_at'] as String).toLocal(),
+        triggeredProbability = j['triggered_probability'] == null
+            ? null
+            : (j['triggered_probability'] as num).toDouble();
+}
+
+final pmAlertsProvider = FutureProvider<List<PmAlert>>((ref) async {
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) return const [];
+  final rows = await Supabase.instance.client
+      .from('prediction_market_alerts')
+      .select()
+      .eq('active', true)
+      .order('created_at', ascending: false)
+      .limit(100);
+  return (rows as List)
+      .map((r) => PmAlert.fromJson(r as Map<String, dynamic>))
+      .toList();
+});
+
+/// One market row: probability bar, tap to expand into the history sparkline
+/// and alert controls.
+class _PmRow extends ConsumerStatefulWidget {
+  final PredictionMarket market;
+  const _PmRow({required this.market});
+
+  @override
+  ConsumerState<_PmRow> createState() => _PmRowState();
+}
+
+class _PmRowState extends ConsumerState<_PmRow> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final m = widget.market;
+    final alerts = ref.watch(pmAlertsProvider).valueOrNull ?? const <PmAlert>[];
+    final myAlerts = alerts.where((a) => a.question == m.question).toList();
+    final triggered = myAlerts.where((a) => a.triggeredAt != null).toList();
+
+    return InkWell(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 5),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            if (triggered.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Icon(Icons.notifications_active,
+                    size: 14, color: theme.colorScheme.error),
+              )
+            else if (myAlerts.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: Icon(Icons.notifications_none,
+                    size: 14,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.45)),
+              ),
+            Expanded(
+              child: Text(PredictionMarketsCard._shorten(m.question),
+                  style: theme.textTheme.bodySmall),
+            ),
+            SizedBox(
+              width: 60,
+              child: LayoutBuilder(builder: (context, box) {
+                final p = (m.yesProbability ?? 0).clamp(0.0, 1.0);
+                return Container(
+                  height: 8,
+                  alignment: Alignment.centerLeft,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  child: Container(
+                    width: box.maxWidth * p,
+                    decoration: BoxDecoration(
+                      color: p >= 0.5
+                          ? theme.colorScheme.error
+                          : theme.colorScheme.primary,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                );
+              }),
+            ),
+            SizedBox(
+              width: 46,
+              child: Text(
+                m.yesProbability == null
+                    ? '—'
+                    : '${(m.yesProbability! * 100).toStringAsFixed(m.yesProbability! < 0.10 ? 1 : 0)}%',
+                textAlign: TextAlign.right,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+          ]),
+          if (_expanded) _PmDetail(market: m, alerts: myAlerts),
+        ]),
+      ),
+    );
+  }
+}
+
+class _PmDetail extends ConsumerWidget {
+  final PredictionMarket market;
+  final List<PmAlert> alerts;
+  const _PmDetail({required this.market, required this.alerts});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final history = ref.watch(pmHistoryProvider(market.question));
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 18, top: 6, bottom: 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        history.when(
+          loading: () => const SizedBox(
+              height: 40, child: Center(child: CircularProgressIndicator())),
+          error: (e, _) =>
+              Text('history unavailable: $e', style: theme.textTheme.labelSmall),
+          data: (pts) => pts.length < 2
+              ? Text(
+                  'History accumulates daily — ${pts.length} snapshot so far. '
+                  'The chart appears from the second day.',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                      color:
+                          theme.colorScheme.onSurface.withValues(alpha: 0.55)))
+              : SizedBox(
+                  height: 48,
+                  child: CustomPaint(
+                    size: const Size(double.infinity, 48),
+                    painter: _SparklinePainter(
+                      points: pts,
+                      lineColor: theme.colorScheme.primary,
+                      gridColor:
+                          theme.colorScheme.onSurface.withValues(alpha: 0.12),
+                    ),
+                  ),
+                ),
+        ),
+        const SizedBox(height: 6),
+        Row(children: [
+          for (final a in alerts)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: InputChip(
+                label: Text(
+                  '${a.direction == "above" ? "≥" : "≤"} ${(a.threshold * 100).toStringAsFixed(0)}%'
+                  '${a.triggeredAt != null ? " · FIRED ${(a.triggeredProbability! * 100).toStringAsFixed(0)}%" : ""}',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                      color: a.triggeredAt != null
+                          ? theme.colorScheme.error
+                          : null),
+                ),
+                onDeleted: () async {
+                  await Supabase.instance.client
+                      .from('prediction_market_alerts')
+                      .delete()
+                      .eq('id', a.id);
+                  ref.invalidate(pmAlertsProvider);
+                },
+              ),
+            ),
+          ActionChip(
+            avatar: const Icon(Icons.add_alert, size: 14),
+            label: Text('Alert', style: theme.textTheme.labelSmall),
+            onPressed: () async {
+              final user = Supabase.instance.client.auth.currentUser;
+              if (user == null) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Sign in to create alerts')));
+                }
+                return;
+              }
+              final result = await showDialog<(String, double)>(
+                context: context,
+                builder: (_) => _AlertDialog(
+                    question: market.question,
+                    current: market.yesProbability),
+              );
+              if (result == null) return;
+              await Supabase.instance.client
+                  .from('prediction_market_alerts')
+                  .insert({
+                'user_id': user.id,
+                'event_slug': market.eventSlug,
+                'question': market.question,
+                'direction': result.$1,
+                'threshold': result.$2,
+              });
+              ref.invalidate(pmAlertsProvider);
+            },
+          ),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _AlertDialog extends StatefulWidget {
+  final String question;
+  final double? current;
+  const _AlertDialog({required this.question, this.current});
+
+  @override
+  State<_AlertDialog> createState() => _AlertDialogState();
+}
+
+class _AlertDialogState extends State<_AlertDialog> {
+  String _direction = 'above';
+  late double _thresholdPct =
+      ((widget.current ?? 0.5) * 100).clamp(1.0, 99.0).roundToDouble();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: Text('Alert on this market', style: theme.textTheme.titleSmall),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text(widget.question, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 12),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'above', label: Text('Rises above')),
+            ButtonSegment(value: 'below', label: Text('Falls below')),
+          ],
+          selected: {_direction},
+          onSelectionChanged: (s) => setState(() => _direction = s.first),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+            child: Slider(
+              value: _thresholdPct,
+              min: 1,
+              max: 99,
+              divisions: 98,
+              label: '${_thresholdPct.toStringAsFixed(0)}%',
+              onChanged: (v) => setState(() => _thresholdPct = v),
+            ),
+          ),
+          SizedBox(
+              width: 40,
+              child: Text('${_thresholdPct.toStringAsFixed(0)}%',
+                  style: theme.textTheme.bodySmall)),
+        ]),
+        Text(
+          'Checked once per trading day at the 21:10 UTC snapshot.',
+          style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.55)),
+        ),
+      ]),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () =>
+              Navigator.pop(context, (_direction, _thresholdPct / 100)),
+          child: const Text('Create'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SparklinePainter extends CustomPainter {
+  final List<(DateTime, double)> points;
+  final Color lineColor, gridColor;
+  _SparklinePainter(
+      {required this.points, required this.lineColor, required this.gridColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final grid = Paint()
+      ..color = gridColor
+      ..strokeWidth = 1;
+    // 0%, 50%, 100% reference lines
+    for (final f in [0.0, 0.5, 1.0]) {
+      final y = size.height - f * size.height;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+    if (points.length < 2) return;
+    final t0 = points.first.$1.millisecondsSinceEpoch.toDouble();
+    final t1 = points.last.$1.millisecondsSinceEpoch.toDouble();
+    final span = (t1 - t0) == 0 ? 1.0 : (t1 - t0);
+    final path = Path();
+    for (var i = 0; i < points.length; i++) {
+      final x = (points[i].$1.millisecondsSinceEpoch - t0) / span * size.width;
+      final y = size.height - points[i].$2.clamp(0.0, 1.0) * size.height;
+      i == 0 ? path.moveTo(x, y) : path.lineTo(x, y);
+    }
+    canvas.drawPath(
+        path,
+        Paint()
+          ..color = lineColor
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round);
+    final last = points.last;
+    canvas.drawCircle(
+        Offset(size.width, size.height - last.$2.clamp(0.0, 1.0) * size.height),
+        3,
+        Paint()..color = lineColor);
+  }
+
+  @override
+  bool shouldRepaint(covariant _SparklinePainter old) =>
+      old.points != points || old.lineColor != lineColor;
 }
 
 // ─── Historical bubble benchmarks (fixed facts; see Crisis Ledger) ────────

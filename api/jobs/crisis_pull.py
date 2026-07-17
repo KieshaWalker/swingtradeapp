@@ -54,6 +54,7 @@ _POLYMARKET_SLUGS = [
     "fed-rate-hike-by",
     "fed-decision-in-september-762",
     "will-any-state-enact-a-data-center-moratorium-by-december-31-20260707003733282",
+    "how-high-will-10-year-treasury-yield-go-before-2027",
 ]
 
 
@@ -159,7 +160,50 @@ async def _snapshot_polymarket(client: httpx.AsyncClient, db, obs_date: str) -> 
         except Exception as exc:
             log.warning("polymarket_upsert_failed error=%r", exc)
             return 0
+        _evaluate_alerts(db, rows)
     return len(rows)
+
+
+def _evaluate_alerts(db, snapshot_rows: list) -> None:
+    """Stamp user alerts whose threshold the latest snapshot crossed.
+    Runs with the service key (bypasses RLS) across all users; one-shot."""
+    from datetime import datetime, timezone as _tz
+
+    try:
+        alerts = (
+            db.table("prediction_market_alerts")
+            .select("id,event_slug,question,direction,threshold")
+            .eq("active", True)
+            .is_("triggered_at", "null")
+            .execute()
+        ).data or []
+        if not alerts:
+            return
+        latest = {
+            (r["event_slug"], r["question"]): r["yes_probability"]
+            for r in snapshot_rows
+            if r.get("yes_probability") is not None
+        }
+        fired = 0
+        for a in alerts:
+            p = latest.get((a["event_slug"], a["question"]))
+            if p is None:
+                continue
+            crossed = (
+                p >= float(a["threshold"])
+                if a["direction"] == "above"
+                else p <= float(a["threshold"])
+            )
+            if crossed:
+                db.table("prediction_market_alerts").update({
+                    "triggered_at": datetime.now(_tz.utc).isoformat(),
+                    "triggered_probability": p,
+                }).eq("id", a["id"]).execute()
+                fired += 1
+        if fired:
+            log.info("crisis_pull: prediction alerts fired=%d", fired)
+    except Exception as exc:
+        log.warning("alert_evaluation_failed error=%r", exc)
 
 
 async def run_crisis_pull() -> dict:
