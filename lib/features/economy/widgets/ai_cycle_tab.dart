@@ -11,7 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'crisis_ledger_tab.dart' show PredictionMarketsCard;
+import 'crisis_ledger_tab.dart' show PredictionMarketsCard, SourceLink;
 
 class SectorFact {
   final String ticker, universe, metric, unit;
@@ -105,6 +105,12 @@ class AiCycleTab extends ConsumerWidget {
                 'institutional models run on.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              const SourceLink(
+                  url: 'https://www.sec.gov/edgar/search/',
+                  label: 'SEC EDGAR (filings)'),
+              const SourceLink(
+                  url: 'https://www.census.gov/construction/c30/c30index.html',
+                  label: 'Census construction spending (data centers)'),
             ],
           );
         },

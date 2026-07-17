@@ -9,8 +9,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../screens/crisis_history_screen.dart';
+
+/// Small tappable primary-source link ("fred.stlouisfed.org ↗").
+class SourceLink extends StatelessWidget {
+  final String url;
+  final String? label;
+  const SourceLink({super.key, required this.url, this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final display = label ?? Uri.parse(url).host.replaceFirst('www.', '');
+    return InkWell(
+      onTap: () =>
+          launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+      child: Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Text('source: $display ↗',
+            style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.primary,
+                decoration: TextDecoration.underline,
+                decorationColor:
+                    theme.colorScheme.primary.withValues(alpha: 0.4))),
+      ),
+    );
+  }
+}
 
 // ─── Model ────────────────────────────────────────────────────────────────
 
@@ -378,6 +405,9 @@ class _PmDetail extends ConsumerWidget {
                   ),
                 ),
         ),
+        SourceLink(
+            url: 'https://polymarket.com/event/${market.eventSlug}',
+            label: 'polymarket.com'),
         const SizedBox(height: 6),
         Row(children: [
           for (final a in alerts)
@@ -665,6 +695,7 @@ class CrisisLedgerTab extends ConsumerWidget {
                     'CC delinquency ${_fmt(s.ccDelinqPct)}% · all loans ${_fmt(s.loanDelinqPct)}%',
                 context:
                     'Fed quarterly. Card delinquency peaked ~6.8% in 2009; rising trend = the household piece cracking.',
+                sourceUrl: 'https://fred.stlouisfed.org/series/DRCCLACBS',
               ),
               _MonitorRow(
                 name: 'Bank balance sheets (H.8)',
@@ -672,6 +703,7 @@ class CrisisLedgerTab extends ConsumerWidget {
                     'Deposits ${_fmt(s.bankDepositsYoyPct)}% YoY · bank credit ${_fmt(s.bankCreditYoyPct)}% YoY',
                 context:
                     'Weekly. Deposit contraction was the March-2023 tell; credit contraction preceded past recessions.',
+                sourceUrl: 'https://www.federalreserve.gov/releases/h8/current/',
               ),
               _MonitorRow(
                 name: 'Dollar (global funding)',
@@ -679,18 +711,22 @@ class CrisisLedgerTab extends ConsumerWidget {
                     'Broad index ${_fmt(s.dollarIdx)} (${_fmt(s.dollar20dPct)}% /20d)',
                 context:
                     'Sharp USD spikes = global dollar-funding stress (2008, 2020, 2022).',
+                sourceUrl: 'https://fred.stlouisfed.org/series/DTWEXBGS',
               ),
               _MonitorRow(
                 name: 'Yen carry',
                 reading: 'USD/JPY ${_fmt(s.jpyusd20dPct)}% /20d',
                 context:
                     'Sharply negative = yen strengthening fast = carry unwinding (Aug-2024 signature).',
+                sourceUrl: 'https://fred.stlouisfed.org/series/DEXJPUS',
               ),
               _MonitorRow(
                 name: 'China (traded proxy)',
                 reading: 'FXI ${_fmt(s.fxi20dPct)}% /20d',
                 context:
                     '1873 started in Vienna — this is the Vienna feed. ETF proxy until better data exists.',
+                sourceUrl:
+                    'https://www.ishares.com/us/products/239536/ishares-china-largecap-etf',
               ),
               const SizedBox(height: 12),
               Text(
@@ -714,6 +750,7 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               'SPY ${_fmt(s.spyOffAthPct)}% off 52-wk high · ${s.spyDaysSinceAth ?? "—"} sessions since',
           precedent: '9 of 10 crises broke from near-ATH',
+          sourceUrl: 'https://fred.stlouisfed.org/series/SP500',
           eduWhat:
               'Distance of SPY from its 52-week high. Crashes start from strength: '
               'in 9 of the 10 index-era crises the market stood at or within weeks '
@@ -728,6 +765,7 @@ class CrisisLedgerTab extends ConsumerWidget {
           verdict: s.verdicts['v_valuation']!,
           reading: 'CAPE ${_fmt(s.cape)}',
           precedent: "1929: 32.6 · 2000: 44.2 · 2022: 38.6",
+          sourceUrl: 'https://shillerdata.com',
           eduWhat:
               'Shiller cyclically-adjusted P/E: price against 10-year average real '
               'earnings. Every reading above 35 in history clusters around 1929, '
@@ -744,6 +782,8 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               '\$${_fmt(s.marginDebtBn, 0)}B · ${_fmt(s.marginDebtYoyPct, 0)}% YoY',
           precedent: 'Records marked the 1929, 2000, 2007, 2021 tops',
+          sourceUrl:
+              'https://www.finra.org/investors/learn-to-invest/advanced-investing/margin-statistics',
           eduWhat:
               'FINRA investor margin debt, year-over-year growth. Record leverage '
               'marked all four great tops, and it is why those declines fed on '
@@ -780,6 +820,7 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               'Fed funds ${_fmt(s.fedFundsPct)}% · ${_fmt(s.fedFunds90dChgBps, 0)} bps / 90d',
           precedent: 'Tightening preceded 8 of 10 crises',
+          sourceUrl: 'https://fred.stlouisfed.org/series/DFF',
           eduWhat:
               '90-day change in the effective fed funds rate. Monetary tightening '
               'into the peak preceded 8 of 10 index-era crises — 1929, 1937, '
@@ -795,6 +836,7 @@ class CrisisLedgerTab extends ConsumerWidget {
           verdict: s.verdicts['v_curve']!,
           reading: '10y–2y ${_fmt(s.t10y2yBps, 0)} bps',
           precedent: 'Inverted before 6 of 10',
+          sourceUrl: 'https://fred.stlouisfed.org/series/T10Y2Y',
           eduWhat:
               '10-year minus 2-year Treasury yield. Inversion preceded 6 of 10 '
               'crises and every recession since 1955 with one false positive '
@@ -811,6 +853,7 @@ class CrisisLedgerTab extends ConsumerWidget {
               'HY ${_fmt(s.hyOasBps, 0)} bps (${_fmt(s.hyOas20dChgBps, 0)} 20d) · IG ${_fmt(s.igOasBps, 0)} · '
               'traded: HYG/IEF ${_fmt(s.hygIef20dPct)}%, LQD/IEF ${_fmt(s.lqdIef20dPct)}%, TLT ${_fmt(s.tlt20dPct)}% /20d',
           precedent: 'Jun-2007: record tights, then the turn',
+          sourceUrl: 'https://fred.stlouisfed.org/series/BAMLH0A0HYM2',
           eduWhat:
               'High-yield option-adjusted spread over Treasuries: the public '
               "market's price of default risk. The level never warned — spreads "
@@ -828,6 +871,7 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               'BDCs ${_fmt(s.bdcOffHighPct)}% / managers ${_fmt(s.mgrOffHighPct)}% off high',
           precedent: 'Financials topped Feb-07 — 8 months before the index',
+          sourceUrl: 'https://www.sec.gov/edgar/search/',
           eduWhat:
               'Listed BDCs (which hold private loans, so their shares price the '
               'quarterly-marked books daily) and alternative-credit managers, '
@@ -847,6 +891,7 @@ class CrisisLedgerTab extends ConsumerWidget {
           reading:
               'RSP/SPY ${_fmt(s.rspSpyOffHighPct)}% · IWM/SPY ${_fmt(s.iwmSpyOffHighPct)}% off ratio high',
           precedent: "A/D line peaked 2 yrs before the 2000 top",
+          sourceUrl: 'https://www.thetrading.tools/advance-decline-line',
           eduWhat:
               'Whether the average stock confirms the index: equal-weight S&P '
               '(RSP) and small caps (IWM) against cap-weighted SPY. The NYSE '
@@ -1058,8 +1103,12 @@ class _BubbleGauge extends StatelessWidget {
 /// thresholds can be calibrated, but the readings surface immediately.
 class _MonitorRow extends StatelessWidget {
   final String name, reading, context;
+  final String? sourceUrl;
   const _MonitorRow(
-      {required this.name, required this.reading, required this.context});
+      {required this.name,
+      required this.reading,
+      required this.context,
+      this.sourceUrl});
 
   @override
   Widget build(BuildContext buildContext) {
@@ -1092,6 +1141,7 @@ class _MonitorRow extends StatelessWidget {
                 style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
                     fontStyle: FontStyle.italic)),
+            if (sourceUrl != null) SourceLink(url: sourceUrl!),
           ]),
         ),
       ]),
@@ -1103,6 +1153,7 @@ class _MonitorRow extends StatelessWidget {
 /// earned a place in the checklist, and what would change its verdict.
 class _SignalRow extends StatefulWidget {
   final String name, verdict, reading, precedent, eduWhat, eduWatch;
+  final String? sourceUrl;
   const _SignalRow({
     required this.name,
     required this.verdict,
@@ -1110,6 +1161,7 @@ class _SignalRow extends StatefulWidget {
     required this.precedent,
     required this.eduWhat,
     required this.eduWatch,
+    this.sourceUrl,
   });
 
   @override
@@ -1178,6 +1230,8 @@ class _SignalRowState extends State<_SignalRow> {
                         style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.primary,
                             fontWeight: FontWeight.w500)),
+                    if (widget.sourceUrl != null)
+                      SourceLink(url: widget.sourceUrl!),
                   ]),
             ),
         ]),
