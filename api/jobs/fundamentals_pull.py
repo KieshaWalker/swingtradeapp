@@ -262,6 +262,15 @@ async def run_fundamentals_pull() -> dict:
             async with sem:
                 tag, unit, entries = await _concept(client, cik, _NAV_TAGS)
                 await asyncio.sleep(0.2)
+            # BDCs also file NAV-tagged facts in prospectus supplements
+            # (424B/N-2): rounded estimates, sometimes forward-dated contexts.
+            # Only periodic reports carry the audited point-in-time truth.
+            from datetime import date as _date
+            cutoff = _date.today().isoformat()
+            entries = [
+                e for e in entries
+                if e.get("form") in ("10-Q", "10-K") and e.get("end", "9999") <= cutoff
+            ]
             rows = _instant_rows(entries)
             if not rows:
                 errors.append(f"{ticker}:no_nav")
