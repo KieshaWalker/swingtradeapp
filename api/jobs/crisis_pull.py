@@ -217,7 +217,7 @@ async def run_crisis_pull() -> dict:
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         equity_symbols = (
-            ["SPY", "RSP", "IWM", "HYG", "LQD", "IEF", "TLT"]
+            ["SPY", "RSP", "IWM", "HYG", "LQD", "IEF", "TLT", "FXI"]
             + _BDC_BASKET + _MGR_BASKET + _SPEC_BASKET
         )
         fred_tasks = [
@@ -227,6 +227,12 @@ async def run_crisis_pull() -> dict:
             _fetch_fred_series(client, "DFF", limit=160),      # fed funds, daily
             _fetch_fred_series(client, "CPIAUCSL", limit=15),  # CPI index, monthly
             _fetch_fred_series(client, "CPILFESL", limit=15),  # core CPI, monthly
+            _fetch_fred_series(client, "DRCCLACBS", limit=8),  # cc delinquency, quarterly
+            _fetch_fred_series(client, "DRALACBS", limit=8),   # all-loan delinquency, quarterly
+            _fetch_fred_series(client, "DPSACBW027SBOG", limit=60),  # deposits, weekly H.8
+            _fetch_fred_series(client, "TOTBKCR", limit=60),   # bank credit, weekly H.8
+            _fetch_fred_series(client, "DTWEXBGS", limit=130), # broad dollar, daily
+            _fetch_fred_series(client, "DEXJPUS", limit=130),  # yen per USD, daily
         ]
         equity_tasks = [
             fetch_schwab_closes(client, sym, days=_LOOKBACK_DAYS) for sym in equity_symbols
@@ -234,7 +240,8 @@ async def run_crisis_pull() -> dict:
         results = await asyncio.gather(*fred_tasks, *equity_tasks)
         pm_rows = await _snapshot_polymarket(client, db, obs_date)
 
-    hy_oas, ig_oas, t10y2y, dff, cpi, cpi_core = results[: len(fred_tasks)]
+    (hy_oas, ig_oas, t10y2y, dff, cpi, cpi_core,
+     cc_delinq, loan_delinq, deposits, bank_credit, dollar, jpyusd) = results[: len(fred_tasks)]
     closes = {
         sym: results[len(fred_tasks) + i][0] for i, sym in enumerate(equity_symbols)
     }
@@ -273,6 +280,17 @@ async def run_crisis_pull() -> dict:
         if rsp_days_since_high is not None and spy_days_since_ath is not None
         else None
     )
+
+    # --- household, banks (H.8 weekly), global edge --------------------------
+    # Carry-unwind tell: DEXJPUS is yen-per-dollar, so a sharply NEGATIVE 20d
+    # change means the yen is strengthening fast (Aug-2024 signature).
+    deposits_yoy = (
+        (deposits[-1] / deposits[-53] - 1) * 100 if len(deposits) >= 53 else None
+    )
+    bank_credit_yoy = (
+        (bank_credit[-1] / bank_credit[-53] - 1) * 100 if len(bank_credit) >= 53 else None
+    )
+    fxi = closes.get("FXI") or []
 
     # --- traded bond market: credit-ETF ratios + duration trend --------------
     # Same-day confirmation of the (1-day-lagged) FRED OAS signal: the ratios
@@ -381,6 +399,14 @@ async def run_crisis_pull() -> dict:
         "hy_oas_bps": round(hy_bps, 1) if hy_bps is not None else None,
         "ig_oas_bps": round(ig_bps, 1) if ig_bps is not None else None,
         "hy_oas_20d_chg_bps": round(hy_20d_chg, 1) if hy_20d_chg is not None else None,
+        "cc_delinq_pct": round(cc_delinq[-1], 2) if cc_delinq else None,
+        "loan_delinq_pct": round(loan_delinq[-1], 2) if loan_delinq else None,
+        "bank_deposits_yoy_pct": round(deposits_yoy, 2) if deposits_yoy is not None else None,
+        "bank_credit_yoy_pct": round(bank_credit_yoy, 2) if bank_credit_yoy is not None else None,
+        "dollar_idx": round(dollar[-1], 2) if dollar else None,
+        "dollar_20d_pct": round(_chg_pct(dollar, 20), 2) if len(dollar) > 20 else None,
+        "jpyusd_20d_pct": round(_chg_pct(jpyusd, 20), 2) if len(jpyusd) > 20 else None,
+        "fxi_20d_pct": round(_chg_pct(fxi, 20), 2) if len(fxi) > 20 else None,
         "hyg_ief_ratio": round(hyg_ief[-1], 6) if hyg_ief else None,
         "hyg_ief_off_high_pct": round(_off_high_pct(hyg_ief), 2) if hyg_ief else None,
         "hyg_ief_20d_pct": round(_chg_pct(hyg_ief, 20), 2) if len(hyg_ief) > 20 else None,

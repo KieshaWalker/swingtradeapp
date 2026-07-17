@@ -47,6 +47,14 @@ _CAPEX_TAGS = [
     ("ifrs-full", "PurchaseOfPropertyPlantAndEquipmentClassifiedAsInvestingActivities"),
 ]
 
+# WS3 — private credit's interior: BDC net asset value per share from the
+# same XBRL API (instant concept, quarterly). Against the daily market
+# prices crisis_pull already fetches, this yields the discount-to-NAV series
+# ("does the market believe the marks"). Non-accrual/PIK live in filing text,
+# not XBRL — that assisted flow is a separate pass.
+_BDC_UNIVERSE = ["ARCC", "OBDC", "FSK", "BXSL", "MAIN", "GBDC", "TSLX", "OCSL", "HTGC", "PSEC"]
+_NAV_TAGS = [("us-gaap", "NetAssetValuePerShare")]
+
 _CONCURRENCY = 3
 
 
@@ -162,6 +170,15 @@ def _capex_rows(entries: list[dict]) -> list[dict]:
     return rows
 
 
+def _instant_rows(entries: list[dict]) -> list[dict]:
+    """Point-in-time concepts (e.g. NAV per share): no duration, dedupe by
+    the instant date preferring the latest filing."""
+    rows = []
+    for e in _dedupe_latest([e for e in entries if not e.get("start")], lambda e: e["end"]):
+        rows.append({"period_type": "PIT", "derived": False, **_common(e)})
+    return rows
+
+
 def _common(e: dict) -> dict:
     return {
         "period_start": e.get("start"),
@@ -236,9 +253,40 @@ async def run_fundamentals_pull() -> dict:
             log.info("fundamentals_pull: %s rows=%d rev_tag=%s cap_tag=%s",
                      ticker, len(rows), rev_tag, cap_tag)
 
+        async def _process_bdc(ticker: str) -> None:
+            nonlocal written
+            cik = ciks.get(ticker)
+            if not cik:
+                errors.append(f"{ticker}:no_cik")
+                return
+            async with sem:
+                tag, unit, entries = await _concept(client, cik, _NAV_TAGS)
+                await asyncio.sleep(0.2)
+            rows = _instant_rows(entries)
+            if not rows:
+                errors.append(f"{ticker}:no_nav")
+                return
+            for r in rows:
+                r.update({"ticker": ticker, "cik": cik, "universe": "bdc",
+                          "metric": "nav_per_share", "tag_used": tag, "unit": unit})
+            # NAV values are dollars-and-cents; the table stores whole numbers
+            # for revenue/capex, so scale to cents to preserve precision.
+            for r in rows:
+                r["value"] = int(round(float(r["value"]) * 100))
+                r["unit"] = f"{unit}_cents"
+            try:
+                db.table("sector_fundamentals").upsert(
+                    rows, on_conflict="ticker,metric,period_type,period_end"
+                ).execute()
+                written += len(rows)
+                log.info("fundamentals_pull: %s nav rows=%d", ticker, len(rows))
+            except Exception as exc:
+                errors.append(f"{ticker}:nav_upsert_failed:{exc}")
+
         await asyncio.gather(
             *[_process(t, "supply") for t in _SUPPLY],
             *[_process(t, "demand") for t in _DEMAND],
+            *[_process_bdc(t) for t in _BDC_UNIVERSE],
         )
 
     log.info("fundamentals_pull: done rows=%d errors=%s", written, errors)

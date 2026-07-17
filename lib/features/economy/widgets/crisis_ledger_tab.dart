@@ -23,6 +23,8 @@ class CrisisSnapshot {
   final double? cpiYoyPct, cpiCoreYoyPct;
   final double? hyOasBps, igOasBps, hyOas20dChgBps;
   final double? hygIef20dPct, lqdIef20dPct, tlt20dPct;
+  final double? ccDelinqPct, loanDelinqPct, bankDepositsYoyPct, bankCreditYoyPct;
+  final double? dollarIdx, dollar20dPct, jpyusd20dPct, fxi20dPct;
   final double? rspSpyOffHighPct, iwmSpyOffHighPct;
   final double? bdcOffHighPct, bdc20dPct, mgrOffHighPct, mgr20dPct;
   final double? specOffHighPct;
@@ -49,6 +51,14 @@ class CrisisSnapshot {
         hygIef20dPct = _d(j['hyg_ief_20d_pct']),
         lqdIef20dPct = _d(j['lqd_ief_20d_pct']),
         tlt20dPct = _d(j['tlt_20d_pct']),
+        ccDelinqPct = _d(j['cc_delinq_pct']),
+        loanDelinqPct = _d(j['loan_delinq_pct']),
+        bankDepositsYoyPct = _d(j['bank_deposits_yoy_pct']),
+        bankCreditYoyPct = _d(j['bank_credit_yoy_pct']),
+        dollarIdx = _d(j['dollar_idx']),
+        dollar20dPct = _d(j['dollar_20d_pct']),
+        jpyusd20dPct = _d(j['jpyusd_20d_pct']),
+        fxi20dPct = _d(j['fxi_20d_pct']),
         rspSpyOffHighPct = _d(j['rsp_spy_off_high_pct']),
         iwmSpyOffHighPct = _d(j['iwm_spy_off_high_pct']),
         bdcOffHighPct = _d(j['bdc_off_high_pct']),
@@ -647,6 +657,41 @@ class CrisisLedgerTab extends ConsumerWidget {
               const SizedBox(height: 16),
               _SectionHeader('Cyclical catalysts (fast variables)'),
               ..._catalystRows(s),
+              const SizedBox(height: 16),
+              _SectionHeader('Household · banks · global (monitors)'),
+              _MonitorRow(
+                name: 'Consumer stress',
+                reading:
+                    'CC delinquency ${_fmt(s.ccDelinqPct)}% · all loans ${_fmt(s.loanDelinqPct)}%',
+                context:
+                    'Fed quarterly. Card delinquency peaked ~6.8% in 2009; rising trend = the household piece cracking.',
+              ),
+              _MonitorRow(
+                name: 'Bank balance sheets (H.8)',
+                reading:
+                    'Deposits ${_fmt(s.bankDepositsYoyPct)}% YoY · bank credit ${_fmt(s.bankCreditYoyPct)}% YoY',
+                context:
+                    'Weekly. Deposit contraction was the March-2023 tell; credit contraction preceded past recessions.',
+              ),
+              _MonitorRow(
+                name: 'Dollar (global funding)',
+                reading:
+                    'Broad index ${_fmt(s.dollarIdx)} (${_fmt(s.dollar20dPct)}% /20d)',
+                context:
+                    'Sharp USD spikes = global dollar-funding stress (2008, 2020, 2022).',
+              ),
+              _MonitorRow(
+                name: 'Yen carry',
+                reading: 'USD/JPY ${_fmt(s.jpyusd20dPct)}% /20d',
+                context:
+                    'Sharply negative = yen strengthening fast = carry unwinding (Aug-2024 signature).',
+              ),
+              _MonitorRow(
+                name: 'China (traded proxy)',
+                reading: 'FXI ${_fmt(s.fxi20dPct)}% /20d',
+                context:
+                    '1873 started in Vienna — this is the Vienna feed. ETF proxy until better data exists.',
+              ),
               const SizedBox(height: 12),
               Text(
                 'Thresholds calibrated on 13 crises, 1873–2022. Conditions can '
@@ -1007,6 +1052,51 @@ class _BubbleGauge extends StatelessWidget {
 
   static String _short(double v) =>
       v >= 100 ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+}
+
+/// Data-first monitor row: no verdict yet — these accumulate history until
+/// thresholds can be calibrated, but the readings surface immediately.
+class _MonitorRow extends StatelessWidget {
+  final String name, reading, context;
+  const _MonitorRow(
+      {required this.name, required this.reading, required this.context});
+
+  @override
+  Widget build(BuildContext buildContext) {
+    final theme = Theme.of(buildContext);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+          width: 72,
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          decoration: BoxDecoration(
+            border: Border.all(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.35)),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text('MONITOR',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                  fontWeight: FontWeight.w700)),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w600)),
+            Text(reading, style: theme.textTheme.bodySmall),
+            Text(context,
+                style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                    fontStyle: FontStyle.italic)),
+          ]),
+        ),
+      ]),
+    );
+  }
 }
 
 /// Signal row with tap-to-expand education: what the signal measures, why it
