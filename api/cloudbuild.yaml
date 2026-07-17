@@ -68,5 +68,9 @@ images:
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPO}/${_SERVICE}:${_TAG}
   - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPO}/${_SERVICE}:latest
 
+# REGIONAL_USER_OWNED_BUCKET satisfies the custom-service-account logging
+# requirement deterministically; CLOUD_LOGGING_ONLY was accepted or rejected
+# at random by build validation (observed 2026-07-16) and conflicts with any
+# explicit --gcs-log-dir.
 options:
-  logging: CLOUD_LOGGING_ONLY
+  defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
