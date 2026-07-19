@@ -50,7 +50,9 @@ class MuPlaybookScreen extends ConsumerWidget {
         hygIef20d == null ? null : hygIef20d >= _creditRedThreshold;
     final pnl = muPrice == null ? null : (muPrice / _entryPrice - 1) * 100;
 
-    return RefreshIndicator(
+    return Scaffold(
+      appBar: AppBar(title: const Text('MU Composite Playbook')),
+      body: RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(crisisChecklistProvider);
         ref.invalidate(muLivePriceProvider);
@@ -92,20 +94,22 @@ class MuPlaybookScreen extends ConsumerWidget {
                             ? '— (no MU iv_snapshot visible)'
                             : '\$${muPrice.toStringAsFixed(2)}  (${pnl! >= 0 ? "+" : ""}${pnl.toStringAsFixed(1)}% on shares · ATM Aug-7 call ≈ -55%)'),
                     _kv(theme, 'Planned exit', '$_plannedExit (20-session hold)'),
-                    Row(children: [
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text('Credit filter now:  ',
                           style: theme.textTheme.bodySmall),
-                      Text(
-                        creditGreen == null
-                            ? '—'
-                            : creditGreen
-                                ? 'GREEN (HYG/IEF ${hygIef20d!.toStringAsFixed(2)}% /20d)'
-                                : 'RED (HYG/IEF ${hygIef20d!.toStringAsFixed(2)}% /20d) — invalidation state',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: creditGreen == false
-                                ? theme.colorScheme.error
-                                : const Color(0xFF2E7D52)),
+                      Expanded(
+                        child: Text(
+                          creditGreen == null
+                              ? '—'
+                              : creditGreen
+                                  ? 'GREEN (HYG/IEF ${hygIef20d!.toStringAsFixed(2)}% /20d)'
+                                  : 'RED (HYG/IEF ${hygIef20d!.toStringAsFixed(2)}% /20d) — invalidation state',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: creditGreen == false
+                                  ? theme.colorScheme.error
+                                  : const Color(0xFF2E7D52)),
+                        ),
                       ),
                     ]),
                     const SizedBox(height: 6),
@@ -264,6 +268,7 @@ class MuPlaybookScreen extends ConsumerWidget {
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
           ),
         ],
+      ),
       ),
     );
   }
