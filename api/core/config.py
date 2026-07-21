@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     fred_api_key: str = ""      # https://fred.stlouisfed.org/docs/api/api_key.html
     port: int = 8000
     log_level: str = "INFO"
+    iv_snapshot_staleness_minutes: int = 5
 
     @property
     def edge_function_base(self) -> str:

@@ -22,12 +22,13 @@ from typing import Optional
 #   lib/services/macro/macro_score_provider.dart  -> consumes IV analytics output indirectly
 # =============================================================================
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from services.iv_analytics import analyse
 from core.supabase_client import get_supabase
+from core.config import settings
 
 router = APIRouter()
 
@@ -147,51 +148,68 @@ def iv_snapshot_endpoint(req: IvSnapshotRequest):
         for g in result.gex_strikes
     ]
     db = get_supabase()
-    db.table("iv_snapshots").upsert({
-        "ticker": req.ticker,
-        "date": today,
-        "atm_iv": result.current_iv,
-        "skew": result.skew,
-        "gex_by_strike": gex_by_strike,
-        "total_gex": result.total_gex,
-        "max_gex_strike": result.max_gex_strike,
-        "put_call_ratio": result.put_call_ratio,
-        "underlying_price": spot,
-        # Extended fields (migration 027)
-        "iv_rank": result.iv_rank,
-        "iv_percentile": result.iv_percentile,
-        # Multi-window IVR/IVP (migration 055) — previously only written by
-        # iv_pull; the live snapshot endpoint must persist them too.
-        "iv_rank_4w": result.iv_rank_4w,
-        "iv_percentile_4w": result.iv_percentile_4w,
-        "iv_rank_26w": result.iv_rank_26w,
-        "iv_percentile_26w": result.iv_percentile_26w,
-        "iv_rating":             result.rating.value,
-        "gamma_regime":          result.gamma_regime.value,
-        "gamma_slope":           result.gamma_slope.value,
-        "iv_gex_signal":         result.iv_gex_signal.value,
-        "zero_gamma_level":      result.zero_gamma_level,
-        "spot_to_zero_gamma_pct": result.spot_to_zero_gamma_pct,
-        "delta_gex":             result.delta_gex,
-        "put_wall_density":      result.put_wall_density,
-        "vanna_regime":          result.vanna_regime.value,
-        "total_vex": result.total_vex,
-        "total_cex": result.total_cex,
-        "total_volga": result.total_volga,
-        "max_vex_strike": result.max_vex_strike,
-        "skew_avg_52w": result.skew_avg_52w,
-        "skew_z_score": result.skew_z_score,
-        "rnd": [s.to_dict() for s in result.rnd] or None,
-        # Institutional GEX fields (migration 029)
-        "gex_0dte":           result.gex_0dte,
-        "gex_0dte_pct":       result.gex_0dte_pct,
-        "volatility_trigger": result.volatility_trigger,
-        "spot_to_vt_pct":     result.spot_to_vt_pct,
-        # Vol-of-vol (migration 028)
-        "vvol_nu":         result.vvol_nu,
-        "vvol_rank":       result.vvol_rank,
-        "vvol_percentile": result.vvol_percentile,
-        "vvol_rating":     result.vvol_rating,
-        "vvol_trend":      result.vvol_trend,
-    }, on_conflict="ticker,date").execute()
-    return {**_result_to_dict(result, spot), "persisted": True, "date": today}
+
+    # Staleness guard: this endpoint fires every time any user opens a chain,
+    # and iv_snapshots is a shared/global row (no user_id) — concurrent users
+    # on a popular ticker would otherwise each trigger a full rewrite of the
+    # same JSONB-heavy row within minutes of each other. Skip the persist step
+    # (not the analytics computation) if it was written recently enough.
+    persisted = True
+    existing = (
+        db.table("iv_snapshots").select("updated_at")
+        .eq("ticker", req.ticker).eq("date", today).limit(1).execute()
+    )
+    if existing.data:
+        last_updated = datetime.fromisoformat(existing.data[0]["updated_at"].replace("Z", "+00:00"))
+        if datetime.now(timezone.utc) - last_updated < timedelta(minutes=settings.iv_snapshot_staleness_minutes):
+            persisted = False
+
+    if persisted:
+        db.table("iv_snapshots").upsert({
+            "ticker": req.ticker,
+            "date": today,
+            "atm_iv": result.current_iv,
+            "skew": result.skew,
+            "gex_by_strike": gex_by_strike,
+            "total_gex": result.total_gex,
+            "max_gex_strike": result.max_gex_strike,
+            "put_call_ratio": result.put_call_ratio,
+            "underlying_price": spot,
+            # Extended fields (migration 027)
+            "iv_rank": result.iv_rank,
+            "iv_percentile": result.iv_percentile,
+            # Multi-window IVR/IVP (migration 055) — previously only written by
+            # iv_pull; the live snapshot endpoint must persist them too.
+            "iv_rank_4w": result.iv_rank_4w,
+            "iv_percentile_4w": result.iv_percentile_4w,
+            "iv_rank_26w": result.iv_rank_26w,
+            "iv_percentile_26w": result.iv_percentile_26w,
+            "iv_rating":             result.rating.value,
+            "gamma_regime":          result.gamma_regime.value,
+            "gamma_slope":           result.gamma_slope.value,
+            "iv_gex_signal":         result.iv_gex_signal.value,
+            "zero_gamma_level":      result.zero_gamma_level,
+            "spot_to_zero_gamma_pct": result.spot_to_zero_gamma_pct,
+            "delta_gex":             result.delta_gex,
+            "put_wall_density":      result.put_wall_density,
+            "vanna_regime":          result.vanna_regime.value,
+            "total_vex": result.total_vex,
+            "total_cex": result.total_cex,
+            "total_volga": result.total_volga,
+            "max_vex_strike": result.max_vex_strike,
+            "skew_avg_52w": result.skew_avg_52w,
+            "skew_z_score": result.skew_z_score,
+            "rnd": [s.to_dict() for s in result.rnd] or None,
+            # Institutional GEX fields (migration 029)
+            "gex_0dte":           result.gex_0dte,
+            "gex_0dte_pct":       result.gex_0dte_pct,
+            "volatility_trigger": result.volatility_trigger,
+            "spot_to_vt_pct":     result.spot_to_vt_pct,
+            # Vol-of-vol (migration 028)
+            "vvol_nu":         result.vvol_nu,
+            "vvol_rank":       result.vvol_rank,
+            "vvol_percentile": result.vvol_percentile,
+            "vvol_rating":     result.vvol_rating,
+            "vvol_trend":      result.vvol_trend,
+        }, on_conflict="ticker,date").execute()
+    return {**_result_to_dict(result, spot), "persisted": persisted, "date": today}
