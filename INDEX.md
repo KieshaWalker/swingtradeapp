@@ -27,7 +27,7 @@ _Supabase auth, login, signup, session guard. All other features depend on authe
 ## B
 
 ### Blotter (5-Phase Trade Evaluation)
-_Stepwise trade evaluation: Economic → Formula → Vol Surface → Greek Grid → Kalshi. Reads snapshots from four other features._
+_Stepwise trade evaluation: Economic → Formula → Vol Surface → Greek Grid. Reads snapshots from four other features._
 
 | Layer | File |
 |-------|------|
@@ -38,7 +38,6 @@ _Stepwise trade evaluation: Economic → Formula → Vol Surface → Greek Grid 
 | [UI] | lib/features/blotter/widgets/phase_panels/formula_phase_panel.dart |
 | [UI] | lib/features/blotter/widgets/phase_panels/vol_surface_phase_panel.dart |
 | [UI] | lib/features/blotter/widgets/phase_panels/greek_grid_phase_panel.dart |
-| [UI] | lib/features/blotter/widgets/phase_panels/kalshi_phase_panel.dart |
 | [MODEL] | lib/features/blotter/models/blotter_models.dart |
 | [MODEL] | lib/features/blotter/models/phase_result.dart |
 | [SVC] | lib/features/blotter/services/fair_value_engine.dart |
@@ -51,7 +50,6 @@ _Stepwise trade evaluation: Economic → Formula → Vol Surface → Greek Grid 
 - IV: `iv_snapshots` → formula_phase_panel
 - Vol Surface: `vol_surface_snapshots` → vol_surface_phase_panel
 - Greek Grid: `greek_grid_snapshots` → greek_grid_phase_panel
-- Kalshi: live via kalshi_providers → kalshi_phase_panel
 - Regime: `regime_snapshots` → used by fair_value_engine
 
 **Waterfall — Writes to:**
@@ -160,7 +158,7 @@ regime_snapshots
 ## E
 
 ### Economy & Macro Indicators
-_Aggregates BLS, BEA, EIA, Census, FRED, Kalshi data into snapshots. One of the most widely read features — changes cascade broadly._
+_Aggregates BLS, BEA, EIA, Census, FRED data into snapshots. One of the most widely read features — changes cascade broadly._
 
 | Layer | File |
 |-------|------|
@@ -171,7 +169,6 @@ _Aggregates BLS, BEA, EIA, Census, FRED, Kalshi data into snapshots. One of the 
 | [UI] | lib/features/economy/widgets/census_tab.dart |
 | [UI] | lib/features/economy/widgets/eia_tab.dart |
 | [UI] | lib/features/economy/widgets/fred_tab.dart |
-| [UI] | lib/features/economy/widgets/kalshi_tab.dart |
 | [UI] | lib/features/economy/widgets/economy_charts_tab.dart |
 | [UI] | lib/features/economy/widgets/gasoline_price_history_chart.dart |
 | [UI] | lib/features/economy/widgets/nat_gas_import_chart.dart |
@@ -181,7 +178,6 @@ _Aggregates BLS, BEA, EIA, Census, FRED, Kalshi data into snapshots. One of the 
 | [SVC] | lib/services/eia/eia_service.dart + eia_models.dart |
 | [SVC] | lib/services/census/census_service.dart + census_models.dart |
 | [SVC] | lib/services/fred/fred_service.dart + fred_models.dart + fred_providers.dart + fred_storage_service.dart |
-| [SVC] | lib/services/kalshi/kalshi_service.dart + kalshi_models.dart + kalshi_providers.dart |
 | [SVC] | lib/services/economy/economy_snapshot_models.dart |
 | [SVC] | lib/services/economy/economy_storage_service.dart |
 | [SVC] | lib/services/economy/economy_storage_providers.dart |
@@ -192,7 +188,6 @@ _Aggregates BLS, BEA, EIA, Census, FRED, Kalshi data into snapshots. One of the 
 | [FN] | supabase/functions/get-eia-data/index.ts |
 | [FN] | supabase/functions/get-census-data/index.ts |
 | [FN] | supabase/functions/get-fred-data/index.ts |
-| [FN] | supabase/functions/get-kalshi-data/index.ts |
 | [DB] | supabase/migrations/005_economy_snapshots.sql → `economy_indicator_snapshots`, `economy_treasury_snapshots`, `economy_quote_snapshots` |
 | [DB] | supabase/migrations/007_gasoline_price_history.sql → `us_gasoline_price_history` |
 | [DB] | supabase/migrations/008_unemployment_rate_history.sql → `us_unemployment_rate_history` |
@@ -516,7 +511,6 @@ SCHWAB ──────► OPTIONS & DECISION ◄──── IV & VOL ◄─�
     │ (5 phases)   │◄─── Greek Grid
     │              │◄─── Economy
     └──────┬───────┘◄─── IV
-           │         ◄─── Kalshi (via Economy)
            ▼
          IDEAS
            │
@@ -530,11 +524,10 @@ SCHWAB ──────► OPTIONS & DECISION ◄──── IV & VOL ◄─�
 | Feature | Feeds into | Fed by |
 |---------|-----------|--------|
 | Schwab | Options, Trades (marks), Regime (quotes) | — |
-| Economy | Regime (ML features), Blotter phase 1 | FRED, BLS, BEA, EIA, Census, Kalshi edge fns |
+| Economy | Regime (ML features), Blotter phase 1 | FRED, BLS, BEA, EIA, Census edge fns |
 | IV | Blotter phase 2, Regime (ML features), Options | Schwab chains |
 | Vol Surface | Blotter phase 3, SABR, Options | Schwab chains |
 | Greek Grid | Blotter phase 4 | Schwab chains / Options |
-| Kalshi | Blotter phase 5, Economy screen | Kalshi edge fn |
 | Regime | Blotter (fair value), Options scoring, Summary | Economy + IV + Schwab |
 | Options | Trades, Ideas, Blotter, Vol Surface | Schwab, IV, Regime |
 | Blotter | Ideas | Economy, IV, Vol Surface, Greek Grid, Regime |
