@@ -2,13 +2,23 @@ from __future__ import annotations
 from typing import Optional
 
 # =============================================================================
-# jobs/position_eod_snapshot.py
+# jobs/watched_contract_pull.py
 # =============================================================================
-# Cloud Scheduler job — run at market close (e.g. 21:05 UTC / 4:05 PM ET).
-# For every open position leg, fetches the current options chain + fair-value
-# Greeks and inserts an 'eod' snapshot into position_leg_snapshots.
+# Cloud Scheduler job — run at market close (e.g. 21:07 UTC / 4:07 PM ET, two
+# minutes after position-eod-snapshot so the two don't contend on the same
+# ticker's chain fetch at the same instant).
 #
-# Cron: 5 21 * * 1-5  (21:05 UTC Mon–Fri)
+# Pre-entry twin of position_eod_snapshot.py: for every row in
+# watched_contracts with status='watching', fetches the current options
+# chain + fair-value Greeks and upserts one row into
+# watched_contract_snapshots for today. Structurally this is the same walk
+# as position_eod_snapshot.py (group by ticker, fetch each chain once,
+# locate the contract, run fv_compute) with two differences: there's no
+# entry/eod/exit snapshot_type (nothing has been entered yet -- every row is
+# just "what this contract looked like today"), and expired watches are
+# skipped before hitting the chain rather than surfacing as a lookup miss.
+#
+# Cron: 7 21 * * 1-5  (21:07 UTC Mon-Fri)
 # =============================================================================
 
 import asyncio
@@ -26,49 +36,51 @@ from services.heston import HestonParams
 log = logging.getLogger(__name__)
 
 
-async def run_position_eod_snapshot() -> dict:
+async def run_watched_contract_pull() -> dict:
     now = datetime.now(timezone.utc)
-    # Safety guard — only run near market close (20:00–22:00 UTC)
+    # Safety guard — only run near market close (20:00-22:00 UTC), matching
+    # position_eod_snapshot.py so both jobs capture the same close.
     if not (20 <= now.hour < 22):
-        log.info("position_eod_snapshot: skipped (not near market close)")
+        log.info("watched_contract_pull: skipped (not near market close)")
         return {"status": "skipped_time"}
 
     db = get_supabase()
-    today = date.today().isoformat()
+    today = date.today()
+    today_iso = today.isoformat()
 
-    # Fetch all open legs with their parent position for user_id
-    legs_resp = (
-        db.table("position_legs")
-        .select("id, type, ticker, strike, expiry, quantity, position_id, positions(user_id)")
-        .eq("status", "open")
-        .neq("type", "underlying")
+    watches_resp = (
+        db.table("watched_contracts")
+        .select("id, ticker, strike, expiry, type")
+        .eq("status", "watching")
         .execute()
     )
-    legs = legs_resp.data or []
+    watches = watches_resp.data or []
 
-    if not legs:
-        log.info("position_eod_snapshot: no open option legs")
-        return {"status": "no_legs"}
+    # Drop watches whose expiry has already passed — the chain won't return
+    # them, so there's no point spending a lookup on it.
+    watches = [w for w in watches if w["expiry"] >= today_iso]
 
-    # Group legs by ticker so we fetch each chain once
+    if not watches:
+        log.info("watched_contract_pull: no active watches")
+        return {"status": "no_watches"}
+
     by_ticker: dict[str, list[dict]] = {}
-    for leg in legs:
-        by_ticker.setdefault(leg["ticker"], []).append(leg)
+    for w in watches:
+        by_ticker.setdefault(w["ticker"], []).append(w)
 
     results: dict[str, str] = {}
     snapshots: list[dict] = []
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        async def _process_ticker(ticker: str, ticker_legs: list[dict]) -> None:
+        async def _process_ticker(ticker: str, ticker_watches: list[dict]) -> None:
             chain = await fetch_schwab_chain(client, ticker)
             if chain is None:
-                for leg in ticker_legs:
-                    results[leg["id"]] = "chain_error"
+                for w in ticker_watches:
+                    results[w["id"]] = "chain_error"
                 return
 
             spot = float(chain.get("underlyingPrice", 0) or 0)
 
-            # Build a flat lookup: (expiry_date, strike, type) → contract dict
             contract_map: dict[tuple, dict] = {}
             for exp_key, strikes in chain.get("callExpDateMap", {}).items():
                 exp_date = exp_key.split(":")[0]
@@ -81,8 +93,7 @@ async def run_position_eod_snapshot() -> dict:
                     c = contracts[0] if contracts else {}
                     contract_map[(exp_date, float(strike_str), "put")] = c
 
-            # Fetch Heston params once per ticker — shared across all legs.
-            heston_params:Optional[HestonParams] = None
+            heston_params: Optional[HestonParams] = None
             try:
                 h_rows = (
                     db.table("heston_calibrations")
@@ -109,41 +120,37 @@ async def run_position_eod_snapshot() -> dict:
             except Exception as he:
                 log.warning("heston_fetch_error ticker=%s error=%r", ticker, he)
 
-            for leg in ticker_legs:
+            for w in ticker_watches:
                 try:
-                    expiry:Optional[str] = leg.get("expiry")
-                    strike:Optional[float] = leg.get("strike")
-                    leg_type: str = leg["type"]  # 'call' or 'put'
+                    expiry: str = w["expiry"]
+                    strike: float = float(w["strike"])
+                    watch_type: str = w["type"]  # 'call' or 'put'
 
-                    if expiry is None or strike is None:
-                        results[leg["id"]] = "missing_expiry_or_strike"
-                        continue
-
-                    contract = contract_map.get((expiry, float(strike), leg_type))
+                    contract = contract_map.get((expiry, strike, watch_type))
                     if contract is None:
-                        # Fuzzy match — nearest strike, but only within 2% of
-                        # the leg strike so a sparse chain can't silently
-                        # snapshot a far-away contract's Greeks.
+                        # Fuzzy match — nearest strike within 2%, same
+                        # tolerance rule as position_eod_snapshot.py, so a
+                        # sparse chain can't silently snapshot a far strike.
                         candidates = [
                             (k, v) for k, v in contract_map.items()
-                            if k[0] == expiry and k[2] == leg_type
+                            if k[0] == expiry and k[2] == watch_type
                         ]
                         if candidates:
                             best_k, best_v = min(
                                 candidates,
-                                key=lambda kv: abs(kv[0][1] - float(strike)),
+                                key=lambda kv: abs(kv[0][1] - strike),
                             )
-                            tolerance = max(0.5, 0.02 * float(strike))
-                            if abs(best_k[1] - float(strike)) <= tolerance:
+                            tolerance = max(0.5, 0.02 * strike)
+                            if abs(best_k[1] - strike) <= tolerance:
                                 contract = best_v
                             else:
                                 log.warning(
-                                    "position_eod: nearest strike %.2f too far from leg strike %.2f (leg=%s ticker=%s)",
-                                    best_k[1], float(strike), leg["id"], ticker,
+                                    "watched_contract_pull: nearest strike %.2f too far from watch strike %.2f (watch=%s ticker=%s)",
+                                    best_k[1], strike, w["id"], ticker,
                                 )
 
                     if not contract:
-                        results[leg["id"]] = "contract_not_found"
+                        results[w["id"]] = "contract_not_found"
                         continue
 
                     iv = _pct_to_dec(contract.get("volatility"))
@@ -155,29 +162,25 @@ async def run_position_eod_snapshot() -> dict:
                     vega = _fany(contract, "vega")
                     rho = _fany(contract, "rho")
 
-                    # Compute fair-value model prices via direct function call.
                     fv_result = None
-                    if dte <= 0:
-                        log.warning("position_eod: missing daysToExpiration for leg=%s ticker=%s; skipping fv_compute", leg.get("id"), ticker)
                     if iv and dte > 0 and mark is not None and spot > 0:
                         try:
                             fv_result = fv_compute(
                                 spot=spot,
-                                strike=float(strike),
+                                strike=strike,
                                 implied_vol=iv,
                                 days_to_expiry=dte,
-                                is_call=(leg_type == "call"),
+                                is_call=(watch_type == "call"),
                                 broker_mid=mark,
                                 heston_params=heston_params,
                             )
                         except Exception as fv_exc:
-                            log.warning("fv_error leg=%s error=%r", leg["id"], fv_exc)
+                            log.warning("fv_error watch=%s error=%r", w["id"], fv_exc)
 
                     snapshot = {
                         "id": str(uuid.uuid4()),
-                        "leg_id": leg["id"],
-                        "snapshot_date": today,
-                        "snapshot_type": "eod",
+                        "watch_id": w["id"],
+                        "snapshot_date": today_iso,
                         "underlying_price": spot if spot > 0 else None,
                         "market_price": mark,
                         "implied_vol": iv,
@@ -188,6 +191,7 @@ async def run_position_eod_snapshot() -> dict:
                         "rho": rho,
                         "open_interest": _igt0(contract, "openInterest"),
                         "total_volume": _igt0(contract, "totalVolume"),
+                        "dte": dte if dte > 0 else None,
                     }
                     if fv_result:
                         snapshot["bs_theo"]     = fv_result.bs_fair_value
@@ -196,23 +200,23 @@ async def run_position_eod_snapshot() -> dict:
                         snapshot["model_theo"]  = fv_result.model_fair_value
 
                     snapshots.append(snapshot)
-                    results[leg["id"]] = "ok"
+                    results[w["id"]] = "ok"
 
                 except Exception as exc:
-                    log.error("leg_snapshot_error leg=%s error=%r", leg["id"], exc, exc_info=True)
-                    results[leg["id"]] = f"error:{exc!r}"
+                    log.error("watch_snapshot_error watch=%s error=%r", w["id"], exc, exc_info=True)
+                    results[w["id"]] = f"error:{exc!r}"
 
         await asyncio.gather(*[
-            _process_ticker(ticker, ticker_legs)
-            for ticker, ticker_legs in by_ticker.items()
+            _process_ticker(ticker, ticker_watches)
+            for ticker, ticker_watches in by_ticker.items()
         ])
 
     if snapshots:
-        db.table("position_leg_snapshots").upsert(
+        db.table("watched_contract_snapshots").upsert(
             snapshots,
-            on_conflict="leg_id,snapshot_date,snapshot_type",
+            on_conflict="watch_id,snapshot_date",
         ).execute()
-        log.info("position_eod_snapshot: inserted %d snapshots", len(snapshots))
+        log.info("watched_contract_pull: inserted %d snapshots", len(snapshots))
 
     ok_count = sum(1 for v in results.values() if v == "ok")
-    return {"status": "done", "legs": len(legs), "snapshots": ok_count, "details": results}
+    return {"status": "done", "watches": len(watches), "snapshots": ok_count, "details": results}

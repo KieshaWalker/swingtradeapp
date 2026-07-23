@@ -224,6 +224,19 @@ async def position_eod_snapshot_trigger(request: Request):
     return result
 
 
+@router.post("/watched-contract-pull")
+async def watched_contract_pull_trigger(request: Request):
+    """Job 11 — Capture EOD Greeks + fair-value theos + OI/volume for every
+    watched (not-yet-entered) contract, into watched_contract_snapshots.
+    Cron: 7 21 * * 1-5   (21:07 UTC Mon-Fri, 2 min after position-eod-snapshot)
+    """
+    _verify_scheduler(request)
+    from jobs.watched_contract_pull import run_watched_contract_pull
+    result = await run_watched_contract_pull()
+    log.info("watched_contract_pull_complete result=%s", result)
+    return result
+
+
 @router.post("/backfill-rv")
 async def backfill_rv_trigger(request: Request):
     """One-time backfill: 10 years of daily RV for all watched tickers → realized_vol_snapshots."""
