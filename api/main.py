@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routers import black_scholes, sabr, heston, fair_value, iv_analytics, realized_vol, arb, scoring, decision, greek_grid, scheduler_trigger, regime, macro, fetch_dtes
+from routers import black_scholes, sabr, heston, fair_value, iv_analytics, realized_vol, arb, scoring, decision, greek_grid, scheduler_trigger, regime, macro, fetch_dtes, watched_contracts
 
 
 @asynccontextmanager
@@ -99,6 +99,7 @@ app.include_router(scheduler_trigger.router, prefix="/jobs", tags=["Scheduled Jo
 app.include_router(regime.router, prefix="/regime", tags=["Regime"])
 app.include_router(macro.router, prefix="/macro", tags=["Macro"])
 app.include_router(fetch_dtes.router, prefix="/fetch", tags=["Fetch"])
+app.include_router(watched_contracts.router, prefix="/watched-contracts", tags=["Watched Contracts"])
 
 
 @app.get("/health")
