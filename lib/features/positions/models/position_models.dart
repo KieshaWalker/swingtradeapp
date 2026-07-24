@@ -207,6 +207,20 @@ class PositionLeg {
         if (closedAt != null) 'closed_at': closedAt!.toUtc().toIso8601String(),
       };
 
+  /// Days to expiry from today, floor-clamped at 0. Null for underlying legs
+  /// or when expiry can't be parsed. Used to key SABR slice lookups
+  /// (sabrSliceProvider((ticker, dte))) and the payoff/projection chart.
+  int? get dte {
+    if (expiry == null) return null;
+    final exp = DateTime.tryParse(expiry!);
+    if (exp == null) return null;
+    final today = DateTime.now();
+    final days = DateTime(exp.year, exp.month, exp.day)
+        .difference(DateTime(today.year, today.month, today.day))
+        .inDays;
+    return days < 0 ? 0 : days;
+  }
+
   String get label {
     final sign = quantity > 0 ? '+' : '';
     if (type == LegType.underlying) return '$sign$quantity $ticker';
@@ -341,6 +355,8 @@ class EnrichedLeg {
     if (leg.type == LegType.underlying) return 0.0;
     return contractRho != null ? leg.quantity * contractRho! : 0.0;
   }
+
+  int? get dte => leg.dte;
 }
 
 class EnrichedPosition {

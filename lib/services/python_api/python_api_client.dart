@@ -28,6 +28,7 @@
 //   /greek-grid/interpret-grid  -> api/routers/greek_grid.py
 //   /greek-grid/interpret-chart -> api/routers/greek_grid.py
 //   /fetch/ticker-dtes          -> api/routers/fetch_dtes.py
+//   /watched-contracts/evaluate -> api/routers/watched_contracts.py
 //
 // If a new Python backend feature is added, expose a Dart method here and
 // update the calling widget/provider to use the new response shape.
@@ -484,5 +485,29 @@ class PythonApiClient {
       _post('/greek-grid/interpret-chart', {
         'chart_history': chartHistory,
         'dte_bucket': dteBucket,
+      });
+
+  // ── Watched Contracts ──────────────────────────────────────────────────────
+
+  /// Scores a single contract's own snapshot history into a 0-100 opportunity
+  /// grade and checks proximity to any supplied levels. [snapshots] should be
+  /// shaped like position_leg_snapshots/watched_contract_snapshots rows (each
+  /// needs at least snapshot_date, implied_vol, market_price, model_theo).
+  /// [levels] entries need at least {price, label}; source/kind optional.
+  /// Returns {signal, reason, opportunity: {snapshot_count,
+  ///   insufficient_history, current_iv, iv_rank, iv_percentile,
+  ///   current_edge_bps, edge_rank, edge_percentile, iv_score, edge_score,
+  ///   opportunity_score, grade, flags}, nearby_level}
+  static Future<Map<String, dynamic>> watchedContractsEvaluate({
+    required List<Map<String, dynamic>> snapshots,
+    double? underlyingPrice,
+    List<Map<String, dynamic>>? levels,
+    double tolerancePct = 2.0,
+  }) =>
+      _post('/watched-contracts/evaluate', {
+        'snapshots': snapshots,
+        'underlying_price': ?underlyingPrice,
+        'levels': levels ?? [],
+        'tolerance_pct': tolerancePct,
       });
 }

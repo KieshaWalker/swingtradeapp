@@ -237,6 +237,21 @@ async def watched_contract_pull_trigger(request: Request):
     return result
 
 
+@router.post("/focus-digest-pull")
+async def focus_digest_pull_trigger(request: Request):
+    """Job 12 — Assemble the daily digest (IV/gamma read + scored open
+    positions/watches) for the hand-picked focus ticker list ->
+    focus_ticker_digest.
+    Cron: 15 21 * * 1-5   (21:15 UTC Mon-Fri, after position-eod-snapshot,
+    watched-contract-pull, and crisis-pull have all landed)
+    """
+    _verify_scheduler(request)
+    from jobs.focus_digest_pull import run_focus_digest_pull
+    result = await run_focus_digest_pull()
+    log.info("focus_digest_pull_complete result=%s", result)
+    return result
+
+
 @router.post("/backfill-rv")
 async def backfill_rv_trigger(request: Request):
     """One-time backfill: 10 years of daily RV for all watched tickers → realized_vol_snapshots."""

@@ -5,9 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets/app_menu_button.dart';
+import '../../../services/iv/iv_providers.dart';
 import '../models/position_models.dart';
 import '../providers/positions_provider.dart';
 import '../widgets/add_position_dialog.dart';
+import '../widgets/gex_regime_card.dart';
+import '../widgets/leg_history_charts.dart';
+import '../widgets/leg_opportunity_badge.dart';
+import '../widgets/leg_payoff_chart.dart';
+import '../widgets/leg_regime_badge.dart';
 
 class PositionsScreen extends ConsumerWidget {
   const PositionsScreen({super.key});
@@ -250,10 +256,11 @@ class _PositionCardState extends ConsumerState<_PositionCard> {
               ],
             ),
           ),
-          // Snapshot history panel
+          // Expanded leg detail: GEX regime, vol surface, IV/P&L history,
+          // payoff/projection, opportunity + regime badges, raw snapshot table.
           if (_historyExpanded && _expandedLegId != null) ...[
             const Divider(height: 1, color: AppTheme.borderColor),
-            _SnapshotPanel(legId: _expandedLegId!),
+            _ExpandedLegDetail(ep: ep, legId: _expandedLegId!),
           ],
           const Divider(height: 1, color: AppTheme.borderColor),
           // Edge by model
@@ -410,7 +417,119 @@ class _LegChip extends StatelessWidget {
   }
 }
 
-// ── Snapshot history panel ────────────────────────────────────────────────────
+// ── Expanded leg detail ─────────────────────────────────────────────────────
+
+class _ExpandedLegDetail extends ConsumerWidget {
+  final EnrichedPosition ep;
+  final String legId;
+  const _ExpandedLegDetail({required this.ep, required this.legId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final expanded = ep.legs.where((l) => l.leg.id == legId).firstOrNull;
+    if (expanded == null) return const SizedBox.shrink();
+
+    final leg = expanded.leg;
+    final ticker = leg.ticker;
+    final sameTickerLegs =
+        ep.legs.where((l) => l.leg.ticker == ticker).toList();
+
+    final ivAsync = ref.watch(ivAnalysisProvider(ticker));
+    final ivAnalysis = ivAsync.valueOrNull;
+    final snapshotsAsync = ref.watch(legSnapshotsProvider(legId));
+
+    // Latest known IV per same-ticker leg, for the payoff chart's "today"
+    // curve — watched here rather than inside LegPayoffChart so the chart
+    // widget itself stays a pure function of its inputs.
+    final payoffLegs = sameTickerLegs.map((el) {
+      final snaps = ref.watch(legSnapshotsProvider(el.leg.id)).valueOrNull ?? const [];
+      final withIv = snaps.where((s) => s.impliedVol != null).toList()
+        ..sort((a, b) => a.snapshotDate.compareTo(b.snapshotDate));
+      return PayoffLegInput(
+        type: el.leg.type,
+        quantity: el.leg.quantity,
+        strike: el.leg.strike,
+        entryPrice: el.leg.entryPrice,
+        dte: el.leg.dte,
+        impliedVol: withIv.isNotEmpty ? withIv.last.impliedVol : null,
+      );
+    }).toList();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Regime + opportunity badges
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              LegRegimeBadge(ticker: ticker),
+              LegOpportunityBadge(legId: legId, ticker: ticker),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // GEX / gamma regime
+          GexRegimeCard(
+            ivAnalysis: ivAnalysis,
+            loading: ivAsync.isLoading,
+            ticker: ticker,
+            isCall: leg.type != LegType.put,
+          ),
+          const SizedBox(height: 10),
+
+          // IV + P&L history
+          snapshotsAsync.when(
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                  child: SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))),
+            ),
+            error: (e, _) => Padding(
+              padding: const EdgeInsets.all(10),
+              child: Text('Failed to load history: $e',
+                  style: const TextStyle(color: AppTheme.lossColor, fontSize: 11)),
+            ),
+            data: (snapshots) => Column(
+              children: [
+                LegIvHistoryChart(snapshots: snapshots),
+                const SizedBox(height: 10),
+                LegPnlHistoryChart(
+                  snapshots: snapshots,
+                  entryPrice: leg.entryPrice,
+                  quantity: leg.quantity,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Payoff / projection
+          LegPayoffChart(
+            ticker: ticker,
+            spot: ivAnalysis?.underlyingPrice ?? 0,
+            legs: payoffLegs,
+          ),
+
+          const SizedBox(height: 10),
+          const Text('Snapshot detail',
+              style: TextStyle(
+                  color: AppTheme.neutralColor,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4)),
+          _SnapshotPanel(legId: legId),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Snapshot history panel (raw detail table) ─────────────────────────────────
 
 class _SnapshotPanel extends ConsumerWidget {
   final String legId;

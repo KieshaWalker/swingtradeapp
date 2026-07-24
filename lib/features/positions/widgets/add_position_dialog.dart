@@ -2,8 +2,11 @@
 // features/positions/widgets/add_position_dialog.dart
 // =============================================================================
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../core/theme.dart';
+import '../../../services/schwab/schwab_models.dart';
+import '../../../services/schwab/schwab_providers.dart';
 import '../models/position_models.dart';
 
 // ── Mutable draft for a leg inside the dialog ─────────────────────────────────
@@ -288,7 +291,7 @@ class _AddPositionDialogState extends State<_AddPositionDialog> {
 
 // ── Per-leg editor ────────────────────────────────────────────────────────────
 
-class _LegEditor extends StatefulWidget {
+class _LegEditor extends ConsumerStatefulWidget {
   final _LegDraft draft;
   final VoidCallback onRemove;
   final VoidCallback onChanged;
@@ -301,14 +304,23 @@ class _LegEditor extends StatefulWidget {
   });
 
   @override
-  State<_LegEditor> createState() => _LegEditorState();
+  ConsumerState<_LegEditor> createState() => _LegEditorState();
 }
 
-class _LegEditorState extends State<_LegEditor> {
+class _LegEditorState extends ConsumerState<_LegEditor> {
   late final TextEditingController _tickerCtrl;
   late final TextEditingController _strikeCtrl;
   late final TextEditingController _qtyCtrl;
   late final TextEditingController _entryCtrl;
+
+  // Chain-aware entry: once a chain is looked up for this ticker, strike and
+  // expiry switch from free-text to dropdowns sourced from real contracts --
+  // closes the gap where a typo'd strike/expiry silently produced a leg with
+  // no market data. Falls back to the original manual fields if lookup fails
+  // or hasn't been triggered (e.g. no Schwab connection), so the dialog
+  // never gets blocked by the live chain being unavailable.
+  String? _chainTicker;
+  OptionsChainParams? _chainParams;
 
   @override
   void initState() {
@@ -326,6 +338,42 @@ class _LegEditorState extends State<_LegEditor> {
     _qtyCtrl.dispose();
     _entryCtrl.dispose();
     super.dispose();
+  }
+
+  void _lookUpChain() {
+    final ticker = _tickerCtrl.text.trim().toUpperCase();
+    if (ticker.isEmpty) return;
+    setState(() {
+      _chainTicker = ticker;
+      _chainParams = OptionsChainParams(
+        symbol: ticker, contractType: 'ALL', strikeCount: 50,
+      );
+    });
+  }
+
+  void _onExpirySelected(String expiry, SchwabOptionsChain chain) {
+    setState(() {
+      widget.draft.expiry = expiry;
+      // Strike may no longer be valid for the newly-selected expiry — clear
+      // it rather than silently keep a strike from a different expiration.
+      widget.draft.strike = null;
+      _strikeCtrl.text = '';
+    });
+    widget.onChanged();
+  }
+
+  void _onStrikeSelected(SchwabOptionContract contract) {
+    setState(() {
+      widget.draft.strike = contract.strikePrice;
+      _strikeCtrl.text = contract.strikePrice.toString();
+      // Suggest the live mark as entry price -- only when the user hasn't
+      // already typed one, so this never clobbers a real fill price.
+      if (widget.draft.entryPrice == null && _entryCtrl.text.trim().isEmpty) {
+        widget.draft.entryPrice = contract.markPrice;
+        _entryCtrl.text = contract.markPrice.toStringAsFixed(2);
+      }
+    });
+    widget.onChanged();
   }
 
   Future<void> _pickDate() async {
@@ -354,6 +402,149 @@ class _LegEditorState extends State<_LegEditor> {
         '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
     setState(() => widget.draft.expiry = iso);
     widget.onChanged();
+  }
+
+  Widget _manualStrikeExpiryRow(_LegDraft draft) => Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _strikeCtrl,
+              style: const TextStyle(color: Colors.white),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Strike',
+                hintText: '95',
+                isDense: true,
+              ),
+              onChanged: (v) {
+                draft.strike = double.tryParse(v);
+                widget.onChanged();
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: GestureDetector(
+              onTap: _pickDate,
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Expiry',
+                  isDense: true,
+                  suffixIcon: Icon(Icons.calendar_today_outlined,
+                      size: 16, color: AppTheme.neutralColor),
+                ),
+                child: Text(
+                  draft.expiry ?? 'Pick date',
+                  style: TextStyle(
+                    color: draft.expiry != null ? Colors.white : Colors.white38,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+
+  Widget _chainStrikeExpiryRow(_LegDraft draft, OptionsChainParams params) {
+    final chainAsync = ref.watch(schwabOptionsChainProvider(params));
+    return chainAsync.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Row(children: [
+          SizedBox(
+              width: 14, height: 14,
+              child: CircularProgressIndicator(strokeWidth: 1.5)),
+          SizedBox(width: 8),
+          Text('Loading chain…',
+              style: TextStyle(color: AppTheme.neutralColor, fontSize: 12)),
+        ]),
+      ),
+      error: (e, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Chain lookup failed — using manual entry',
+              style: const TextStyle(color: AppTheme.lossColor, fontSize: 11)),
+          const SizedBox(height: 8),
+          _manualStrikeExpiryRow(draft),
+        ],
+      ),
+      data: (chain) {
+        if (chain == null || chain.expirations.isEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('No chain data — using manual entry',
+                  style: TextStyle(color: AppTheme.lossColor, fontSize: 11)),
+              const SizedBox(height: 8),
+              _manualStrikeExpiryRow(draft),
+            ],
+          );
+        }
+
+        final expiryDates = chain.expirations.map((e) => e.expirationDate).toList();
+        final selectedExpiry =
+            expiryDates.contains(draft.expiry) ? draft.expiry : null;
+        final expiration = selectedExpiry == null
+            ? null
+            : chain.expirations.firstWhere((e) => e.expirationDate == selectedExpiry);
+        final contracts = expiration == null
+            ? const <SchwabOptionContract>[]
+            : (draft.type == LegType.put ? expiration.puts : expiration.calls);
+        final sortedContracts = [...contracts]
+          ..sort((a, b) => a.strikePrice.compareTo(b.strikePrice));
+        final selectedStrike = sortedContracts
+            .where((c) => c.strikePrice == draft.strike)
+            .firstOrNull;
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<double>(
+                initialValue: selectedStrike?.strikePrice,
+                isExpanded: true,
+                dropdownColor: AppTheme.elevatedColor,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: const InputDecoration(labelText: 'Strike', isDense: true),
+                hint: const Text('Select', style: TextStyle(color: Colors.white38)),
+                items: sortedContracts
+                    .map((c) => DropdownMenuItem(
+                          value: c.strikePrice,
+                          child: Text(
+                              '\$${c.strikePrice.toStringAsFixed(c.strikePrice % 1 == 0 ? 0 : 1)}  '
+                              '(mark \$${c.markPrice.toStringAsFixed(2)})'),
+                        ))
+                    .toList(),
+                onChanged: expiration == null
+                    ? null
+                    : (v) {
+                        final c = sortedContracts.where((c) => c.strikePrice == v).firstOrNull;
+                        if (c != null) _onStrikeSelected(c);
+                      },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                initialValue: selectedExpiry,
+                isExpanded: true,
+                dropdownColor: AppTheme.elevatedColor,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: const InputDecoration(labelText: 'Expiry', isDense: true),
+                hint: const Text('Select', style: TextStyle(color: Colors.white38)),
+                items: expiryDates
+                    .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) _onExpirySelected(v, chain);
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -405,13 +596,29 @@ class _LegEditorState extends State<_LegEditor> {
                   controller: _tickerCtrl,
                   style: const TextStyle(color: Colors.white),
                   textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Ticker',
                     hintText: 'SPY',
                     isDense: true,
+                    suffixIcon: isOption
+                        ? IconButton(
+                            icon: const Icon(Icons.search_rounded,
+                                size: 18, color: AppTheme.neutralColor),
+                            tooltip: 'Look up live chain',
+                            onPressed: _lookUpChain,
+                          )
+                        : null,
                   ),
+                  onSubmitted: (_) => isOption ? _lookUpChain() : null,
                   onChanged: (v) {
                     draft.ticker = v;
+                    // A ticker edit invalidates any chain looked up for the
+                    // old symbol -- fall back to manual fields until the
+                    // user looks up the new one.
+                    if (_chainTicker != null && v.trim().toUpperCase() != _chainTicker) {
+                      _chainTicker = null;
+                      _chainParams = null;
+                    }
                     widget.onChanged();
                   },
                 ),
@@ -437,53 +644,13 @@ class _LegEditorState extends State<_LegEditor> {
               ),
             ],
           ),
-          // Strike + Expiry row (options only)
+          // Strike + Expiry row (options only) -- chain-aware dropdowns once
+          // a chain has been looked up, manual fields otherwise.
           if (isOption) ...[
             const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _strikeCtrl,
-                    style: const TextStyle(color: Colors.white),
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Strike',
-                      hintText: '95',
-                      isDense: true,
-                    ),
-                    onChanged: (v) {
-                      draft.strike = double.tryParse(v);
-                      widget.onChanged();
-                    },
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: _pickDate,
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Expiry',
-                        isDense: true,
-                        suffixIcon: Icon(Icons.calendar_today_outlined,
-                            size: 16, color: AppTheme.neutralColor),
-                      ),
-                      child: Text(
-                        draft.expiry ?? 'Pick date',
-                        style: TextStyle(
-                          color: draft.expiry != null
-                              ? Colors.white
-                              : Colors.white38,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            _chainParams == null
+                ? _manualStrikeExpiryRow(draft)
+                : _chainStrikeExpiryRow(draft, _chainParams!),
           ],
           // Entry price row
           const SizedBox(height: 10),

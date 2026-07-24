@@ -22,15 +22,10 @@
 //   /trades/:id           → TradeDetailScreen     (features/trades) — extra: Trade
 //   /trades/:id/journal   → TradeJournalScreen    (features/trades) — extra: Trade
 //   /calculator           → CalculatorScreen      (features/calculator)
-//   /journal              → JournalScreen         (features/journal)
-//   /journal/add          → AddJournalScreen      (features/journal)
 //   /economy              → EconomyPulseScreen    (features/economy)
-//   /blotter/evaluate     → TradeEvalScreen       (features/blotter) — ?ticker=
 //   /vol-surface          → VolSurfaceScreen      (features/vol_surface, global)
 //   /macro                → MacroScoreScreen      (features/macro)
 //   /macro/iv-crush       → IvCrushTrackerScreen  (features/macro)
-//   /ideas                → TradeIdeasScreen      (features/ideas)
-//   /current-regime       → CurrentRegimeScreen   (features/current_regime)
 //   /positions            → PositionsScreen       (features/positions)
 //   /strategy-tracker     → StrategyTrackerScreen (features/strategy_tracker)
 //   /strategy-tracker/:id → StrategyDetailScreen  (features/strategy_tracker)
@@ -57,9 +52,6 @@ import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/signup_screen.dart';
 import '../features/calculator/screens/calculator_screen.dart';
 import '../features/economy/screens/economy_pulse_screen.dart';
-import '../features/journal/models/journal_entry.dart';
-import '../features/journal/screens/add_journal_screen.dart';
-import '../features/journal/screens/journal_screen.dart';
 import '../features/ticker_profile/screens/ticker_dashboard_screen.dart';
 import '../features/options/screens/options_chain_screen.dart';
 import '../features/options/screens/option_decision_wizard.dart';
@@ -73,13 +65,10 @@ import '../features/trades/screens/trade_journal_screen.dart';
 import '../features/trades/screens/trades_screen.dart';
 import '../features/summary/screens/summary_screen.dart';
 import '../features/iv/screens/iv_screen.dart';
-import '../features/blotter/screens/trade_eval_screen.dart';
 import '../features/options/screens/greek_chart_screen.dart';
 import '../features/vol_surface/screens/vol_surface_screen.dart';
-import '../features/ideas/screens/trade_ideas_screen.dart';
 import '../features/greek_grid/screens/greek_grid_screen.dart';
 import '../features/settings/screens/schwab_bootstrap_screen.dart';
-import '../features/current_regime/screens/current_regime_screen.dart';
 import '../features/macro/screens/macro_score_screen.dart';
 import '../features/macro/screens/iv_crush_tracker_screen.dart';
 import '../features/positions/screens/positions_screen.dart';
@@ -194,19 +183,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
       GoRoute(
-        path: '/journal',
-        pageBuilder: (context, state) =>
-            const NoTransitionPage(child: _AppShell(child: JournalScreen())),
-        routes: [
-          GoRoute(
-            path: 'add',
-            builder: (context, state) => AddJournalScreen(
-              initialEntry: state.extra as JournalEntry?,
-            ),
-          ),
-        ],
-      ),
-      GoRoute(
         path: '/calculator',
         pageBuilder: (context, state) =>
             const NoTransitionPage(child: _AppShell(child: CalculatorScreen())),
@@ -217,14 +193,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           child: _AppShell(child: EconomyPulseScreen()),
         ),
       ),
-      GoRoute(
-        path: '/blotter/evaluate',
-        builder: (_, state) => TradeEvalScreen(
-          initialTicker: state.uri.queryParameters['ticker'],
-        ),
-      ),
       // Global multi-ticker vol surface (no symbol). Linked from the vol
-      // surface phase panel; the per-ticker view lives under /ticker/:symbol.
+      // surface panel; the per-ticker view lives under /ticker/:symbol.
       GoRoute(
         path: '/vol-surface',
         builder: (_, _) => const VolSurfaceScreen(),
@@ -240,18 +210,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, _) => const IvCrushTrackerScreen(),
           ),
         ],
-      ),
-      GoRoute(
-        path: '/ideas',
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: TradeIdeasScreen()),
-        ),
-      ),
-      GoRoute(
-        path: '/current-regime',
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: CurrentRegimeScreen()),
-        ),
       ),
       GoRoute(
         path: '/positions',
