@@ -14,6 +14,7 @@ import logging
 from collections import defaultdict
 from datetime import date, timedelta
 
+from core.constants import SABR_RELIABLE_RMSE, SABR_RELIABLE_MIN_POINTS
 from core.supabase_client import get_supabase, fetch_all
 from jobs.common import get_tickers, market_session_guard
 from services.sabr_calibrator import calibrate_snapshot
@@ -74,22 +75,45 @@ async def run_sabr_pull() -> dict:
     return {"status": "complete", "tickers": results, "date": today}
 
 
+def apply_reliability_filter(query):
+    """Restrict a sabr_calibrations query to slices that track the surface.
+
+    The DB-side counterpart to services.sabr_calibrator.is_reliable_fit; both
+    read SABR_RELIABLE_RMSE / SABR_RELIABLE_MIN_POINTS so the rule has one
+    definition. Every read path must go through this rather than re-typing the
+    two comparisons — a boundary-pinned fit reaching a consumer is worse than
+    no fit, because it is priced off silently.
+
+    `.lt` excludes NULL rmse by design: an unscored fit is not a usable one.
+    """
+    return (
+        query
+        .lt("rmse", SABR_RELIABLE_RMSE)
+        .gte("n_points", SABR_RELIABLE_MIN_POINTS)
+    )
+
+
 def fetch_nu_history(db, ticker: str, user_id: str, dte_target: int = 30) -> list[float]:
     """Return a time-ordered series of calibrated SABR ν values for the DTE
     slice closest to dte_target (prior observations only — today excluded).
     Shared by iv_pull.py.
+
+    Filtered on the same reliability bar as iv_pull._fetch_today_sabr. The two
+    must agree: gating only the current ν would rank it against a window that
+    still contains boundary-pinned fits, which is worse than gating neither.
     """
     cutoff = (date.today() - timedelta(days=365)).isoformat()
     # Paginate: a year of slices (≥1 row per DTE per day) exceeds the Supabase
     # 1000-row response cap, which would silently drop the most recent dates.
     rows = fetch_all(
         lambda: (
-            db.table("sabr_calibrations")
-            .select("obs_date,dte,nu")
-            .eq("user_id", user_id)
-            .eq("ticker", ticker)
-            .gte("obs_date", cutoff)
-            .gte("n_points", 5)
+            apply_reliability_filter(
+                db.table("sabr_calibrations")
+                .select("obs_date,dte,nu")
+                .eq("user_id", user_id)
+                .eq("ticker", ticker)
+                .gte("obs_date", cutoff)
+            )
             .order("obs_date", desc=False)
             .order("dte", desc=False)
         )

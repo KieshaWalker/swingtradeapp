@@ -27,8 +27,24 @@ SABR_MAX_IV_FILTER: float = 3.0   # Drop IVs > 300% as data errors
 SABR_INITIAL_RHO0: float = -0.30
 SABR_INITIAL_NU0: float = 0.40
 
-# SABR parameter bounds for optimizer
+# Fallback nu seeds, tried in order only when the first fit lands on a bound
+# (see calibrate_slice). Kept short — each entry costs another Nelder-Mead run.
+SABR_RETRY_NU0 = (1.5, 2.5)
+
+# nu at or below this is a collapsed fit (no vol-of-vol → pure CEV smile),
+# which triggers the retry above.
+SABR_NU_DEGENERATE: float = 0.01
+
+# SABR parameter bounds for optimizer.
+#
+# alpha is NOT scale-invariant: alpha ≈ sigma * F^(1-beta), so with beta=0.5 a
+# fixed ceiling of C caps the representable vol at C/sqrt(F) — the cap tightens
+# as the underlying rises. A flat 5.0 silently limited SNDK (F≈1230) to 14% vol
+# and pinned every fit on the boundary. SABR_ALPHA_BOUNDS[1] is now only a
+# floor for the ceiling; calibrate_slice() raises it to
+# SABR_ALPHA_MAX_MULT * alpha0 (alpha0 = the ATM-implied seed) per slice.
 SABR_ALPHA_BOUNDS = (1e-6, 5.0)
+SABR_ALPHA_MAX_MULT: float = 3.0
 SABR_RHO_BOUNDS = (-0.999, 0.999)
 SABR_NU_BOUNDS = (1e-6, 5.0)
 
@@ -49,6 +65,42 @@ NM_XATOL: float = 1e-7   # xTol in Dart
 HESTON_KAPPA: float = 2.0    # Mean-reversion speed
 HESTON_XI: float = 0.50      # Vol-of-vol
 HESTON_RHO: float = -0.70    # Spot-vol correlation
+
+# ── Heston calibration bounds ─────────────────────────────────────────────────
+#
+# theta and V0 are VARIANCE, so their ceiling is vol² — a cap of 0.5 caps vol at
+# sqrt(0.5) = 70.7%. Every name quoting above that pinned theta AND V0 at the
+# ceiling, which drove xi to its own floor (vol-of-vol cannot help once the
+# level is unreachable) and rho to zero: the model then collapses to Black-
+# Scholes at a flat 70.7% for every strike. 4.0 admits vol up to 200%.
+#
+# rho's ceiling was 0.0 on the assumption that equity skew is always negative.
+# That is a regime, not an invariant — single names with call-heavy demand
+# calibrate to positive rho, and clamping there silently discards the skew.
+# Kept symmetric: any asymmetric ceiling just relocates the pinning (a 0.5 cap
+# pinned all 9 test names at exactly +0.5).
+#
+# Widths were set by measuring which parameters still rested on a bound, not by
+# prior: kappa 15 -> 50 and xi 3 -> 5 each removed real pinning; going further
+# (kappa 80, xi 6) changed no RMSE and was not adopted.
+HESTON_KAPPA_BOUNDS = (0.1, 50.0)
+HESTON_THETA_BOUNDS = (0.005, 4.0)   # long-run variance → vol <= 200%
+HESTON_XI_BOUNDS    = (0.01, 5.0)    # vol-of-vol
+HESTON_RHO_BOUNDS   = (-0.99, 0.99)
+HESTON_V0_BOUNDS    = (0.005, 4.0)   # initial variance → vol <= 200%
+
+# Calibration DTE window. One 5-parameter affine diffusion cannot fit a 1-day
+# smile and a 2.4-year smile at once: SNDK quotes 198% at 1 DTE against 111% at
+# 869 DTE, and spanning that forces corner solutions no bound width fixes.
+# Restricting to the tradeable range took median RMSE from 3.71 to 1.87 vol
+# points across the 9 test names. Sub-week expiries are additionally
+# event/pin-dominated and not diffusive at all.
+HESTON_MIN_DTE: int = 7
+HESTON_MAX_DTE: int = 120
+
+# A parameter this close to either end of its box is a corner solution, not a
+# fit. Reported via HestonCalibResult.converged.
+HESTON_BOUND_TOL: float = 0.01       # fraction of each bound's range
 
 # ── Fair value guards ──────────────────────────────────────────────────────────
 FV_SABR_VOL_MIN: float = 0.01

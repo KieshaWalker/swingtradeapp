@@ -41,6 +41,11 @@ from core.supabase_client import get_supabase
 from core.chain_utils import parse_expirations, _dte_from_key
 from services.sabr_calibrator import calibrate_snapshot
 from services.heston_calibrator import calibrate_heston
+# SABR history + persistence live in jobs/sabr_pull.py. This module used to
+# carry its own copies; they drifted (the local nu-history helper never picked
+# up the today-exclusion guard, and the local upsert issued one round trip per
+# DTE slice instead of one per snapshot). Import them instead of re-deriving.
+from jobs.sabr_pull import fetch_nu_history, _upsert_sabr_calibrations
 from services.iv_analytics import analyse as iv_analyse
 from services.greek_grid_ingester import ingest as grid_ingest
 from services.realized_vol import compute as rv_compute
@@ -214,7 +219,7 @@ async def run_schwab_pull() -> dict:
 
                 # ── Step 3: SABR (offloaded to thread — CPU-bound) ────────────
                 slices = await asyncio.to_thread(calibrate_snapshot, spot=spot, points=points) if points else []
-                nu_history = _fetch_nu_history(db, ticker, user_id) if slices else []
+                nu_history = fetch_nu_history(db, ticker, user_id) if slices else []
                 _step("sabr_calibrations", lambda: (
                     _upsert_sabr_calibrations(db, ticker, today, slices, user_id) if slices else None
                 ))
@@ -581,45 +586,6 @@ def _fetch_iv_history(db, ticker: str) -> list[dict]:
     return rows
 
 
-def _fetch_nu_history(db, ticker: str, user_id: str, dte_target: int = 30) -> list[float]:
-    """Return a time-ordered series of calibrated SABR ν values for the DTE
-    slice closest to dte_target.  Used to compute vvol rank/percentile.
-
-    Call this BEFORE upserting today's calibration so the series contains
-    only prior observations (today excluded).
-    """
-    from collections import defaultdict
-    from datetime import timedelta
-    from core.supabase_client import fetch_all
-    cutoff = (date.today() - timedelta(days=365)).isoformat()
-    # Paginate past the Supabase 1000-row cap (see jobs/sabr_pull.py).
-    rows = fetch_all(
-        lambda: (
-            db.table("sabr_calibrations")
-            .select("obs_date,dte,nu")
-            .eq("user_id", user_id)
-            .eq("ticker", ticker)
-            .gte("obs_date", cutoff)
-            .gte("n_points", 5)
-            .order("obs_date", desc=False)
-            .order("dte", desc=False)
-        )
-    )
-    if not rows:
-        return []
-
-    by_date: dict[str, list[dict]] = defaultdict(list)
-    for r in rows:
-        by_date[r["obs_date"]].append(r)
-
-    series: list[float] = []
-    for obs_date in sorted(by_date):
-        best = min(by_date[obs_date], key=lambda s: abs(s["dte"] - dte_target))
-        if best["nu"] is not None:
-            series.append(float(best["nu"]))
-    return series
-
-
 def _upsert_vol_surface(
     db, ticker: str, today: str, spot: float, points: list[dict], user_id: str
 ) -> None:
@@ -654,18 +620,6 @@ def _upsert_heston_calibration(db, ticker: str, today: str, result, user_id: str
         },
         on_conflict="user_id,ticker,obs_date",
     ).execute()
-
-
-def _upsert_sabr_calibrations(db, ticker: str, today: str, slices, user_id: str) -> None:
-    for s in slices:
-        db.table("sabr_calibrations").upsert(
-            {
-                "user_id": user_id, "ticker": ticker, "obs_date": today,
-                "dte": s.dte, "alpha": s.alpha, "beta": s.beta,
-                "rho": s.rho, "nu": s.nu, "rmse": s.rmse, "n_points": s.n_points,
-            },
-            on_conflict="user_id,ticker,obs_date,dte",
-        ).execute()
 
 
 def _upsert_iv_snapshot(db, ticker: str, today: str, iv_result, spot: float, vvol=None) -> None:

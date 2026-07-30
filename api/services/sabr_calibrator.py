@@ -27,6 +27,12 @@ from core.constants import (
     SABR_MAX_IV_FILTER,
     SABR_INITIAL_RHO0,
     SABR_INITIAL_NU0,
+    SABR_RETRY_NU0,
+    SABR_NU_DEGENERATE,
+    SABR_ALPHA_BOUNDS,
+    SABR_ALPHA_MAX_MULT,
+    SABR_RHO_BOUNDS,
+    SABR_NU_BOUNDS,
     SABR_RELIABLE_RMSE,
     SABR_RELIABLE_MIN_POINTS,
     NM_MAX_ITER,
@@ -34,6 +40,20 @@ from core.constants import (
     NM_XATOL,
 )
 from services.sabr import sabr_iv, sabr_alpha
+
+
+def is_reliable_fit(rmse:Optional[float], n_points:Optional[int]) -> bool:
+    """Canonical definition of a usable SABR slice.
+
+    The single source of truth for the in-memory check. The DB-side equivalent
+    is jobs/sabr_pull.apply_reliability_filter, which reads the same two
+    constants — keep them in step. Both exist because one rule was previously
+    re-typed inline at every call site, which is how the calibrator's bounds
+    drifted from SABR_RHO_BOUNDS without anyone noticing.
+    """
+    if rmse is None or n_points is None:
+        return False
+    return n_points >= SABR_RELIABLE_MIN_POINTS and rmse < SABR_RELIABLE_RMSE
 
 
 @dataclass
@@ -48,7 +68,7 @@ class SabrSlice:
 
     @property
     def is_reliable(self) -> bool:
-        return self.n_points >= SABR_RELIABLE_MIN_POINTS and self.rmse < SABR_RELIABLE_RMSE
+        return is_reliable_fit(self.rmse, self.n_points)
 
     def to_dict(self) -> dict:
         return {
@@ -115,23 +135,71 @@ def calibrate_slice(
             sse += diff * diff
         return sse
     
-    bounds = [(1e-6, 5.0), (-0.999, -0.01), (1e-6, 5.0)]
+    # alpha's ceiling scales with the ATM seed — a fixed cap is a cap on
+    # sigma * F^(1-beta), which tightens as the underlying rises and pins every
+    # high-priced or high-vol name on the boundary. See SABR_ALPHA_BOUNDS.
+    alpha_lo = SABR_ALPHA_BOUNDS[0]
+    alpha_hi = max(SABR_ALPHA_BOUNDS[1], SABR_ALPHA_MAX_MULT * alpha0)
+    bounds = [(alpha_lo, alpha_hi), SABR_RHO_BOUNDS, SABR_NU_BOUNDS]
 
-    result = minimize(
-        objective,
-        x0=[alpha0, rho0, nu0],
-        method="Nelder-Mead",
-        bounds=bounds,
-        options={
-            "maxiter": NM_MAX_ITER,
-            "fatol": NM_FATOL,
-            "xatol": NM_XATOL,
-        },
-    )
+    # Nelder-Mead clips both x0 and the simplex it builds around x0 into the
+    # box. An out-of-bounds seed collapses several vertices onto the same
+    # boundary point, leaving the simplex rank-deficient in that direction —
+    # the parameter then cannot move at all. Seed strictly inside the box.
+    x0 = [
+        min(max(alpha0, alpha_lo), alpha_hi),
+        min(max(rho0, SABR_RHO_BOUNDS[0]), SABR_RHO_BOUNDS[1]),
+        min(max(nu0, SABR_NU_BOUNDS[0]), SABR_NU_BOUNDS[1]),
+    ]
 
-    best_alpha, best_rho, best_nu = result.x
+    def _run(seed: list) -> tuple:
+        res = minimize(
+            objective,
+            x0=seed,
+            method="Nelder-Mead",
+            bounds=bounds,
+            options={
+                "maxiter": NM_MAX_ITER,
+                "fatol": NM_FATOL,
+                "xatol": NM_XATOL,
+            },
+        )
+        return float(res.fun), tuple(res.x)
 
-    # Compute RMSE over valid (non-penalized) points only
+    best_sse, best_x = _run(x0)
+
+    # Nelder-Mead is a local method: on some slices it walks into a corner where
+    # nu collapses to ~0 (a pure CEV smile, no vol-of-vol) or rho pins to +/-1,
+    # fitting visibly worse than adjacent DTEs. Both show up as a parameter
+    # sitting on a bound, so retry from a higher vol-of-vol seed only then —
+    # a blanket multi-start would triple this job's runtime for the ~2/3 of
+    # slices that already converge to the interior.
+    # A retry that finds nothing better is discarded, so a false positive here
+    # only costs one extra fit — prefer catching near-degenerate nu (0.001 is
+    # as unphysical as 1e-6) over an exact bound test.
+    def _on_bound(x: tuple) -> bool:
+        _, rh, nv = x
+        return (
+            nv <= SABR_NU_DEGENERATE or nv >= SABR_NU_BOUNDS[1] * 0.999
+            or abs(rh) >= SABR_RHO_BOUNDS[1] * 0.999
+        )
+
+    if _on_bound(best_x):
+        for retry_nu in SABR_RETRY_NU0:
+            sse_r, x_r = _run([x0[0], 0.0, retry_nu])
+            if sse_r < best_sse:
+                best_sse, best_x = sse_r, x_r
+            if not _on_bound(best_x):
+                break
+
+    best_alpha, best_rho, best_nu = best_x
+
+    # RMSE is only defined over strikes the model could actually price. Points
+    # where SABR returns an invalid IV are excluded from the numerator AND the
+    # denominator — so n_points must report n_valid, not len(clean). Reporting
+    # the full quote count next to a partial RMSE (the previous behaviour) makes
+    # the pair mutually inconsistent, and rmse/n_points are exactly the two
+    # fields every read gate gates on.
     sse = 0.0
     n_valid = 0
     for K, iv_mkt in clean:
@@ -143,7 +211,13 @@ def calibrate_slice(
             continue
         sse += (iv_model - iv_mkt) ** 2
         n_valid += 1
-    rmse = math.sqrt(sse / n_valid) if n_valid > 0 else float("inf")
+
+    # A parameter set that cannot price the minimum number of quotes is not a
+    # fit, however small its error on the handful it managed.
+    if n_valid < SABR_MIN_POINTS:
+        return None
+
+    rmse = math.sqrt(sse / n_valid)
 
     dte = round(T * 365)
     return SabrSlice(
@@ -153,7 +227,7 @@ def calibrate_slice(
         rho=best_rho,
         nu=best_nu,
         rmse=rmse,
-        n_points=len(clean),
+        n_points=n_valid,
     )
 
 

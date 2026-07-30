@@ -5,8 +5,9 @@
 //
 // Flow:
 //   1. sabr_calibration_provider(ticker) watches volSurfaceProvider.
-//   2. When the latest snapshot for the ticker arrives, it runs
-//      SabrCalibrator.calibrate() in a background Isolate.
+//   2. When the latest snapshot for the ticker arrives, it POSTs the points to
+//      the Python API (PythonApiClient.sabrCalibrate) — the fit itself lives in
+//      api/services/sabr_calibrator.py, not on the client.
 //   3. Results are persisted to sabr_calibrations via SabrCalibrationRepository.
 //   4. Other providers (e.g. FairValueEngine) read
 //      sabrSliceProvider((ticker, dte)) to get the closest calibrated slice.
@@ -154,6 +155,11 @@ class _SabrCalibrationNotifier
 /// Point-lookup: returns the calibrated [SabrSlice] closest to [targetDte]
 /// for the given [ticker], or null if calibration hasn't completed yet.
 ///
+/// Only slices passing [SabrSlice.isReliable] are considered — a fit that
+/// doesn't track the surface is worse than no fit, because callers price off
+/// it silently. Returns null rather than the nearest bad slice so consumers
+/// fall back to their uncalibrated defaults (SABR_RHO / SABR_NU).
+///
 /// Usage in FairValueEngine:
 ///   final slice = ref.watch(sabrSliceProvider((ticker, daysToExpiry)));
 final sabrSliceProvider =
@@ -161,8 +167,11 @@ final sabrSliceProvider =
   final (ticker, targetDte) = params;
   final async = ref.watch(sabrCalibrationProvider(ticker));
   return async.whenOrNull(
-    data: (slices) => slices.isEmpty ? null
-        : slices.reduce((a, b) =>
-            (a.dte - targetDte).abs() <= (b.dte - targetDte).abs() ? a : b),
+    data: (slices) {
+      final reliable = slices.where((s) => s.isReliable).toList();
+      return reliable.isEmpty ? null
+          : reliable.reduce((a, b) =>
+              (a.dte - targetDte).abs() <= (b.dte - targetDte).abs() ? a : b);
+    },
   );
 });

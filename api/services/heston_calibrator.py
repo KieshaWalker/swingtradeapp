@@ -23,7 +23,17 @@ import numpy as np
 from scipy.optimize import differential_evolution, minimize
 from scipy.special import ndtr as _ndtr
 
-from core.constants import DEFAULT_R
+from core.constants import (
+    DEFAULT_R,
+    HESTON_KAPPA_BOUNDS,
+    HESTON_THETA_BOUNDS,
+    HESTON_XI_BOUNDS,
+    HESTON_RHO_BOUNDS,
+    HESTON_V0_BOUNDS,
+    HESTON_BOUND_TOL,
+    HESTON_MIN_DTE,
+    HESTON_MAX_DTE,
+)
 from services.heston import HestonParams, heston_price_batch
 
 
@@ -93,13 +103,17 @@ def _build_quotes(
     """Parse surface_points into {dte: (F, K_arr, iv_arr, is_call_arr)}.
 
     OTM convention: call IV for K ≥ F, put IV for K < F.
-    Drops strikes with IV == 0 or IV > 3.0 (data errors).
+    Drops strikes with IV == 0 or IV > 3.0 (data errors), and expiries outside
+    [HESTON_MIN_DTE, HESTON_MAX_DTE] — see those constants for why the window
+    matters more than any bound width.
     """
     by_dte: dict[int, list[tuple[float, float, bool]]] = {}
     for p in surface_points:
         dte = int(p.get("dte", 0))
         K = float(p.get("strike", 0))
         if dte <= 0 or K <= 0:
+            continue
+        if dte < HESTON_MIN_DTE or dte > HESTON_MAX_DTE:
             continue
 
         T = dte / 365.0
@@ -226,17 +240,26 @@ def calibrate_heston(
         return sse
 
     bounds = [
-        (0.1,   15.0),    # kappa
-        (0.005,  0.5),    # theta  (long-run variance)
-        (0.01,   2.0),    # xi     (vol-of-vol)
-        (-0.99,  0.0),    # rho    (negative for equities)
-        (0.005,  0.5),    # V0     (initial variance)
+        HESTON_KAPPA_BOUNDS,
+        HESTON_THETA_BOUNDS,
+        HESTON_XI_BOUNDS,
+        HESTON_RHO_BOUNDS,
+        HESTON_V0_BOUNDS,
     ]
 
-    x0 = np.array([2.0, V_atm, 0.5, -0.7, V_atm])
+    # Seed from the observed ATM variance, clipped into the box. This was
+    # previously computed and then dropped on the floor — differential_evolution
+    # was left to find the vol level from Sobol points alone.
+    x0 = np.clip(
+        np.array([2.0, V_atm, 0.5, -0.7, V_atm]),
+        [b[0] for b in bounds],
+        [b[1] for b in bounds],
+    )
 
-    # Global search (differential evolution with Sobol initialisation)
-    # Aggressively reduced for production speed: maxiter=20, popsize=4
+    # Global search (differential evolution with Sobol initialisation).
+    # Aggressively reduced for production speed: maxiter=20, popsize=4. Raising
+    # this to 60/10 was measured and changed median RMSE by 0.00 vol points at
+    # 2.7x the runtime — the global search is not the binding constraint.
     de_result = differential_evolution(
         _objective,
         bounds,
@@ -247,6 +270,7 @@ def calibrate_heston(
         popsize=4,
         workers=1,
         polish=False,
+        x0=x0,
         callback=lambda xk, convergence=0.0: _out_of_time(),
     )
 
@@ -264,13 +288,13 @@ def calibrate_heston(
         callback=_nm_deadline_cb,
     )
 
-    kappa, theta, xi, rho, V0 = nm_result.x
-    # Clamp to feasible region after optimisation; rho <= 0 enforces equity skew
-    kappa = max(0.01, kappa)
-    theta = max(1e-4, theta)
-    xi    = max(1e-4, xi)
-    rho   = max(-0.9999, min(0.0, rho))
-    V0    = max(1e-4, V0)
+    # Clamp into the optimiser's own box. The previous version re-imposed
+    # rho <= 0 here, silently discarding a positive-skew fit *after* the
+    # optimiser had chosen it — see HESTON_RHO_BOUNDS.
+    solution = [
+        min(max(v, lo), hi) for v, (lo, hi) in zip(nm_result.x, bounds)
+    ]
+    kappa, theta, xi, rho, V0 = solution
 
     params = HestonParams(kappa=kappa, theta=theta, xi=xi, rho=rho, V0=V0)
 
@@ -290,9 +314,23 @@ def calibrate_heston(
 
     rmse = math.sqrt(sum(sq_errors) / n_valid) if n_valid > 0 else 1.0
 
+    # nm_result.success alone is not a quality signal: Nelder-Mead reports
+    # success whenever the simplex tolerance is met, and a simplex wedged in a
+    # corner meets it reliably. Every boundary-pinned fit in 2026-05..07 was
+    # stored as converged=True with RMSE up to 70 vol points. Require that no
+    # parameter is sitting on an end of its box.
     return HestonCalibResult(
         params=params,
         rmse_iv=rmse,
         n_points=n_valid,
-        converged=bool(nm_result.success),
+        converged=bool(nm_result.success) and not _on_bounds(solution, bounds),
     )
+
+
+def _on_bounds(values: list, bounds: list) -> bool:
+    """True when any parameter rests within HESTON_BOUND_TOL of its box end."""
+    for v, (lo, hi) in zip(values, bounds):
+        margin = HESTON_BOUND_TOL * (hi - lo)
+        if v <= lo + margin or v >= hi - margin:
+            return True
+    return False

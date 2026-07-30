@@ -18,7 +18,7 @@ import httpx
 
 from core.supabase_client import get_supabase
 from jobs.common import get_tickers, fetch_schwab_chain, market_session_guard
-from jobs.sabr_pull import fetch_nu_history
+from jobs.sabr_pull import fetch_nu_history, apply_reliability_filter
 from services.iv_analytics import analyse as iv_analyse
 from services.vvol_analytics import compute as vvol_compute
 
@@ -127,12 +127,21 @@ def _fetch_iv_history(db, ticker: str, before_date: str) -> list[dict]:
 
 
 def _fetch_today_sabr(db, ticker: str, user_id: str, today: str) -> list[dict]:
+    """Today's SABR slices, restricted to fits that actually track the surface.
+
+    Unreliable slices are dropped rather than ranked: a boundary-pinned fit
+    reports the same ν every session, which collapses the vvol rank window to a
+    single value and makes vvol_compute return a constant. Mirrors the RMSE gate
+    routers/fair_value.py applies to heston_calibrations.
+    """
     resp = (
-        db.table("sabr_calibrations")
-        .select("dte,nu")
-        .eq("user_id", user_id)
-        .eq("ticker", ticker)
-        .eq("obs_date", today)
+        apply_reliability_filter(
+            db.table("sabr_calibrations")
+            .select("dte,nu")
+            .eq("user_id", user_id)
+            .eq("ticker", ticker)
+            .eq("obs_date", today)
+        )
         .execute()
     )
     return resp.data or []
