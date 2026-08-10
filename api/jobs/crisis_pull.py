@@ -48,13 +48,46 @@ _SPEC_BASKET = ["MU", "SNDK"]
 _LOOKBACK_DAYS = 260  # ~52 trading weeks for high-water tracking
 
 # Polymarket event slugs snapshotted daily alongside the checklist:
-# real-money forward probabilities for the Fed-policy catalyst and
-# data-center regulatory risk. Read-only public Gamma API.
+# real-money forward probabilities for the Fed-policy catalyst, data-center
+# regulatory risk, and the Iran conflict. Read-only public Gamma API.
+#
+# Multi-tranche "by <date>" events expand to one row per date tranche, so the
+# slug count and the row count differ sharply — the list below writes ~107
+# rows/day. Tranches whose date has passed keep reporting with closed=true;
+# that is intentional, it preserves the resolution in history.
+#
+# Slugs are dated and event-specific: when an event resolves and Polymarket
+# opens a successor, the old slug returns an empty list and _snapshot_polymarket
+# logs polymarket_fetch_failed and moves on. Dead slugs are noise, not an
+# outage — prune them here when that shows up in the logs.
 _POLYMARKET_SLUGS = [
+    # ── Macro / Fed policy ────────────────────────────────────────────────
     "fed-rate-hike-by",
     "fed-decision-in-september-762",
     "will-any-state-enact-a-data-center-moratorium-by-december-31-20260707003733282",
     "how-high-will-10-year-treasury-yield-go-before-2027",
+
+    # ── Iran: conflict state & escalation ─────────────────────────────────
+    "will-the-us-invade-iran-before-2027",
+    "israel-x-iran-ceasefire-continues-throughptptpt-20260716224448963",
+    "us-x-iran-effective-ceasfire-byptptpt-2-week-pause-20260715194822042",
+    "iran-full-airspace-closure-byptptpt-20260625195253028",
+    "iran-leadership-change-by",
+
+    # ── Iran: diplomacy & deal terms ──────────────────────────────────────
+    # Deal odds price well above stockpile-surrender odds; the spread between
+    # these two is the market's read on how partial any settlement would be.
+    "us-iran-final-nuclear-deal-by-20260621201254412",
+    "iran-agrees-to-surrender-enriched-uranium-stockpile-by",
+    "next-round-of-us-iran-peace-talks-byptptpt-20260623022722982",
+    "iran-announces-withdrawal-from-mou-negotiations-byptptpt-20260622191732319",
+    "us-iran-60-day-negotiation-period-extended-20260624044855448",
+
+    # ── Iran: Hormuz (the oil transmission channel) ───────────────────────
+    # Thin books — read these for direction, not for calibrated probability.
+    "iran-charges-hormuz-fees-byptptpt-20260625175035466",
+    "us-iran-hormuz-agreement-byptptpt-20260803235957575",
+    "iran-oman-hormuz-management-agreement-byptptpt-20260804222725871",
 ]
 
 
