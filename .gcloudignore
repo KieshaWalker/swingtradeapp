@@ -9,7 +9,12 @@ android/
 macos/
 node_modules/
 vol_surface_tool/
-api/venv/
+# Both spellings: api/venv/ and the dot-prefixed api/.venv/ (217M) plus the
+# root .venv/ (16M). Missing the dotted forms put ~233M of virtualenv into
+# every source upload — the Dockerfile builds its own deps from
+# requirements.txt and never reads these.
+**/venv/
+**/.venv/
 api/__pycache__/
 **/__pycache__/
 data/
