@@ -465,12 +465,16 @@ class IvSnapshot {
     );
   }
 
+  /// Only used to build the `history` payload for POST /iv/snapshot.
+  ///
+  /// analyse() reads exactly five fields off each history row — atm_iv, date,
+  /// skew, total_gex, vvol_nu — so anything else here is upload weight on every
+  /// Vol tab open. gex_by_strike used to be sent and was never once read.
   Map<String, dynamic> toJson() => {
     'ticker':           ticker,
     'date':             date.toIso8601String().substring(0, 10),
     'atm_iv':           atmIv,
     'skew':             skew,
-    'gex_by_strike':    gexByStrike,
     'total_gex':        totalGex,
     'max_gex_strike':   maxGexStrike,
     'put_call_ratio':   putCallRatio,

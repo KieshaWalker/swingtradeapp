@@ -18,6 +18,25 @@ class IvStorageService {
 
   SupabaseClient get _db => Supabase.instance.client;
 
+  /// Explicit column list for every read. Never use bare select() here.
+  ///
+  /// iv_snapshots carries two heavy JSONB columns that no reader on this path
+  /// needs, and select=* pulled both. `rnd` is the expensive one — historical
+  /// rows hold ~20 slices x 200 grid points, ~300 KB each, so a 56-row META
+  /// history serialized to ~16 MB and PostgREST answered 500. IvSnapshot has no
+  /// rnd field at all, so every one of those bytes was parsed and discarded.
+  /// `gex_by_strike` (~5.5 KB/row) is mapped onto the model but has no reader
+  /// anywhere in the app — note that gexByStrike therefore always arrives empty
+  /// from this service; add the column back here if a widget ever needs it.
+  static const String _columns = '''
+    ticker, date, atm_iv, skew, total_gex, max_gex_strike, put_call_ratio,
+    underlying_price, iv_rank, iv_percentile, iv_rank_4w, iv_percentile_4w,
+    iv_rank_26w, iv_percentile_26w, iv_rating, gamma_regime, gamma_slope,
+    iv_gex_signal, zero_gamma_level, spot_to_zero_gamma_pct, delta_gex,
+    put_wall_density, vanna_regime, total_vex, total_cex, total_volga,
+    max_vex_strike, skew_avg_52w, skew_z_score, vvol_nu
+  ''';
+
   // ── Read ───────────────────────────────────────────────────────────────────
 
   /// Returns up to the most recent 252 daily snapshots for [ticker],
@@ -28,7 +47,7 @@ class IvStorageService {
   Future<List<IvSnapshot>> getHistory(String ticker) async {
     final rows = await _db
         .from('iv_snapshots')
-        .select()
+        .select(_columns)
         .eq('ticker', ticker)
         .order('date', ascending: false)
         .limit(252);
@@ -42,7 +61,7 @@ class IvStorageService {
   Future<IvSnapshot?> getLatest(String ticker) async {
     final rows = await _db
         .from('iv_snapshots')
-        .select()
+        .select(_columns)
         .eq('ticker', ticker)
         .order('date', ascending: false)
         .limit(1);
