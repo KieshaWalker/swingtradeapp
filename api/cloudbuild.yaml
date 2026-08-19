@@ -58,13 +58,23 @@ steps:
       - --region=${_REGION}
       - --platform=managed
       - --memory=512Mi
-      - --cpu=1
+      - --cpu=2
+      # Concurrency must stay low: every hot endpoint (/iv/snapshot, /sabr/*,
+      # /heston/*, the /jobs/* pulls) is CPU-bound numpy/scipy, so Cloud Run's
+      # default of 80 packed the scheduled jobs and interactive browser traffic
+      # onto one instance and never scaled out. Observed 2026-08-19: a 58s
+      # greek-grid-pull starved /iv/snapshot to 86s and even the CORS preflight
+      # to 10.9s, past the Dart client's 30s timeout. 2 vCPU x 2 requests gives
+      # each in-flight request a core of its own before a new instance spins up.
+      - --concurrency=2
       # min-instances=1 keeps one container warm. At 0 the first request after a
       # quiet period paid a ~14s cold start (observed 2026-08-10 on /health),
       # which the hourly scheduler cycle hides but a browser hitting the API
       # directly does not.
       - --min-instances=1
-      - --max-instances=3
+      # Raised from 3 alongside the concurrency drop — at 2 requests per
+      # instance the old ceiling capped the service at 6 in-flight requests.
+      - --max-instances=10
       - --timeout=3600
       - --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_KEY=SUPABASE_SERVICE_KEY:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,PYTHON_API_SECRET=PYTHON_API_SECRET:latest
 

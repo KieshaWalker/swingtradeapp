@@ -135,6 +135,14 @@ RND_STRIKE_HALF_WIDTH_PCT: float = 0.30  # ±30% of spot — SABR extrapolates s
 RND_NUM_GRID_POINTS: int = 200           # 200-pt grid → ~0.3% spacing
 RND_FD_STEP_PCT: float = 0.005          # Central-diff h = 0.5% of spot
 
+# Only these DTE buckets are calibrated. Every consumer of the RND surface reads
+# a fixed handful of slices — RndChart picks nearest 7/30/60/90, the vol-surface
+# card takes the first reliable one, and vvol reads nearest-30 — but the surface
+# used to calibrate SABR for *every* expiration in the chain (20+ on liquid
+# names), which was ~99% of /iv/snapshot's CPU time and pushed the endpoint past
+# the client's 30s timeout whenever a scheduled job shared the instance.
+RND_TARGET_DTES: tuple = (7, 30, 60, 90)
+
 # ── Realized vol ───────────────────────────────────────────────────────────────
 # Price-count conventions match DB column names (rv_21d, rv_63d):
 #   21 closes → 20 log-returns  (≈ 1-month HV)

@@ -36,6 +36,7 @@ from core.constants import (
     RND_STRIKE_HALF_WIDTH_PCT,
     RND_NUM_GRID_POINTS,
     RND_FD_STEP_PCT,
+    RND_TARGET_DTES,
 )
 from services.sabr import sabr_iv
 from services.black_scholes import bs_price
@@ -220,19 +221,44 @@ def compute_rnd_slice(
     )
 
 
+def _select_target_expirations(
+    expirations: List[dict],
+    target_dtes: Optional[tuple],
+) -> List[dict]:
+    """Keep only the expiration nearest each target DTE (deduplicated).
+
+    A liquid chain carries 20+ expirations but every RND consumer reads a fixed
+    handful of slices, and each extra slice costs a full SABR calibration plus a
+    200-point density grid. Passing target_dtes=None calibrates the whole chain.
+    """
+    dated = [e for e in expirations if int(e.get("dte", 0)) > 0]
+    if target_dtes is None or not dated:
+        return dated
+
+    picked: dict = {}   # dte → expiration, deduplicated when targets collide
+    for target in target_dtes:
+        nearest = min(dated, key=lambda e: abs(int(e.get("dte", 0)) - target))
+        picked[int(nearest.get("dte", 0))] = nearest
+    return [picked[dte] for dte in sorted(picked)]
+
+
 def compute_rnd_surface(
     expirations: List[dict],
     spot: float,
     r: float = DEFAULT_R,
+    target_dtes: Optional[tuple] = RND_TARGET_DTES,
 ) -> List[RndSlice]:
-    """Compute RND for every DTE slice that survives SABR calibration.
+    """Compute RND for the target DTE slices that survive SABR calibration.
 
     Reads directly from the Schwab chain expirations list. IVs are in percent
     form (e.g. 21.0 = 21%) and are divided by 100 before calibration.
+
+    By default only the expirations nearest RND_TARGET_DTES are calibrated —
+    see _select_target_expirations. Pass target_dtes=None for the full chain.
     """
     results: List[RndSlice] = []
 
-    for exp in expirations:
+    for exp in _select_target_expirations(expirations, target_dtes):
         dte = int(exp.get("dte", 0))
         if dte <= 0:
             continue
