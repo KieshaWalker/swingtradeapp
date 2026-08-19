@@ -1,0 +1,21 @@
+-- =============================================================================
+-- 074_iv_snapshots_rnd_lz4.sql
+-- =============================================================================
+-- Disk-IO remediation (Phase 2, item A). 065 set lz4 on the two JSONB columns
+-- it identified as hot — vol_surface_snapshots.points and
+-- iv_snapshots.gex_by_strike — but missed iv_snapshots.rnd, which is by far the
+-- larger of the two on that table:
+--
+--     iv_snapshots.gex_by_strike     ~5.5 KB/row   (compressed in 065)
+--     iv_snapshots.rnd             ~335   KB/row   (still on default pglz)
+--
+-- rnd was added in 028, so it predates 065 and was simply overlooked. At 50
+-- tickers x 9 hourly pulls per trading day it is the single largest source of
+-- TOAST write volume on this table.
+--
+-- Same caveat as 065: SET COMPRESSION only affects values written after this
+-- ALTER. Today's row is rewritten hourly so it picks up lz4 within the hour;
+-- historical rows keep pglz until something rewrites them, which 076 does.
+-- =============================================================================
+
+ALTER TABLE iv_snapshots ALTER COLUMN rnd SET COMPRESSION lz4;
