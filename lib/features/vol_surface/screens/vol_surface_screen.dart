@@ -88,8 +88,9 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
     });
     if (s.points.isEmpty && s.id != null) {
       try {
-        final pts =
-            await ref.read(volSurfaceRepositoryProvider).loadPoints(s.id!);
+        final pts = await ref
+            .read(volSurfaceRepositoryProvider)
+            .loadPoints(s.id!, obsDate: s.obsDate);
         if (!mounted || seq != _loadSeq) return;
         setState(() {
           _activeSnap    = s.copyWith(points: pts);
@@ -133,8 +134,9 @@ class _VolSurfaceScreenState extends ConsumerState<VolSurfaceScreen>
 
   Future<void> _loadPrevPoints(VolSnapshot s, int seq) async {
     try {
-      final pts =
-          await ref.read(volSurfaceRepositoryProvider).loadPoints(s.id!);
+      final pts = await ref
+          .read(volSurfaceRepositoryProvider)
+          .loadPoints(s.id!, obsDate: s.obsDate);
       if (!mounted || seq != _loadSeq) return;
       setState(() => _prevSnap = s.copyWith(points: pts));
     } catch (e) {
