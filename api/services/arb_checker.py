@@ -11,6 +11,29 @@ from typing import Optional
 #   1. Calendar spread arb: total variance σ²·T must be non-decreasing in T.
 #   2. Butterfly arb: call prices C(K) must be convex in K at fixed T.
 # =============================================================================
+#
+# THIS IS A DATA-QUALITY GATE, NOT A TRADING SIGNAL. A surface assembled from
+# real quotes is not automatically self-consistent: wide markets, stale mids and
+# thin wings routinely imply a risk-free profit that could never be captured.
+# Anything that INTERPOLATES the surface — SABR and Heston fits, RND extraction,
+# fair-value comparisons — will amplify such a defect into a confident wrong
+# number. Violations mean "do not trust this snapshot".
+#
+# THE TWO CONDITIONS TEST DIFFERENT AXES:
+#   CALENDAR   across TIME at a fixed strike. Total variance σ²·T must be
+#              non-decreasing — variance accumulates and cannot un-happen.
+#              Note a σ that FALLS with maturity is perfectly normal; only
+#              falling σ²·T is a violation.
+#   BUTTERFLY  across STRIKE at a fixed expiry. Call prices must be convex in K,
+#              or a butterfly spread could be bought for negative cost with a
+#              non-negative payoff.
+#
+# WHY BUTTERFLY WORKS ON PRICES AND CALENDAR ON VOLS: convexity is a statement
+# about prices, so the IVs must be converted through Black-Scholes first — which
+# is why that check needs a rate and the calendar check does not.
+#
+# ARB_EPSILON absorbs floating-point noise and one-tick rounding, so a violation
+# reported here is larger than quote granularity.
 
 import math
 from dataclasses import dataclass
@@ -86,7 +109,21 @@ class ArbCheckResult:
 
 
 def _otm_iv(point: dict, spot: float) ->Optional[float]:
-    """OTM convention: call IV for K≥spot, put IV for K<spot."""
+    """OTM convention: call IV for K≥spot, put IV for K<spot.
+
+    OTM options are the liquid ones, so their IVs are the trustworthy ones. The
+    ITM side of the same strike is usually wide and stale, and including it would
+    manufacture violations that are artefacts of the quote rather than the
+    surface.
+
+    Falls back to the other side when the preferred one is absent, so a
+    one-sided strike still contributes.
+
+    Note this compares against SPOT, whereas the calibrators split on the
+    FORWARD. A minor inconsistency — the two differ by the carry, so a strike
+    between spot and forward may take the other side's IV here than it would in
+    services/sabr_calibrator.py.
+    """
     strike = float(point.get("strike") or 0)
     if strike >= spot:
         v = point.get("callIv") or point.get("call_iv") or point.get("putIv") or point.get("put_iv")
@@ -96,7 +133,13 @@ def _otm_iv(point: dict, spot: float) ->Optional[float]:
 
 
 def _bs_call(F: float, K: float, T: float, sigma: float, r: float = DEFAULT_R) -> float:
-    """Black-Scholes call price for butterfly check. Matches ArbChecker._bsCall()."""
+    """Black-Scholes call price for butterfly check. Matches ArbChecker._bsCall().
+
+    A LOCAL COPY of services/black_scholes.bs_price, kept to match the Dart
+    original exactly. Always prices a CALL regardless of which side the IV came
+    from — correct, since convexity is a property of the call price surface, and
+    put-call parity means a convex call surface implies a convex put surface.
+    """
     sqrt_T = math.sqrt(T)
     sig_sqt = sigma * sqrt_T
     df = math.exp(-r * T)
@@ -132,7 +175,17 @@ def check(
 
 
 def _check_calendar(points: list[dict], spot: float) -> list[CalendarViolation]:
-    """Calendar arb: w²(T) = σ²·T must be non-decreasing in T for each strike."""
+    """Calendar arb: w²(T) = σ²·T must be non-decreasing in T for each strike.
+
+    Groups by strike, sorts by DTE, and compares ADJACENT pairs only — sufficient
+    by transitivity, since if every neighbouring pair is non-decreasing the whole
+    sequence is.
+
+    Strikes with fewer than two expiries are skipped: there is nothing to compare.
+
+    The violation magnitude is the raw total-variance difference, so it is
+    comparable across strikes but not across very different maturities.
+    """
     by_strike: dict[float, list[tuple[int, float]]] = {}
     for p in points:
         iv = _otm_iv(p, spot)
@@ -171,7 +224,22 @@ def _check_calendar(points: list[dict], spot: float) -> list[CalendarViolation]:
 
 
 def _check_butterfly(points: list[dict], spot: float, r: float = DEFAULT_R) -> list[ButterflyViolation]:
-    """Butterfly arb: call prices C(K) must be convex in K at each fixed DTE."""
+    """Butterfly arb: call prices C(K) must be convex in K at each fixed DTE.
+
+    Converts each strike's IV to a call price, then tests the discrete second
+    difference C(K₋) − 2C(K₀) + C(K₊) at every interior strike. That expression
+    IS the cost of a butterfly spread, so a negative value means the spread could
+    be bought for less than nothing.
+
+    Needs at least three strikes per expiry — a second difference has no meaning
+    with fewer.
+
+    NOTE THE STRIKES NEED NOT BE EVENLY SPACED, and the test does not weight for
+    that. On a chain with uneven strike increments (common in the wings) the
+    unweighted second difference can flag a violation that is really an artefact
+    of the spacing. Read wing violations with that in mind; near-the-money
+    strikes, where spacing is uniform, are the reliable ones.
+    """
     by_dte: dict[int, list[tuple[float, float]]] = {}
     for p in points:
         iv = _otm_iv(p, spot)

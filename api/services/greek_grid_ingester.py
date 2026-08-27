@@ -10,6 +10,29 @@ from typing import Optional
 # Second-order greeks use true BS forward: F = S * exp(r * T).
 # Matches greek_grid_ingester.dart after the same fix was applied.
 # =============================================================================
+#
+# COLLAPSES A WHOLE CHAIN INTO A 5x5 MATRIX — five strike bands (deep_itm ..
+# deep_otm) by five expiry buckets (weekly .. quarterly), at most 25 cells. The
+# point is a readable map of WHERE risk sits on the surface, rather than the
+# hundreds of individual contracts that produced it.
+#
+# MEDIANS, NOT MEANS, for every greek. A cell can contain contracts of very
+# different liquidity and a single stale quote with an absurd greek would drag a
+# mean badly. The median is unmoved by it. Open interest and volume are SUMMED
+# instead, because those are genuinely additive quantities.
+#
+# CALLS AND PUTS ARE POOLED for every greek EXCEPT DELTA. Gamma, vega, theta,
+# vanna and volga are the same sign for both sides, so pooling them doubles the
+# sample. Put delta is negative and would cancel call delta into a meaningless
+# median, so only call deltas are collected — see include_delta below.
+#
+# SECOND-ORDER GREEKS ARE COMPUTED HERE, not taken from Schwab, which does not
+# supply vanna, charm or volga at all. That recomputation is the main reason
+# jobs/greek_grid_pull.py fetches its own chain rather than reading the stored
+# vol surface.
+#
+# ⚠️ contract_count IS THE FIELD TO CHECK FIRST. A cell aggregating one contract
+# is not a reading about a band — it is a single strike wearing a band's label.
 
 import math
 from dataclasses import dataclass, field
@@ -37,6 +60,11 @@ class ExpiryBucket(str, Enum):
     quarterly = "quarterly"       # dte > 90
 
 
+# Bands are cut on MONEYNESS PERCENT relative to spot, not on absolute dollars,
+# so the same taxonomy works for a $30 stock and a $1,200 one. Note the bands are
+# defined from the CALL perspective (negative moneyness = strike below spot =
+# in-the-money for a call); puts falling in a "deep_itm" band are actually deep
+# OTM. The band describes the STRIKE's position, not any contract's status.
 def classify_strike_band(moneyness_pct: float) -> StrikeBand:
     """Classify a strike into a band based on moneyness %.
     Matches StrikeBand.fromMoneynessPct() in Dart greek_grid_models.dart.
@@ -52,6 +80,9 @@ def classify_strike_band(moneyness_pct: float) -> StrikeBand:
     return StrikeBand.deep_otm
 
 
+# Buckets are uneven by design — tight near the front (7, 30) where option
+# behaviour changes fastest, wide at the back (60, 90, beyond) where a few days
+# either way makes little difference.
 def classify_expiry_bucket(dte: int) -> ExpiryBucket:
     """Classify DTE into an expiry bucket.
     Matches ExpiryBucket.fromDte() in Dart greek_grid_models.dart.
@@ -84,6 +115,19 @@ def _second_order_approx(
 
     forward = S * exp(r * T)  where r = DEFAULT_R
     Matches greek_grid_ingester.dart after the same fix was applied there.
+
+    Schwab supplies no second-order greeks, so they are derived here from the
+    contract's own IV and strike.
+
+    ⚠️ USES DEFAULT_R, NOT THE TERM-MATCHED LIVE RATE. Unlike every pricing path,
+    which calls get_rate_for_dte(), this hard-codes the constant. The effect on
+    vanna/charm/volga is small (r enters only through the forward and the charm
+    carry term), and it keeps the grid reproducible independent of the rate
+    cache's state — but it does mean these values will not exactly reconcile
+    against services/black_scholes.py computed at a live rate.
+
+    Returns (0,0,0) rather than raising on any degenerate input, so one bad
+    contract contributes nothing instead of aborting the cell.
     """
     if iv_decimal <= 0 or dte <= 0 or strike <= 0 or spot <= 0:
         return 0.0, 0.0, 0.0
@@ -101,10 +145,15 @@ def _second_order_approx(
     d2 = d1 - sig_sqt
     phi = math.exp(-0.5 * d1 * d1) / math.sqrt(2 * math.pi)
 
+    # Same formulas as services/black_scholes.py, inlined rather than imported
+    # to match the Dart original line-for-line. IF YOU FIX A GREEK, FIX BOTH.
     vanna = -phi * d2 / iv_decimal
     # Divide by 365 to express charm as delta-decay per calendar day,
     # matching the convention used in iv_analytics.py and greek_interpreter.py thresholds.
     charm = -phi * (2 * DEFAULT_R * T - d2 * sig_sqt) / (2 * T * sig_sqt * 365)
+    # NOTE this vega omits the discount factor that bs_vega applies, so volga
+    # here is very slightly larger than the black_scholes.py equivalent. A
+    # deliberate match to the Dart source, immaterial at these rates.
     vega_val = f * phi * sqrt_T
     volga = (vega_val * d1 * d2 / iv_decimal) if abs(iv_decimal) > 1e-8 else 0.0
 
@@ -130,6 +179,9 @@ class GridCell:
     contract_count: int
 
 
+# Collects contracts into one cell, then reduces them in to_cell(). Kept as a
+# mutable accumulator rather than a list comprehension because each contract
+# contributes to eight separate series with different admission rules.
 class _CellAccumulator:
     def __init__(self):
         self.deltas: list[float] = []
@@ -156,6 +208,13 @@ class _CellAccumulator:
         vol = int(contract.get("totalVolume", 0))
         dte = int(contract.get("daysToExpiration", 0))
 
+        # ZERO IS TREATED AS MISSING for every greek — a Schwab convention (see
+        # the extractor family in jobs/common.py). Consequence: a genuinely
+        # zero-gamma deep-OTM contract contributes nothing to the gamma median
+        # rather than pulling it down, so cell medians are computed only over
+        # contracts that actually reported a value.
+        #
+        # include_delta is False for puts — see the module header.
         if include_delta and abs(delta) > 0:
             self.deltas.append(delta)
         if abs(gamma) > 0:
@@ -164,8 +223,14 @@ class _CellAccumulator:
             self.vegas.append(vega)
         if abs(theta) > 0:
             self.thetas.append(theta)
+        # PERCENT -> DECIMAL conversion boundary. Schwab reports percent; the
+        # stored cell and the second-order approximation below both want decimals.
         if iv_pct > 0:
             self.ivs.append(iv_pct / 100)  # store as decimal
+        # These three are appended UNCONDITIONALLY, unlike the greeks above, so
+        # contract_count (len(strikes)) counts every contract in the cell — not
+        # just those with usable greeks. A cell can therefore have a high
+        # contract_count and a null gamma.
         self.strikes.append(strike)
         self.ois.append(oi)
         self.vols.append(vol)
@@ -178,6 +243,9 @@ class _CellAccumulator:
             self.charms.append(charm)
             self.volgas.append(volga)
 
+        # NEAREST expiry within the bucket, not the median or the range. A
+        # bucket spans a span of dates, and the soonest one is what dominates the
+        # cell's near-term behaviour.
         if self.nearest_expiry is None or expiry < self.nearest_expiry:
             self.nearest_expiry = expiry
 
@@ -195,6 +263,9 @@ class _CellAccumulator:
             vanna=_median(self.vannas) if self.vannas else None,
             charm=_median(self.charms) if self.charms else None,
             volga=_median(self.volgas) if self.volgas else None,
+            # SUMMED, not medianed — open interest and volume are additive, and
+            # the cell's total is the meaningful quantity. Everything above uses
+            # medians because greeks are intensive properties, not extensive ones.
             open_interest=sum(self.ois) if self.ois else None,
             volume=sum(self.vols) if self.vols else None,
             contract_count=len(self.strikes),
@@ -214,10 +285,14 @@ def ingest(chain: dict, obs_date:Optional[datetime] = None) -> list[GridCell]:
         List of GridCell objects (one per non-empty (StrikeBand, ExpiryBucket) pair).
     """
     chain = normalize_chain(chain)
+    # Spot is required: every band assignment is relative to it, so without a
+    # valid spot the whole grid would be one arbitrary band.
     spot = float(chain.get("underlyingPrice", 0))
     if spot <= 0:
         return []
 
+    # Callers pass an explicit obs_date so every cell in a run is computed
+    # against ONE instant; the fallback truncates to UTC midnight.
     if obs_date is None:
         now = datetime.now(timezone.utc)
         obs_date = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
@@ -231,6 +306,9 @@ def ingest(chain: dict, obs_date:Optional[datetime] = None) -> list[GridCell]:
         # Parse expiry date
         raw_date = exp.get("expirationDate", "")
         date_str = raw_date.split(":")[0].strip() if ":" in raw_date else raw_date
+        # Falls back to obs_date + dte when the expiration string is malformed
+        # or absent — an approximation, but it keeps the cell rather than losing
+        # every contract in that expiry.
         try:
             expiry = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         except Exception:
@@ -257,4 +335,9 @@ def ingest(chain: dict, obs_date:Optional[datetime] = None) -> list[GridCell]:
                 accumulators[key] = _CellAccumulator()
             accumulators[key].add(c, expiry, spot, include_delta=False)
 
+    # Only NON-EMPTY (band, bucket) pairs are returned — accumulators are created
+    # lazily on first contact — so a thin chain yields fewer than 25 cells rather
+    # than a matrix padded with nulls. Order follows dict insertion, i.e. the
+    # order contracts were encountered, NOT band/bucket order; consumers that
+    # want a sorted grid must sort it themselves.
     return [acc.to_cell(band, bucket) for (band, bucket), acc in accumulators.items()]

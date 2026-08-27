@@ -15,6 +15,29 @@ from __future__ import annotations
 #   expected_move_snapshots (upsert — only for expirations present in merged chain)
 #   iv_snapshots            (upsert — independent full-chain fetch, all expirations)
 # =============================================================================
+#
+# THE USER-TRIGGERED PATH. Everything else in jobs/ is fired by Cloud Scheduler
+# across the whole watchlist; this runs one ticker on demand, and trades breadth
+# for DEPTH — strike_count defaults to 100 here against 40 for the scheduled
+# jobs. The wings are where a thin chain hurts most (SABR and Heston fits, RND
+# extraction, GEX totals all degrade when the surface is truncated near the
+# money), so this is the way to get a properly-resolved surface for one name.
+#
+# WHY MULTIPLE FETCHES THEN A MERGE: Schwab's gateway caps response size, and
+# strike_count applies PER EXPIRATION — an all-expiry request at 100 strikes is
+# rejected outright on a liquid name. Fetching each expiry separately and
+# stitching them together is what buys the wider strike range.
+#
+# NO market_session_guard() CALL, unlike every scheduled job. Deliberate: a
+# human asking for a fresh pull after hours wants the data they asked for. The
+# date-rollover hazard the guard protects against is a property of unattended
+# 24/7 crons, not of an interactive request.
+#
+# EVERY STAGE IS INDEPENDENTLY TRY/EXCEPTED. Stages 3-7 each catch their own
+# failures and record a per-stage status, so a broken greek grid still lets the
+# vol surface and expected-move rows land. The returned `results` dict reports
+# each stage separately — a "complete" status means the JOB finished, not that
+# every stage succeeded.
 
 import asyncio
 import logging
@@ -38,6 +61,10 @@ from services.vvol_analytics import compute as vvol_compute
 
 log = logging.getLogger(__name__)
 
+# Expected-move period buckets and the DTE each one anchors to. The NEAREST
+# available expiry to each target is used, and the actual DTE found is what gets
+# priced — so these are anchors, not requirements. Buckets with no expiry
+# anywhere near them are simply skipped.
 _DTE_TARGETS = {
     "daily":     1,
     "weekly":    7,
@@ -52,6 +79,12 @@ async def run_ticker_dtes_pull(
     expiration_dates: list[str],
     strike_count: int = 100,
 ) -> dict:
+    """Fetch the requested expiries deep, then run every ingester over them.
+
+    The 120s client timeout is the longest in the codebase — this fans out one
+    request per requested expiration, each returning a much larger payload than
+    a scheduled pull.
+    """
     today = date.today().isoformat()
     db    = get_supabase()
     results: dict[str, str] = {}
@@ -62,6 +95,10 @@ async def run_ticker_dtes_pull(
             fetch_schwab_chain(client, ticker, strike_count=strike_count, expiration_date=exp)
             for exp in expiration_dates
         ])
+        # PARTIAL SUCCESS IS ACCEPTED: failed expiries drop out and the rest
+        # proceed. Only a total failure aborts. The caller cannot tell which
+        # expiries made it from the response — compare the point and cell counts
+        # in the returned results against what was requested.
         valid = [c for c in raw_chains if c is not None]
         if not valid:
             return {"status": "chain_error", "ticker": ticker, "date": today}
@@ -122,9 +159,24 @@ async def run_ticker_dtes_pull(
         # ── 7. IV — independent full-chain fetch (strikeCount=40, all exps) ──
         # Keeps iv_snapshots consistent with cross-expiry metrics (IVR, GEX, skew).
         # Does not use the merged chain so iv data is never partial.
+        #
+        # THE SECOND FETCH IS THE POINT, and it is worth the extra API call.
+        # IV analytics are CROSS-EXPIRY by nature: term structure compares near
+        # against far, total GEX sums every expiration, and IV rank compares
+        # against history built from full chains. Feeding it the merged chain —
+        # which holds only the handful of expiries the user selected — would
+        # write an iv_snapshots row whose GEX and term structure silently
+        # describe a fraction of the surface, corrupting the same history that
+        # tomorrow's IV rank is computed against.
+        #
+        # So this deliberately re-fetches at the DEFAULT breadth (all expiries,
+        # 40 strikes), keeping the row directly comparable to what iv_pull
+        # writes hourly.
         try:
             iv_chain = await fetch_schwab_chain(client, ticker)
             if iv_chain:
+                # Falls back to the merged chain's spot if this fetch omits it;
+                # the two are seconds apart so either is fine.
                 iv_spot   = float(iv_chain.get("underlyingPrice", spot))
                 history   = _fetch_iv_history(db, ticker, today)
                 iv_result = iv_analyse(iv_chain, history)
@@ -156,6 +208,20 @@ def _merge_chains(chains: list[dict]) -> dict:
     "YYYY-MM-DD:DTE" string, so there are no collisions across expirations).
     Top-level scalars (underlyingPrice, volatility, etc.) come from the first chain.
     Any cached "expirations" key is dropped so normalize_chain re-parses cleanly.
+
+    Taking scalars from the first chain is safe because the fetches happen
+    concurrently, seconds apart — spot may differ by a tick between them, and
+    one consistent value is better than a mixture.
+
+    Merging by KEY works without collisions because each key embeds both the
+    date and the DTE ("2026-01-17:150"), so two different expiries can never
+    map to the same key.
+
+    The final pop() is load-bearing. normalize_chain is IDEMPOTENT: it returns
+    early if "expirations" is already present, so a stale cached list from the
+    first chain would survive the merge and every downstream ingester would see
+    only that chain's single expiry. Dropping the key forces a clean re-parse
+    over the merged maps.
     """
     base     = {**chains[0]}
     call_map = dict(base.get("callExpDateMap") or {})

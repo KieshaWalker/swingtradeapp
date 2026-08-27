@@ -16,6 +16,42 @@ from __future__ import annotations
 #   4. Normalise so the density integrates to 1 over the grid.
 #   5. Compute CDF complements and implied moments via trapezoidal quadrature.
 # =============================================================================
+#
+# WHAT THIS PRODUCES, AND WHY IT IS THE RICHEST OUTPUT IN THE SYSTEM. Everything
+# else summarises the surface with a number — an IV, a skew, a rank. The RND is
+# the market's ENTIRE PROBABILITY DISTRIBUTION for where the underlying lands at
+# expiry, read straight out of option prices. From it you get P(S_T > K) for any
+# strike, and the higher moments that say whether the market fears a crash, a
+# melt-up, or simply a wide range.
+#
+# THE BREEDEN-LITZENBERGER RESULT (1978): the second derivative of the call
+# price with respect to STRIKE is the risk-neutral density, up to discounting.
+# Intuitively, an infinitesimal butterfly spread centred at K pays off only if
+# the underlying finishes at K — so its cost IS the probability of landing
+# there. q(K) = e^{rT}·d²C/dK².
+#
+# WHY THE PRICES ARE SYNTHESIZED RATHER THAN OBSERVED. A real chain quotes maybe
+# 30 strikes at uneven, coarse spacing; a second derivative computed on that
+# would be dominated by quote noise and strike-spacing artefacts. So a SABR slice
+# is fitted first and then used to generate call prices on a FINE UNIFORM GRID.
+# The smoothness of the fitted smile is what makes the numerical differentiation
+# stable.
+#
+# ⚠️ CONSEQUENCE: THE RND IS ONLY AS GOOD AS THE SABR FIT BEHIND IT. A
+# boundary-pinned or poorly-fitted slice produces a smooth, confident, wrong
+# distribution. `reliable` is carried through from the SabrSlice for exactly this
+# reason — check it before trusting the moments.
+#
+# READING THE MOMENTS:
+#   mean      should sit very close to the forward (no-arbitrage). The mean/F
+#             check below is the module's own sanity gate.
+#   implied_vol  a lognormal cross-check against the ATM IV that went in.
+#   skewness  NEGATIVE for equities — the crash-fear asymmetry.
+#   kurtosis  EXCESS (normal = 0). Positive means fatter tails than lognormal.
+#
+# COST: each slice is a full SABR calibration plus a 200-point grid priced three
+# times over. That is why only RND_TARGET_DTES are computed by default — see
+# _select_target_expirations.
 
 import math
 import logging
@@ -24,6 +60,8 @@ from typing import List, Optional
 
 import numpy as np
 
+# Compatibility shim — np.trapz was renamed np.trapezoid in NumPy 2.0 and the
+# old name now warns. Resolved once at import rather than per call.
 # np.trapezoid added in NumPy 2.0; np.trapz is the legacy name.
 try:
     _trapz = np.trapezoid  # type: ignore[attr-defined]
@@ -109,17 +147,42 @@ def compute_rnd_slice(
     r: float = DEFAULT_R,
     expiry: str = "",
 ) -> Optional[RndSlice]:
-    """Extract Breeden-Litzenberger RND for one DTE slice from a calibrated SabrSlice."""
+    """Extract Breeden-Litzenberger RND for one DTE slice from a calibrated SabrSlice.
+
+    Returns None rather than a suspect distribution in three cases: degenerate
+    inputs, near-zero total density mass, and a mean that has drifted more than
+    10% from the forward. That last one is the meaningful gate — see below.
+    """
     if T <= 0 or spot <= 0:
         return None
 
     F = spot * math.exp(r * T)
+    # Finite-difference step, sized as a FRACTION OF SPOT rather than an absolute
+    # dollar amount, so the numerical differentiation behaves identically on a
+    # $30 stock and a $1,200 one. Too small and floating-point cancellation
+    # dominates (the second difference subtracts nearly-equal numbers); too large
+    # and the approximation smooths away real curvature. 0.5% is the compromise.
     h = spot * RND_FD_STEP_PCT
 
+    # Grid spans ±30% of spot. Wide enough to capture almost all the probability
+    # mass at typical tenors, narrow enough that SABR is still extrapolating
+    # sanely — the Hagan expansion degrades badly in the far wings.
+    #
+    # TRUNCATION IS THE PRICE: mass outside ±30% is simply absent, which is what
+    # the normalisation and the mean/F check below are there to detect. At long
+    # tenors or on very high-vol names the window genuinely clips real mass.
+    #
+    # The 5%-of-spot floor stops K_lo reaching zero or negative on an extreme
+    # half-width setting.
     K_lo = max(spot * (1.0 - RND_STRIKE_HALF_WIDTH_PCT), spot * 0.05)
     K_hi = spot * (1.0 + RND_STRIKE_HALF_WIDTH_PCT)
+    # UNIFORM spacing is essential — the central-difference formula below assumes
+    # equal steps.
     grid: np.ndarray = np.linspace(K_lo, K_hi, RND_NUM_GRID_POINTS)
 
+    # Synthesizes a call price at any strike from the fitted smile. Falls back to
+    # discounted intrinsic whenever SABR returns an unusable vol, so a bad
+    # evaluation degrades one grid point rather than poisoning the whole density.
     def sabr_call(K: float) -> float:
         if K <= 0:
             return max(F - K, 0.0) * math.exp(-r * T)
@@ -134,26 +197,48 @@ def compute_rnd_slice(
             return max(F - K, 0.0) * math.exp(-r * T)
         return bs_price(F=F, K=K, T=T, r=r, sigma=iv, is_call=True)
 
+    # THREE full pricings of the grid — 600 SABR+BS evaluations per slice. This
+    # is the dominant cost of the whole RND computation, and the reason
+    # RND_TARGET_DTES limits how many slices are computed.
     C_mid  = np.array([sabr_call(K)     for K in grid])
     C_up   = np.array([sabr_call(K + h) for K in grid])
     C_down = np.array([sabr_call(K - h) for K in grid])
 
+    # Central second difference — the discrete d²C/dK². Second-order accurate,
+    # and the same expression as the butterfly-spread cost in arb_checker: the
+    # convexity condition tested there is exactly the requirement that this be
+    # non-negative.
     d2C_dK2 = (C_up - 2.0 * C_mid + C_down) / (h * h)
+    # e^{rT} undoes the discounting in the option prices, turning the second
+    # derivative into a true probability density.
     q_raw = math.exp(r * T) * d2C_dK2
 
+    # NEGATIVE DENSITY IS IMPOSSIBLE, so any negative value is numerical noise —
+    # typically butterfly-arbitrage violations in the extrapolated wings where
+    # the fitted smile is least trustworthy. Clipping to zero is the standard
+    # remedy; it slightly biases the tails but keeps the density valid.
     q_clipped = np.maximum(q_raw, 0.0)
     total_mass = float(_trapz(q_clipped, grid))
     if total_mass < 1e-12:
         _log.warning("rnd: near-zero density mass for DTE=%d, skipping", sabr_slice.dte)
         return None
 
+    # Renormalised to integrate to 1 over the grid. This ABSORBS the truncation
+    # and the clipping — which is why the mean/F check below is needed as an
+    # independent sanity test: after normalisation a badly truncated density
+    # still looks like a perfectly valid probability distribution.
     q_norm = q_clipped / total_mass
 
+    # Cumulative trapezoidal integration to build the CDF. dK is constant
+    # because the grid is uniform.
     dK = float(grid[1] - grid[0])
     prob_below = np.zeros(len(grid))
     for i in range(1, len(grid)):
         prob_below[i] = prob_below[i - 1] + 0.5 * (q_norm[i - 1] + q_norm[i]) * dK
 
+    # Second normalisation, on the CDF this time, so it ends at exactly 1.0
+    # despite trapezoidal discretisation error. prob_above is then its exact
+    # complement, guaranteeing the two always sum to 1 at every strike.
     cdf_max = float(prob_below[-1])
     if cdf_max > 0:
         prob_below = prob_below / cdf_max
@@ -161,6 +246,16 @@ def compute_rnd_slice(
 
     mean = float(_trapz(grid * q_norm, grid))
 
+    # THE MODULE'S KEY SANITY GATE. Under the risk-neutral measure the mean of
+    # the distribution MUST equal the forward — that is a no-arbitrage identity,
+    # not an approximation. A large gap therefore proves something is wrong:
+    # either the ±30% grid truncated real probability mass, or the SABR fit is
+    # poor enough that the synthesized prices are not a coherent surface.
+    #
+    # Two thresholds: beyond 10% the slice is DISCARDED, since the moments would
+    # be meaningless. Between 3% and 10% it is kept but logged — usable with
+    # caution. This is the one check that catches a smooth, confident, wrong
+    # density.
     if F > 0 and abs(mean / F - 1.0) > 0.10:
         _log.warning(
             "rnd: mean/F = %.3f for DTE=%d — possible truncation or poor SABR fit; aborting",
@@ -176,6 +271,11 @@ def compute_rnd_slice(
     variance = float(_trapz((grid - mean) ** 2 * q_norm, grid))
     std = math.sqrt(max(variance, 0.0))
 
+    # Converts the distribution's variance back into an annualized vol, ASSUMING
+    # lognormality. That assumption is deliberately false — the whole point of an
+    # RND is that the real distribution is skewed and fat-tailed — which is what
+    # makes this a useful CROSS-CHECK: it should land near the ATM IV that went
+    # in, and a large divergence means the density is misshapen.
     var_ratio = variance / (mean * mean) if mean > 0 else 0.0
     if var_ratio > 0 and T > 0:
         implied_vol_rnd = math.sqrt(math.log(1.0 + var_ratio) / T)
@@ -187,6 +287,14 @@ def compute_rnd_slice(
     if std > 1e-12:
         third_central  = float(_trapz((grid - mean) ** 3 * q_norm, grid))
         fourth_central = float(_trapz((grid - mean) ** 4 * q_norm, grid))
+        # Standardized central moments. Skewness is NEGATIVE for equity indices
+        # — the crash-fear asymmetry that also shows up as put skew.
+        # The −3.0 makes kurtosis EXCESS, so a normal distribution reads 0 and
+        # any positive value means fatter tails than lognormal.
+        #
+        # ⚠️ Both are computed on the TRUNCATED grid, and higher moments weight
+        # the tails most heavily — exactly the region the ±30% window clips. Read
+        # them as directional rather than precise.
         skewness = third_central  / (std ** 3)
         kurtosis = fourth_central / (std ** 4) - 3.0
 
@@ -208,6 +316,9 @@ def compute_rnd_slice(
         kurtosis=round(kurtosis, 6),
     )
 
+    # The SABR parameters and their fit quality are carried through onto the
+    # result, so a stored RND is self-describing: `reliable` and `sabr_rmse`
+    # travel with the distribution rather than having to be looked up separately.
     return RndSlice(
         dte=sabr_slice.dte,
         expiry=expiry,
@@ -235,6 +346,9 @@ def _select_target_expirations(
     if target_dtes is None or not dated:
         return dated
 
+    # Keyed by the SELECTED expiration's DTE, not by the target, so two targets
+    # resolving to the same expiry collapse to one entry — on a sparse chain the
+    # result can be fewer slices than there are targets.
     picked: dict = {}   # dte → expiration, deduplicated when targets collide
     for target in target_dtes:
         nearest = min(dated, key=lambda e: abs(int(e.get("dte", 0)) - target))
@@ -282,6 +396,10 @@ def compute_rnd_surface(
                 put_iv_map[k] = iv_raw / 100.0
 
         # OTM convention: calls above forward, puts below
+        # OTM options are the liquid ones, so their IVs are the trustworthy ones;
+        # the ITM side of the same strike is usually wide and stale. The two
+        # `elif` fallbacks accept whichever side exists when the preferred one is
+        # missing, so a one-sided strike still contributes a quote.
         quotes: List[tuple] = []
         all_strikes = sorted(set(call_iv_map) | set(put_iv_map))
         for k in all_strikes:
@@ -299,6 +417,10 @@ def compute_rnd_surface(
             _log.debug("rnd: SABR calibration returned None for DTE=%d, skipping", dte)
             continue
 
+        # PROCEEDS ANYWAY on an unreliable fit — logged at debug, and `reliable`
+        # is carried onto the RndSlice so the consumer decides. Deliberate: a
+        # marginal fit still produces a usable shape, and discarding it would
+        # leave the UI with no distribution at all rather than a caveated one.
         if not sabr.is_reliable:
             _log.debug(
                 "rnd: unreliable SABR for DTE=%d (rmse=%.4f, n=%d), proceeding",
@@ -322,6 +444,8 @@ def compute_rnd_surface(
             rnd = compute_rnd_slice(sabr_slice=sabr, spot=spot, T=T, r=r, expiry=expiry_str)
             if rnd is not None:
                 results.append(rnd)
+        # Per-slice containment: one pathological expiry must not cost the whole
+        # surface. Logged with a traceback since reaching here is unexpected.
         except Exception:
             _log.exception("rnd: unexpected error for DTE=%d, skipping", dte)
 

@@ -10,9 +10,44 @@
 #   lib/features/options/services/option_scoring_engine.dart
 #   lib/services/math/nelder_mead.dart
 # =============================================================================
+#
+# UNITS — the conventions these constants assume
+# ----------------------------------------------
+# Getting one of these wrong produces a plausible-looking number, not an error,
+# so they are worth stating once here:
+#   * Vols are DECIMALS (0.21 = 21%) everywhere EXCEPT raw Schwab contract
+#     fields, which are percent. iv_analytics and option_scoring take the
+#     percent form; everything else takes decimals.
+#   * Heston theta and V0 are VARIANCES, not vols. Their bounds are therefore
+#     vol², which is why a 0.5 cap means 70.7% vol and not 50%.
+#   * Time is ACT/365 on CALENDAR days. Theta and charm are per calendar day.
+#     Realized vol is the exception: it annualizes with 252 TRADING days
+#     (RV_TRADING_DAYS_YEAR), because it is computed from daily returns.
+#   * GEX totals are $ millions; VEX is $ of delta per vol point.
+#
+# THE RECURRING LESSON IN THIS FILE: BOUNDS MUST SCALE
+# ----------------------------------------------------
+# Several blocks below carry a long comment about a bound that was silently
+# wrong. They are all the same failure, and it is worth recognising the shape
+# before adding a new constant:
+#
+#   A fixed numeric bound on a parameter that is NOT scale-invariant pins the
+#   fit at the boundary instead of failing. RMSE can still look acceptable,
+#   because the optimizer does the best it can from the corner it is stuck in.
+#
+# It has bitten SABR's alpha (which scales as F^(1-beta), so a fixed ceiling
+# tightens as the underlying rises), Heston's theta and V0 (variances, so their
+# ceiling is vol²), and Heston's rho (clamped to negative on the assumption
+# that equity skew is always negative — a regime, not an invariant).
+#
+# So when a fit looks poor, CHECK FOR BOUNDARY SOLUTIONS FIRST, before assuming
+# the model is wrong. A parameter resting on its bound is the tell. The Heston
+# bounds below were widened by measuring exactly that, not by prior belief —
+# and widening was stopped at the point where further width changed no RMSE.
+# =============================================================================
 
 # ── Risk-free rate ────────────────────────────────────────────────────────────
-DEFAULT_R: float = 0.0433  # ~4.33% SOFR (FairValueEngine._defaultR)
+DEFAULT_R: float = 0.0344  # ~3.44% SOFR (FairValueEngine._defaultR)
 
 # ── SABR model defaults ────────────────────────────────────────────────────────
 SABR_BETA: float = 0.5      # CEV exponent — fixed for equity (square-root CEV)

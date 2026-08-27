@@ -14,6 +14,31 @@ from typing import Optional
 #
 # β is fixed at 0.5 (square-root CEV — standard for equity vol surfaces).
 # =============================================================================
+#
+# PER-SLICE, NOT GLOBAL — the key structural difference from the Heston
+# calibrator. Each DTE is fitted INDEPENDENTLY, with its own (α, ρ, ν). That
+# makes each fit small, fast and robust, and keeps a bad slice local.
+#
+# The cost is that nothing ties adjacent expiries together: parameters can jump
+# between neighbouring DTEs, and the resulting surface is not guaranteed
+# arbitrage-free across time. Consumers must gate on each slice's own
+# rmse/n_points rather than assuming the surface is coherent in T. That is
+# exactly the tradeoff Heston takes the other side of — one global fit,
+# consistent across maturities, far harder to obtain.
+#
+# THE OBJECTIVE IS IN IV SPACE, matching the market convention that quotes
+# options in vol. No price conversion is needed, which is why this is orders of
+# magnitude cheaper than the Heston fit.
+#
+# ⚠️ TWO WAYS THIS SILENTLY GOES WRONG, both defended against below:
+#   1. BOUNDARY SOLUTIONS. Nelder-Mead is local; on some slices it walks into a
+#      corner where ν collapses to ~0 or |ρ| pins at 1. See the retry logic.
+#   2. SCALE-DEPENDENT α BOUNDS. α ≈ σ·F^(1−β), so a FIXED ceiling caps the
+#      representable vol at C/√F — tightening as the underlying rises. The
+#      ceiling is therefore raised per-slice from the ATM seed.
+#
+# Reliability is defined once, in is_reliable_fit() below, and mirrored DB-side
+# in jobs/sabr_pull.apply_reliability_filter. Keep them in step.
 
 import math
 from dataclasses import dataclass
@@ -100,30 +125,47 @@ def calibrate_slice(
 
     Returns:
         SabrSlice or None if fewer than SABR_MIN_POINTS quotes.
+
+    Three parameters from at least 4 quotes — barely over-determined, which is
+    why the seeding and bound handling below matter so much.
     """
     if len(quotes) < SABR_MIN_POINTS:
         return None
 
     # Filter extreme IVs (data errors)
+    # IV above 300% is a data error rather than a market: one such quote can
+    # dominate a least-squares objective and drag the whole slice.
     clean = [(K, iv) for K, iv in quotes if 0 < iv <= SABR_MAX_IV_FILTER]
     if len(clean) < SABR_MIN_POINTS:
         return None
 
     # ATM IV: pick quote closest to forward
+    # Nearest to the FORWARD, not to spot — F is what the SABR formula is
+    # expressed in terms of, so the ATM point must be defined the same way.
     atm_quote = min(clean, key=lambda q: abs(q[0] - F))
     atm_iv = atm_quote[1]
 
     # Initial guess — matches sabr_calibrator.dart exactly
+    # α is SEEDED from the observed ATM vol rather than guessed, so the curve
+    # starts at roughly the right height and the optimizer only has to find the
+    # shape. This seed also sets the α ceiling below.
     alpha0 = sabr_alpha(atm_iv, F, beta)
     rho0 = SABR_INITIAL_RHO0
     nu0 = SABR_INITIAL_NU0
 
+    # Sum of squared IV errors across the slice. Unweighted, so every quote
+    # counts equally regardless of liquidity or distance from the money.
     def objective(params: np.ndarray) -> float:
         a, rh, nv = params
         sse = 0.0
         for K, iv_mkt in clean:
             try:
                 iv_model = sabr_iv(F=F, K=K, T=T, alpha=a, beta=beta, rho=rh, nu=nv)
+            # Large FINITE penalties, not infinity — infinity would flatten the
+            # objective across the whole invalid region, leaving the optimizer no
+            # gradient information about how to get back out. 1e4 per bad strike
+            # dwarfs any real IV error (which is O(0.01)) while still varying
+            # with how many strikes fail.
             except (ValueError, ZeroDivisionError):
                 sse += 1e4
                 continue
@@ -152,6 +194,9 @@ def calibrate_slice(
         min(max(nu0, SABR_NU_BOUNDS[0]), SABR_NU_BOUNDS[1]),
     ]
 
+    # Nelder-Mead: derivative-free, which suits an objective whose gradient is
+    # not available analytically and which contains the discontinuous penalties
+    # above.
     def _run(seed: list) -> tuple:
         res = minimize(
             objective,
@@ -166,6 +211,8 @@ def calibrate_slice(
         )
         return float(res.fun), tuple(res.x)
 
+    # First attempt from the ATM-anchored seed. Around two-thirds of slices
+    # converge to a clean interior solution here and never reach the retry.
     best_sse, best_x = _run(x0)
 
     # Nelder-Mead is a local method: on some slices it walks into a corner where
@@ -184,11 +231,22 @@ def calibrate_slice(
             or abs(rh) >= SABR_RHO_BOUNDS[1] * 0.999
         )
 
+    # TARGETED multi-start, not blanket. A retry only fires when the first fit
+    # landed on a bound, because a blanket multi-start would triple this job's
+    # runtime for the majority of slices that already converged cleanly.
+    #
+    # The retries seed ρ at 0.0 (neutral skew) and ν high, deliberately entering
+    # the space from a different direction than the first attempt.
     if _on_bound(best_x):
         for retry_nu in SABR_RETRY_NU0:
             sse_r, x_r = _run([x0[0], 0.0, retry_nu])
+            # Only accepted if genuinely better, so a retry can never make the
+            # result worse — a false positive on _on_bound costs one extra fit
+            # and nothing else.
             if sse_r < best_sse:
                 best_sse, best_x = sse_r, x_r
+            # Stop as soon as an interior solution is found; no point spending
+            # the remaining seeds.
             if not _on_bound(best_x):
                 break
 
@@ -219,6 +277,8 @@ def calibrate_slice(
 
     rmse = math.sqrt(sse / n_valid)
 
+    # Recovered from T rather than passed in — round() undoes the dte/365
+    # division the caller applied, exactly for integer DTEs.
     dte = round(T * 365)
     return SabrSlice(
         dte=dte,
