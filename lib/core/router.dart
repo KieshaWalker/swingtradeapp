@@ -27,6 +27,7 @@
 //   /macro                → MacroScoreScreen      (features/macro)
 //   /macro/iv-crush       → IvCrushTrackerScreen  (features/macro)
 //   /positions            → PositionsScreen       (features/positions)
+//   /swing                → SwingScreen           (features/swing)
 //   /ticker               → TickerDashboardScreen (features/ticker_profile)
 //   /ticker/:symbol       → TickerProfileScreen   (features/ticker_profile) — no shell
 //     …/chains            → OptionsChainScreen    (features/options)
@@ -70,6 +71,7 @@ import '../features/settings/screens/schwab_bootstrap_screen.dart';
 import '../features/macro/screens/macro_score_screen.dart';
 import '../features/macro/screens/iv_crush_tracker_screen.dart';
 import '../features/positions/screens/positions_screen.dart';
+import '../features/swing/screens/swing_screen.dart';
 
 // =============================================================================
 // _RouterNotifier
@@ -211,6 +213,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/positions',
         pageBuilder: (context, state) => const NoTransitionPage(
           child: _AppShell(child: PositionsScreen()),
+        ),
+      ),
+
+      GoRoute(
+        path: '/swing',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: _AppShell(child: SwingScreen()),
         ),
       ),
 

@@ -29,6 +29,73 @@ from typing import Optional
 
 #******** THIS HAS BEEN DISABLED ***************
 # =============================================================================
+#
+# ⚠️ DEAD CODE. READ THIS BEFORE CHANGING ANYTHING HERE. ⚠️
+#
+# The Cloud Scheduler job that drove this module is PAUSED and is not expected
+# to run. /jobs/schwab-pull still routes here and still works if invoked by
+# hand, but nothing invokes it on a schedule. Do not add pipeline logic to this
+# file expecting it to execute.
+#
+# WHY IT WAS SPLIT UP. This ran the entire pipeline for every ticker inside one
+# HTTP request. That design had three fatal problems:
+#   * TIMEOUT — Heston calibration alone can take minutes per ticker; the whole
+#     universe never fit inside a Cloud Run request.
+#   * ALL-OR-NOTHING — a failure late in the sequence cost every earlier stage's
+#     work for that ticker.
+#   * NO INDEPENDENT SCHEDULING — SABR wants to run after the surface lands, IV
+#     analytics wants a different chain breadth, and Heston needs batching. One
+#     monolith could not give them different cadences.
+#
+# The live equivalents, in pipeline order (see routers/scheduler_trigger.py):
+#   step 1   -> jobs/vol_surface_pull.py       (:00)
+#   step 2   -> jobs/sabr_pull.py              (:03)
+#   step 3.5 -> jobs/heston_pull.py            (:06 / :20, alphabetically batched)
+#   step 4   -> jobs/iv_pull.py                (:09)
+#   step 5/6 -> jobs/greek_grid_pull.py        (:12, writes both greek tables)
+#   regime   -> jobs/regime_pull.py            (:18)
+#   step 7   -> jobs/expected_move_pull.py     (21:00, EOD)
+#
+# ── KNOWN DIVERGENCES: this file is STALE relative to the live jobs ──────────
+# It has not tracked the fixes made since the split. Anything running it today
+# would write subtly wrong data:
+#
+#   1. NO market_session_guard(). Every live job refuses to run outside market
+#      hours, because between 00:00-04:00 UTC the UTC date has rolled over while
+#      the ET session has not — writing the prior session's data under tomorrow's
+#      date. This module has no such guard.
+#
+#   2. _fetch_iv_history() BELOW DOES NOT EXCLUDE TODAY. iv_pull's version takes
+#      a before_date and filters .lt("date", before_date); this one does not, so
+#      today's own row would sit inside the window its IV rank is measured
+#      against — biasing every percentile toward the middle.
+#
+#   3. _upsert_regime_snapshot() BELOW WRITES NO is_final COLUMN. ML training
+#      and supervised inference both filter on is_final=true, so regime rows
+#      written from here would be silently excluded from training.
+#
+#   4. VIX IS FETCHED FROM SCHWAB as "$VIX.X". Schwab's price-history endpoint
+#      does not serve index symbols — see the header of jobs/regime_pull.py,
+#      which moved the whole VIX family to FRED for exactly this reason. The
+#      fetch here returns empty, so every VIX-derived metric and the HMM gate
+#      would be null.
+#
+#   5. THE SCALAR EXTRACTORS AND ATM PICKER ARE LOCAL COPIES of the ones now in
+#      jobs/common.py (_fgt0/_fne0/_fany/_igt0/_atm_contract/_pct_to_dec), as
+#      are _chain_to_vol_points, _upsert_vol_surface, _upsert_iv_snapshot,
+#      _upsert_greek_grid and _upsert_greek_snapshots. Fixing a bug in one of
+#      these does NOT fix the live pipeline.
+#
+# The SABR helpers are the exception: they are imported from jobs/sabr_pull
+# rather than duplicated, precisely because the local copies had already drifted
+# (see the import comment below). That import is the pattern the rest of this
+# file never got.
+#
+# KEEP OR DELETE? It is retained as a manual-testing entry point and as a record
+# of the original sequence. If it is ever revived, every divergence above must be
+# reconciled first — or, better, rewrite it as a thin orchestrator that calls the
+# live job functions in order.
+# =============================================================================
 
 import asyncio
 import logging
@@ -56,11 +123,19 @@ from services.hmm_regime import classify_vix_regime
 log = logging.getLogger(__name__)
 
 # DTE targets that mirror the Flutter app's greek chart buckets
+# Duplicated from jobs/greek_snapshots_pull.py, which holds the live copy.
 _DTE_BUCKETS = [4, 7, 31]
 
 
 async def run_schwab_pull() -> dict:
-    """Main entry point — called by the Cloud Scheduler HTTP trigger."""
+    """Main entry point — called by the Cloud Scheduler HTTP trigger.
+
+    DISABLED — its scheduler job is paused. See the module header for the live
+    replacements and for the list of ways this code has gone stale.
+
+    Runs every stage for every ticker sequentially inside one request, which is
+    the design problem that caused the split.
+    """
     db = get_supabase()
     today = date.today().isoformat()
     edge_base = settings.edge_function_base
@@ -68,6 +143,9 @@ async def run_schwab_pull() -> dict:
         "Authorization": f"Bearer {settings.supabase_service_key}",
         "Content-Type": "application/json",
     }
+    # Inlined ticker discovery — the live jobs call jobs.common.get_tickers(),
+    # which does exactly this. Another local copy that will not track changes to
+    # the shared helper.
     # Fetch watched tickers + user_id (needed for user-scoped tables like greek_snapshots)
     tickers_resp = db.table("watched_tickers").select("ticker,user_id").execute()
     rows = tickers_resp.data or []
@@ -116,6 +194,10 @@ async def run_schwab_pull() -> dict:
             (spy_closes, _),
             (rsp_closes, _),
         ) = await asyncio.gather(
+            # ⚠️ BROKEN — Schwab's price-history endpoint does not serve index
+            # symbols. These three return empty, leaving every VIX-derived
+            # metric and the HMM gate null. jobs/regime_pull.py fetches the
+            # whole VIX family from FRED instead. See divergence 4 in the header.
             _fetch_schwab_closes(client, edge_base, headers, "$VIX.X",   days=65),
             _fetch_schwab_closes(client, edge_base, headers, "$VIX3M.X", days=5),
             _fetch_schwab_closes(client, edge_base, headers, "$VVIX.X",  days=15),
@@ -279,8 +361,9 @@ async def run_schwab_pull() -> dict:
 
                 sma10:Optional[float] = sum(clean_closes[-10:]) / 10 if len(clean_closes) >= 10 else None
                 sma50:Optional[float] = sum(clean_closes[-50:]) / 50 if len(clean_closes) >= 50 else None
-                vol_sma3:Optional[float]  = sum(clean_volumes[-3:])  / 3  if len(clean_volumes) >= 3  else None
-                vol_sma20:Optional[float] = sum(clean_volumes[-20:]) / 20 if len(clean_volumes) >= 20 else None
+                # 30/50 — see regime_pull for why the short window went away.
+                vol_sma30:Optional[float] = sum(clean_volumes[-30:]) / 30 if len(clean_volumes) >= 30 else None
+                vol_sma50:Optional[float] = sum(clean_volumes[-50:]) / 50 if len(clean_volumes) >= 50 else None
                 price_roc5:Optional[float] = None
                 if len(clean_closes) >= 6 and clean_closes[-6] > 0:
                     price_roc5 = (clean_closes[-1] - clean_closes[-6]) / clean_closes[-6] * 100
@@ -299,8 +382,8 @@ async def run_schwab_pull() -> dict:
                     vix_dev_pct=vix_dev_pct,
                     vix_rsi=vix_rsi,
                     hmm_result=hmm_result,
-                    vol_sma3=vol_sma3,
-                    vol_sma20=vol_sma20,
+                    vol_sma30=vol_sma30,
+                    vol_sma50=vol_sma50,
                     delta_gex=iv_result.delta_gex,
                     vix_term_structure_ratio=vix_term_structure_ratio,
                     vvix_current=vvix_current,
@@ -406,6 +489,11 @@ def _upsert_greek_snapshots(
 
 
 
+# ── Local copies of jobs/common.py helpers ───────────────────────────────────
+# Everything from here to _chain_to_vol_points duplicates jobs/common.py. The
+# live pipeline imports those; these are frozen at the state of the split.
+# See divergence 5 in the module header — and jobs/common.py for the actual
+# explanations of why the four extractors differ in what they treat as missing.
 def _atm_contract(contracts: list[dict]) ->Optional[dict]:
     """Return the contract with |delta| closest to 0.50, or None if no
     contract carries a valid delta (pre-market, 0DTE, illiquid chain)."""
@@ -571,6 +659,16 @@ def _chain_to_vol_points(chain: dict, spot: float) -> list[dict]:
 # ── Supabase upserts ──────────────────────────────────────────────────────────
 
 def _fetch_iv_history(db, ticker: str) -> list[dict]:
+    """Trailing IV history for rank/percentile ranking.
+
+    ⚠️ STALE — DOES NOT EXCLUDE TODAY. jobs/iv_pull.py's version takes a
+    `before_date` and applies .lt("date", before_date) so the current value is
+    not ranked against a window that already contains it. This one has no such
+    filter, so every percentile computed from it is biased toward the middle.
+    Divergence 2 in the module header.
+
+    The desc+reverse ordering below IS correct and matches the live version.
+    """
     # Desc + reverse: ascending order with a limit would return the oldest
     # 252 rows once the table outgrows the limit (see jobs/iv_pull.py).
     resp = (
@@ -696,6 +794,13 @@ def _upsert_greek_grid(db, ticker: str, today: str, cells, spot: float, user_id:
 
 
 def _upsert_regime_snapshot(db, today: str, regime) -> None:
+    """Write a regime classification row.
+
+    ⚠️ STALE — WRITES NO is_final COLUMN. jobs/regime_pull.py sets is_final from
+    is_eod_capture_run(), and both ML training and supervised inference filter on
+    is_final=true. Rows written from here would be silently excluded from
+    training. Divergence 3 in the module header.
+    """
     db.table("regime_snapshots").upsert(
         {
             "ticker":                   regime.ticker,
@@ -717,8 +822,8 @@ def _upsert_regime_snapshot(db, today: str, regime) -> None:
             "signals":                  regime.signals,
 
 
-            "vol_sma3":                 regime.vol_sma3,
-            "vol_sma20":                regime.vol_sma20,
+            "vol_sma30":                 regime.vol_sma30,
+            "vol_sma50":                regime.vol_sma50,
 
 
 
@@ -744,7 +849,16 @@ async def _fetch_schwab_closes(
     ticker: str,
     days: int = 65,
 ) -> tuple[list[float], list[float]]:
-    """Return (closes, volumes) oldest→newest via the get-schwab-pricehistory edge function."""
+    """Return (closes, volumes) oldest→newest via the get-schwab-pricehistory edge function.
+
+    Local copy of jobs.common.fetch_schwab_closes, differing only in taking
+    edge_base and headers as parameters rather than reading them from settings,
+    and in logging a truncated response body on failure.
+
+    Same contract: returns ([], []) on any failure rather than raising. Note that
+    is exactly why the broken "$VIX.X" fetch above fails SILENTLY — an
+    unsupported symbol looks identical to an outage from here.
+    """
     try:
         resp = await client.post(
             f"{edge_base}/get-schwab-pricehistory",
