@@ -1,0 +1,22 @@
+-- =============================================================================
+-- 084: drop swing_setups
+-- =============================================================================
+-- Reverses 082 and 083. The table existed to hold one precomputed row per
+-- ticker per session for a ranked, universe-wide screener — which is not what
+-- was asked for. The screener, its Flutter screen and the fan-in job that wrote
+-- this table are all removed; with no writer the table is dead.
+--
+-- Nothing else reads it: it had exactly one producer (jobs/swing_setups_pull.py)
+-- and one consumer (the removed Flutter screen).
+--
+-- The ANALYSIS is not lost. services/channel_fit.py, services/trend_volume.py
+-- and services/options_confirm.py are untouched and still tested — they are the
+-- components that were actually requested, and they compute per ticker on
+-- demand without needing a precomputed table. equity_bars is likewise untouched:
+-- a 200-day SMA needs stored history regardless of how many tickers are viewed.
+--
+-- Derived data, fully regenerable from equity_bars + the snapshot tables, so no
+-- backup is taken.
+-- =============================================================================
+
+drop table if exists swing_setups;

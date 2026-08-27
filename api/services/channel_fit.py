@@ -141,6 +141,12 @@ class TrendLine:
     # tested before it. Extrapolating a trendline backwards past its own origin
     # is not a claim the fit makes.
     start_idx:  int = 0
+    # Index of the SECOND construction pivot. Unlike pivot_idx (every bar within
+    # touch tolerance, which can include bars far past the line's origin), this
+    # is one of the two exact points the line was drawn through — needed to
+    # recover a line's true anchors for storage, since a tolerance-band touch is
+    # not the same claim as "the line passes through this point exactly".
+    end_idx:    int = 0
 
     def value_at(self, x: float) -> float:
         return self.slope * x + self.intercept
@@ -216,7 +222,11 @@ def find_pivots(highs: Sequence[float], lows: Sequence[float],
 
 
 def _candidate_lines(prices: Sequence[float], pivots: Sequence[int],
-                     n_bars: int, atr: float, upper: bool) -> List[TrendLine]:
+                     n_bars: int, atr: float, upper: bool, *,
+                     touch_atr: float = _TOUCH_ATR,
+                     break_atr: float = _BREAK_ATR,
+                     min_touches: int = _MIN_TOUCHES,
+                     min_span_frac: float = _MIN_SPAN_FRAC) -> List[TrendLine]:
     """Top _TOP_K trendlines through a set of pivots, best first.
 
     `upper=True` fits resistance against the highs (violated when price pierces
@@ -226,6 +236,11 @@ def _candidate_lines(prices: Sequence[float], pivots: Sequence[int],
     and the best lower line frequently do not form the best channel — see the
     header. The pair search needs alternatives to choose from.
 
+    The four tolerance/threshold knobs default to the module constants but are
+    overridable — this is what lets suggest_trendlines() expose "how strict"
+    the search is to a caller (a user's own tolerance sliders) without every
+    other user of this module inheriting a different default.
+
     O(pivots^2 * bars). With ~10-30 pivots in a 120-bar window that is a few
     hundred thousand operations, so the search is exhaustive: the chosen line is
     genuinely the best available, not whatever a greedy pass found first.
@@ -233,9 +248,9 @@ def _candidate_lines(prices: Sequence[float], pivots: Sequence[int],
     if len(pivots) < 2 or atr <= 0:
         return []
 
-    touch_band = _TOUCH_ATR * atr
-    break_band = _BREAK_ATR * atr
-    min_span = max(2, int(_MIN_SPAN_FRAC * n_bars))
+    touch_band = touch_atr * atr
+    break_band = break_atr * atr
+    min_span = max(2, int(min_span_frac * n_bars))
 
     out: List[TrendLine] = []
     for a in range(len(pivots)):
@@ -256,7 +271,7 @@ def _candidate_lines(prices: Sequence[float], pivots: Sequence[int],
                     break
                 if abs(prices[k] - line) <= touch_band:
                     touches.append(k)
-            if violated or len(touches) < _MIN_TOUCHES:
+            if violated or len(touches) < min_touches:
                 continue
 
             span = touches[-1] - touches[0]
@@ -275,7 +290,7 @@ def _candidate_lines(prices: Sequence[float], pivots: Sequence[int],
             out.append(TrendLine(
                 slope=slope, intercept=intercept, touches=len(touches),
                 span_bars=span, tightness=tightness, pivot_idx=touches,
-                score=score, start_idx=i,
+                score=score, start_idx=i, end_idx=j,
             ))
 
     out.sort(key=lambda t: t.score, reverse=True)
@@ -436,3 +451,155 @@ def to_dict(fit: ChannelFit) -> dict:
     """Flatten for JSONB storage; TrendLine objects become nested dicts."""
     d = asdict(fit)
     return d
+
+
+# =============================================================================
+# Single-line tools: SUGGEST candidates for saving, and TRACK a saved line.
+# =============================================================================
+# fit_channel() answers "is there a channel here" by auto-pairing one upper and
+# one lower line. These two functions serve a different, narrower need: a user
+# picking INDIVIDUAL support or resistance lines to save (not necessarily a
+# matched pair), with their own tolerance settings, and later asking "is the
+# line I saved still holding".
+# =============================================================================
+
+
+def suggest_trendlines(
+    highs: Sequence[float], lows: Sequence[float], closes: Sequence[float], *,
+    strength: int = _PIVOT_STRENGTH,
+    touch_atr: float = _TOUCH_ATR,
+    break_atr: float = _BREAK_ATR,
+    min_touches: int = _MIN_TOUCHES,
+    min_span_frac: float = _MIN_SPAN_FRAC,
+) -> "tuple[List[TrendLine], List[TrendLine]]":
+    """Candidate (resistance, support) trendlines for a user to choose from.
+
+    Unlike fit_channel, this does NOT pair or classify — it returns the raw
+    shortlists so a caller can offer several distinct resistance lines and
+    several distinct support lines independently, matching "multiple lines can
+    be added" rather than one auto-selected channel.
+
+    Every tolerance is a caller-supplied override with the module's own
+    measured defaults as a fallback, which is what lets a user's own slider
+    values reach the search: touch_atr/break_atr control how close a touch or a
+    violation must be (in ATR — see the module header for why ATR and not a
+    fixed price band), min_touches sets the evidence bar, min_span_frac sets
+    how much of the window a line must govern to count.
+
+    Returns ([], []) rather than raising when the window is too short or too
+    flat to fit anything — the module rule that "no line here" is a legitimate
+    answer, not an error, applies just as much to a single-sided request as it
+    does to fit_channel's paired one.
+    """
+    n = len(closes)
+    if n < 30:
+        return [], []
+    atr = _atr(highs, lows, closes)
+    if atr <= 0:
+        return [], []
+    hi_piv, lo_piv = find_pivots(highs, lows, strength)
+    upper = _candidate_lines(
+        highs, hi_piv, n, atr, upper=True,
+        touch_atr=touch_atr, break_atr=break_atr,
+        min_touches=min_touches, min_span_frac=min_span_frac,
+    )
+    lower = _candidate_lines(
+        lows, lo_piv, n, atr, upper=False,
+        touch_atr=touch_atr, break_atr=break_atr,
+        min_touches=min_touches, min_span_frac=min_span_frac,
+    )
+    return upper, lower
+
+
+@dataclass
+class LineAccuracy:
+    bars_checked:       int = 0
+    touches:            int = 0
+    violations:         int = 0
+    first_violation_idx: Optional[int] = None
+    max_deviation_atr:  Optional[float] = None
+    # holding | broken | unverified.  None only for a 'manual' kind with no
+    # directional reading requested — see track_line_accuracy.
+    status:             Optional[str] = None
+
+
+def track_line_accuracy(
+    highs: Sequence[float], lows: Sequence[float], closes: Sequence[float],
+    slope: float, intercept: float, start_idx: int, *,
+    kind: Optional[str] = None,
+    touch_atr: float = _TOUCH_ATR,
+    break_atr: float = _BREAK_ATR,
+) -> LineAccuracy:
+    """How a SAVED line has held up against bars printed since it was drawn.
+
+    This is deliberately the exact same touch/violation test _candidate_lines
+    uses during fitting, just pointed at bars the line did not exist to be
+    fitted against. Reusing the identical bands means a line's live track
+    record is judged by the same standard that qualified it as a candidate in
+    the first place, rather than a second, looser definition of "holding".
+
+    `kind` decides which side counts as a violation, and is intentionally
+    ignored for anything other than 'support' or 'resistance':
+      resistance   violated when a bar's HIGH closes break_atr*ATR above the line
+      support      violated when a bar's LOW closes break_atr*ATR below the line
+      manual / None  no side is assumed. A hand-drawn line carries no built-in
+                     expectation of which way price should stay, and guessing
+                     one would be worse than reporting deviation without a
+                     verdict — status is left None, not defaulted to "holding".
+
+    `start_idx` is the bar index of the line's LATER anchor (its own end_idx,
+    once mapped from a stored line's second anchor date back to a bar index) —
+    tracking begins there because that is the first bar the line's author
+    actually committed to a forward-looking line, not before.
+
+    ATR is computed over the full supplied series (typically "since the anchor
+    date through today"), which lets its tolerance widen or narrow as the
+    market's own volatility has changed since the line was drawn, rather than
+    freezing the ATR that happened to be in effect at save time.
+    """
+    n = len(closes)
+    acc = LineAccuracy()
+    if start_idx >= n - 1:
+        return acc
+
+    atr = _atr(highs, lows, closes)
+    if atr <= 0:
+        return acc
+    touch_band = touch_atr * atr
+    break_band = break_atr * atr
+
+    touches = 0
+    violations = 0
+    first_violation_idx: Optional[int] = None
+    max_dev = 0.0
+
+    for k in range(start_idx, n):
+        line = slope * k + intercept
+        max_dev = max(max_dev, abs(closes[k] - line) / atr)
+
+        if kind == "resistance":
+            if highs[k] - line > break_band:
+                violations += 1
+                if first_violation_idx is None:
+                    first_violation_idx = k
+            elif abs(highs[k] - line) <= touch_band:
+                touches += 1
+        elif kind == "support":
+            if line - lows[k] > break_band:
+                violations += 1
+                if first_violation_idx is None:
+                    first_violation_idx = k
+            elif abs(lows[k] - line) <= touch_band:
+                touches += 1
+        else:
+            if abs(closes[k] - line) <= touch_band:
+                touches += 1
+
+    acc.bars_checked = n - start_idx
+    acc.touches = touches
+    acc.violations = violations
+    acc.first_violation_idx = first_violation_idx
+    acc.max_deviation_atr = round(max_dev, 4)
+    if kind in ("resistance", "support"):
+        acc.status = "broken" if violations > 0 else "holding"
+    return acc

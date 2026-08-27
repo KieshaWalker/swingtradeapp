@@ -29,6 +29,8 @@
 //   /greek-grid/interpret-chart -> api/routers/greek_grid.py
 //   /fetch/ticker-dtes          -> api/routers/fetch_dtes.py
 //   /watched-contracts/evaluate -> api/routers/watched_contracts.py
+//   /trend-lines/suggest        -> api/routers/trend_lines.py
+//   /trend-lines/accuracy       -> api/routers/trend_lines.py
 //
 // If a new Python backend feature is added, expose a Dart method here and
 // update the calling widget/provider to use the new response shape.
@@ -509,5 +511,59 @@ class PythonApiClient {
         'underlying_price': ?underlyingPrice,
         'levels': levels ?? [],
         'tolerance_pct': tolerancePct,
+      });
+
+  // ── Trend Lines ────────────────────────────────────────────────────────────
+  // Fitting and accuracy tracking only — saving/renaming/deleting a line is
+  // plain Supabase CRUD against trend_lines (see TrendLinesNotifier), same
+  // pattern as watched_tickers and target_levels. Nothing here persists.
+
+  /// Candidate resistance/support lines at the caller's own tolerance
+  /// settings. Each candidate is two real (date, price) anchors, not a bar
+  /// index — pick one, hand its anchors to TrendLinesNotifier.add to save it.
+  /// Returns {ticker, bars_used, resistance: [...], support: [...]}, each
+  /// candidate: {anchor1_date, anchor1_price, anchor2_date, anchor2_price,
+  /// touches, span_bars, tightness, score}.
+  /// Throws PythonApiException(422) when the ticker has under 30 bars of
+  /// equity_bars history.
+  static Future<Map<String, dynamic>> trendLineSuggest({
+    required String ticker,
+    int strength = 3,
+    double touchAtr = 0.55,
+    double breakAtr = 1.10,
+    int minTouches = 3,
+    double minSpanFrac = 0.35,
+  }) =>
+      _post('/trend-lines/suggest', {
+        'ticker': ticker,
+        'strength': strength,
+        'touch_atr': touchAtr,
+        'break_atr': breakAtr,
+        'min_touches': minTouches,
+        'min_span_frac': minSpanFrac,
+      });
+
+  /// How a saved line has held up against every bar printed since it was
+  /// drawn — recomputed fresh on every call from the two anchors alone.
+  /// [kind] is 'support' or 'resistance' to get a holding/broken verdict, or
+  /// null for a manual line, which reports deviation stats with no verdict —
+  /// a hand-drawn line carries no assumed side.
+  /// Returns {bars_checked, touches, violations, first_violation_date,
+  /// max_deviation_atr, status}.
+  static Future<Map<String, dynamic>> trendLineAccuracy({
+    required String ticker,
+    required String anchor1Date,
+    required double anchor1Price,
+    required String anchor2Date,
+    required double anchor2Price,
+    String? kind,
+  }) =>
+      _post('/trend-lines/accuracy', {
+        'ticker': ticker,
+        'anchor1_date': anchor1Date,
+        'anchor1_price': anchor1Price,
+        'anchor2_date': anchor2Date,
+        'anchor2_price': anchor2Price,
+        'kind': ?kind,
       });
 }

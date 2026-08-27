@@ -63,7 +63,7 @@ log = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from routers import black_scholes, sabr, heston, fair_value, iv_analytics, realized_vol, arb, scoring, decision, greek_grid, scheduler_trigger, regime, macro, fetch_dtes, watched_contracts
+from routers import black_scholes, sabr, heston, fair_value, iv_analytics, realized_vol, arb, scoring, decision, greek_grid, scheduler_trigger, regime, macro, fetch_dtes, watched_contracts, trend_lines
 
 
 @asynccontextmanager
@@ -190,6 +190,7 @@ app.include_router(fetch_dtes.router, prefix="/fetch", tags=["Fetch"])
 # Note: watched_contracts is mounted here but is absent from the summary table
 # at the top of this file — the table predates it.
 app.include_router(watched_contracts.router, prefix="/watched-contracts", tags=["Watched Contracts"])
+app.include_router(trend_lines.router, prefix="/trend-lines", tags=["Trend Lines"])
 
 
 @app.get("/health")

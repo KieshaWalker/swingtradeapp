@@ -35,18 +35,13 @@
 #   21:10 crisis-pull             market-level crisis checklist
 #   21:15 focus-digest-pull       digest — depends on ALL of the above
 #   21:30 equity-bars-pull        daily OHLCV -> equity_bars
-#   21:40 swing-setups-pull       channel + SMA + volume + options -> swing_setups
 #   22:00 vol-period-weekly (Fri) / vol-period-monthly (1st)
 #
 # equity-bars-pull sits at the END of the EOD chain on purpose. It depends on
 # nothing here — it reads Schwab directly, not the tables the other jobs wrote —
 # so it is placed last to keep it off the critical path of the digest, which
 # does have real upstream dependencies.
-#
-# swing-setups-pull is the SECOND fan-in job, after focus-digest-pull, and its
-# 21:40 slot IS a data dependency: it reads equity_bars (21:30) and the
-# expected_move_snapshots written at 21:00. Moving it earlier makes it fit
-# channels to yesterday's bars while stamping them with today's date.
+
 #
 # OPERATIONAL NOTES
 # -----------------
@@ -356,26 +351,6 @@ async def equity_bars_pull_trigger(request: Request):
     from jobs.equity_bars_pull import run
     result = await run()
     log.info("equity_bars_pull_complete result=%s", result)
-    return result
-
-
-@router.post("/swing-setups-pull")
-async def swing_setups_pull_trigger(request: Request):
-    """Channel + SMA + volume + options confirmation → swing_setups.
-    Cron: 40 21 * * 1-5   (weekdays 21:40 UTC, after equity-bars-pull)
-
-    A FAN-IN job: fetches nothing, reads equity_bars plus the
-    expected_move_snapshots / iv_snapshots the EOD chain already wrote. Its slot
-    is a hard dependency — see the pipeline map at the top of this file.
-
-    Emits no buy/sell signal. structure_quality ranks how legible a chart is,
-    never which way to trade it: channel position on its own was measured to
-    carry no reliable directional edge on this universe.
-    """
-    _verify_scheduler(request)
-    from jobs.swing_setups_pull import run
-    result = await run()
-    log.info("swing_setups_pull_complete result=%s", result)
     return result
 
 
