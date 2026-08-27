@@ -23,7 +23,6 @@ class AppMenuButton extends StatelessWidget {
         _navItem('/ticker', Icons.candlestick_chart_rounded, 'Tickers', location),
         _navItem('/calculator', Icons.calculate_rounded, 'Calculator', location),
         _navItem('/positions', Icons.layers_rounded, 'Positions', location),
-        _navItem('/strategy-tracker', Icons.track_changes_rounded, 'Strategy Tracker', location),
         _navItem('/settings/schwab-auth', Icons.link_rounded, 'Schwab Auth', location),
       ],
     );

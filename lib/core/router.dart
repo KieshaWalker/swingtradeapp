@@ -27,8 +27,6 @@
 //   /macro                → MacroScoreScreen      (features/macro)
 //   /macro/iv-crush       → IvCrushTrackerScreen  (features/macro)
 //   /positions            → PositionsScreen       (features/positions)
-//   /strategy-tracker     → StrategyTrackerScreen (features/strategy_tracker)
-//   /strategy-tracker/:id → StrategyDetailScreen  (features/strategy_tracker)
 //   /ticker               → TickerDashboardScreen (features/ticker_profile)
 //   /ticker/:symbol       → TickerProfileScreen   (features/ticker_profile) — no shell
 //     …/chains            → OptionsChainScreen    (features/options)
@@ -72,8 +70,6 @@ import '../features/settings/screens/schwab_bootstrap_screen.dart';
 import '../features/macro/screens/macro_score_screen.dart';
 import '../features/macro/screens/iv_crush_tracker_screen.dart';
 import '../features/positions/screens/positions_screen.dart';
-import '../features/strategy_tracker/screens/strategy_tracker_screen.dart';
-import '../features/strategy_tracker/screens/strategy_detail_screen.dart';
 
 // =============================================================================
 // _RouterNotifier
@@ -216,20 +212,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => const NoTransitionPage(
           child: _AppShell(child: PositionsScreen()),
         ),
-      ),
-      GoRoute(
-        path: '/strategy-tracker',
-        pageBuilder: (context, state) => const NoTransitionPage(
-          child: _AppShell(child: StrategyTrackerScreen()),
-        ),
-        routes: [
-          GoRoute(
-            path: ':id',
-            builder: (_, state) => StrategyDetailScreen(
-              setupId: state.pathParameters['id']!,
-            ),
-          ),
-        ],
       ),
 
       // Tickers — dashboard + full-screen profile (no shell)

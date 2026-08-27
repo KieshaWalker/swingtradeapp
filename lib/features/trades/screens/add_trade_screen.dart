@@ -10,7 +10,6 @@ import 'package:uuid/uuid.dart';
 import '../../../core/theme.dart';
 import '../../../services/schwab/schwab_providers.dart';
 import '../../auth/providers/auth_provider.dart';
-import '../../strategy_tracker/providers/strategy_tracker_provider.dart';
 import '../models/trade.dart';
 import '../providers/trades_provider.dart';
 
@@ -49,7 +48,6 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
   EntryPointType? _entryPointType;
   DateTime _expiration     = DateTime.now().add(const Duration(days: 30));
   bool _prefillApplied     = false;
-  String? _strategySetupId; // strategy tracker tag
 
   @override
   void dispose() {
@@ -157,7 +155,6 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
       timeOfEntry: _timeOfEntryCtrl.text.isNotEmpty ? _timeOfEntryCtrl.text : null,
       stopLoss: _parse(_stopLossCtrl),
       takeProfit: _parse(_takeProfitCtrl),
-      strategySetupId: _strategySetupId,
     );
 
     await ref.read(tradesNotifierProvider.notifier).addTrade(trade);
@@ -534,45 +531,6 @@ class _AddTradeScreenState extends ConsumerState<AddTradeScreen> {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 16),
-
-            // ── Strategy Setup Tag ────────────────────────────────────────────
-            _SectionLabel('Strategy Setup (Optional)'),
-            ref.watch(strategySetupNamesProvider).when(
-              loading: () => const LinearProgressIndicator(),
-              error: (_, _) => const SizedBox.shrink(),
-              data: (strategies) {
-                if (strategies.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      'No strategies yet — create one in Strategy Tracker.',
-                      style: const TextStyle(
-                          color: AppTheme.neutralColor, fontSize: 12),
-                    ),
-                  );
-                }
-                return DropdownButtonFormField<String?>(
-                  initialValue: _strategySetupId,
-                  dropdownColor: AppTheme.elevatedColor,
-                  decoration: const InputDecoration(
-                      labelText: 'Tag to strategy'),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text('None'),
-                    ),
-                    for (final s in strategies)
-                      DropdownMenuItem<String?>(
-                        value: s.id,
-                        child: Text(s.name),
-                      ),
-                  ],
-                  onChanged: (v) =>
-                      setState(() => _strategySetupId = v),
-                );
-              },
             ),
             const SizedBox(height: 16),
 

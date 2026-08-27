@@ -102,7 +102,6 @@ class TradesNotifier extends AsyncNotifier<void> {
         if (trade.timeOfEntry         != null) 'time_of_entry':         trade.timeOfEntry,
         if (trade.stopLoss            != null) 'stop_loss':             trade.stopLoss,
         if (trade.takeProfit          != null) 'take_profit':           trade.takeProfit,
-        if (trade.strategySetupId     != null) 'strategy_setup_id':     trade.strategySetupId,
       };
 
       if (ext.isNotEmpty) {
@@ -200,19 +199,6 @@ class TradesNotifier extends AsyncNotifier<void> {
 
       ref.invalidate(tradesProvider);
       ref.invalidate(partialClosesProvider(trade.id));
-    });
-  }
-
-  // Tag or untag a trade to a strategy setup.
-  // Pass null for strategySetupId to remove the tag.
-  Future<void> tagStrategy(String tradeId, String? strategySetupId) async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      await _client
-          .from('trades')
-          .update({'strategy_setup_id': strategySetupId})
-          .eq('id', tradeId);
-      ref.invalidate(tradesProvider);
     });
   }
 }
