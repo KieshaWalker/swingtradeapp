@@ -487,12 +487,25 @@ class _FitTabState extends ConsumerState<_FitTab> {
           style: TextStyle(color: AppTheme.neutralColor, fontSize: 11),
         ),
         const SizedBox(height: 12),
+        // Each hint is framed as "lower does X, higher does Y" so you can
+        // tune toward whatever you're actually after — more candidates to
+        // choose from, or fewer but more rigorously confirmed ones — without
+        // needing to know what ATR or "span" mean under the hood.
         _slider('Touch tolerance (× ATR)', _touchAtr, 0.1, 2.0,
-            (v) => setState(() => _touchAtr = v)),
+            (v) => setState(() => _touchAtr = v),
+            hint: 'How close price must come to the line to count as '
+                "confirming it. Lower → stricter, cleaner-looking lines. "
+                'Higher → more forgiving, so more candidates pass.'),
         _slider('Break tolerance (× ATR)', _breakAtr, 0.2, 3.0,
-            (v) => setState(() => _breakAtr = v)),
+            (v) => setState(() => _breakAtr = v),
+            hint: 'How far price must pierce the line before it counts as '
+                'broken. Lower → a single wick kills the line. Higher → '
+                'lets a brief poke-through slide without rejecting it.'),
         _slider('Min span (% of window)', _minSpanFrac, 0.1, 0.9,
-            (v) => setState(() => _minSpanFrac = v), isPct: true),
+            (v) => setState(() => _minSpanFrac = v), isPct: true,
+            hint: 'How much of the chart the line must stretch across. '
+                'Higher → only long-running, well-established lines. '
+                'Lower → also surfaces short-lived, recent ones.'),
         Row(
           children: [
             const Text('Min touches',
@@ -513,6 +526,18 @@ class _FitTabState extends ConsumerState<_FitTab> {
                 child: Text('$_minTouches',
                     style: const TextStyle(color: Colors.white, fontSize: 12))),
           ],
+        ),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 4),
+          child: Text(
+            'Minimum number of times price must have bounced off the line '
+            'to trust it. Higher → fewer, better-evidenced lines. Lower → '
+            'more candidates, some barely tested.',
+            style: TextStyle(
+                color: AppTheme.neutralColor,
+                fontSize: 10,
+                fontStyle: FontStyle.italic),
+          ),
         ),
         const SizedBox(height: 8),
         FilledButton(
@@ -563,6 +588,35 @@ class _FitTabState extends ConsumerState<_FitTab> {
   }
 
   Widget _slider(String label, double value, double min, double max,
+      ValueChanged<double> onChanged, {bool isPct = false, String? hint}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sliderRow(label, value, min, max, onChanged, isPct: isPct),
+          if (hint != null)
+            // Full width, not indented under the slider track — on a narrow
+            // sheet, matching the track's left inset (150dp for the label)
+            // would leave too little room and force the hint into 3-4 wrapped
+            // lines. Vertical order already reads as "this hint belongs to
+            // the slider above it" without needing the indent to match too.
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                hint,
+                style: const TextStyle(
+                    color: AppTheme.neutralColor,
+                    fontSize: 10,
+                    fontStyle: FontStyle.italic),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sliderRow(String label, double value, double min, double max,
       ValueChanged<double> onChanged, {bool isPct = false}) {
     return Row(
       children: [
