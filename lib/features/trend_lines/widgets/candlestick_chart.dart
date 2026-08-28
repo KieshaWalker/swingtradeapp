@@ -39,6 +39,19 @@
 // manual line (kind == manual) never gets this treatment even if broken=false
 // happens to be computed, because track_line_accuracy assigns it no status at
 // all — see models/trend_line.dart's TrendLineAccuracy.status doc.
+//
+// HOVER/TAP SHOWS DATE + OHLC IN A TEXT ROW ABOVE THE CHART, NOT AN ON-CANVAS
+// TOOLTIP BOX. An earlier canvas-drawn tooltip for trend-line labels needed
+// real collision-avoidance logic (the zoom-button reservation, the label
+// decluttering pass above) to avoid landing somewhere unreadable. A fixed
+// Flutter Text widget outside the painter has nowhere wrong to land, so the
+// only thing drawn ON the canvas for hover is a plain vertical crosshair.
+//
+// Interaction is via MouseRegion.onHover + Listener.onPointerDown/Move rather
+// than a second GestureDetector. PannableChart already wraps this same child
+// in its OWN GestureDetector for pan/zoom; MouseRegion and Listener report raw
+// pointer events without entering the gesture arena, so they observe the same
+// pointer PannableChart is panning with instead of competing with it for it.
 // =============================================================================
 import 'package:flutter/material.dart';
 
@@ -50,9 +63,9 @@ import '../models/trend_line.dart';
 
 const double _kLeftAxisWidth = 52.0;
 const double _kTopPad = 10.0;
-const double _kBottomPad = 20.0;
+const double _kBottomPad = 24.0;
 
-class CandlestickChart extends StatelessWidget {
+class CandlestickChart extends StatefulWidget {
   final List<EquityBar> bars;
   final List<TrendLineRecord> lines;
   /// Keyed by TrendLineRecord.id. A missing entry (still loading, or the
@@ -68,54 +81,154 @@ class CandlestickChart extends StatelessWidget {
   });
 
   @override
+  State<CandlestickChart> createState() => _CandlestickChartState();
+}
+
+class _CandlestickChartState extends State<CandlestickChart> {
+  int? _hoverIdx;
+
+  /// Inverse of _CandlestickPainter's px() — pixel x back to a bar index.
+  /// Kept here rather than in the painter because hover detection runs on
+  /// every pointer event, independent of repaints. Null outside the plot
+  /// area (over the left axis, or past either edge).
+  int? _pixelXToBarIndex(double localX, double minX, double maxX, double width) {
+    final plotWidth = width - _kLeftAxisWidth;
+    if (localX < _kLeftAxisWidth || plotWidth <= 0) return null;
+    final frac = (localX - _kLeftAxisWidth) / plotWidth;
+    final idx = (minX + frac * (maxX - minX)).round();
+    if (idx < 0 || idx >= widget.bars.length) return null;
+    return idx;
+  }
+
+  void _setHover(int? idx) {
+    if (idx != _hoverIdx) setState(() => _hoverIdx = idx);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (bars.isEmpty) {
+    if (widget.bars.isEmpty) {
       return const ChartEmptyState(
         icon: Icons.candlestick_chart_outlined,
         title: 'No bars yet',
         message: 'equity-bars-pull has not populated this ticker yet.',
       );
     }
+    final hovered =
+        (_hoverIdx != null && _hoverIdx! < widget.bars.length)
+            ? widget.bars[_hoverIdx!]
+            : null;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _HoverInfoRow(bar: hovered),
         SizedBox(
           height: 320,
           child: PannableChart(
-            count: bars.length,
+            count: widget.bars.length,
             defaultWindow: 60,
             minWindow: 15,
             leftAxisWidth: _kLeftAxisWidth,
             showZoomButtons: true,
             padding: const EdgeInsets.fromLTRB(0, 4, 4, 4),
-            builder: (context, minX, maxX) => SizedBox.expand(
-              child: CustomPaint(
-                painter: _CandlestickPainter(
-                  bars: bars,
-                  lines: lines,
-                  accuracyByLineId: accuracyByLineId,
-                  minX: minX,
-                  maxX: maxX,
+            builder: (context, minX, maxX) => MouseRegion(
+              onHover: (e) => _setHover(_pixelXToBarIndex(
+                  e.localPosition.dx, minX, maxX, context.size?.width ?? 0)),
+              onExit: (_) => _setHover(null),
+              child: Listener(
+                onPointerDown: (e) => _setHover(_pixelXToBarIndex(
+                    e.localPosition.dx, minX, maxX, context.size?.width ?? 0)),
+                onPointerMove: (e) => _setHover(_pixelXToBarIndex(
+                    e.localPosition.dx, minX, maxX, context.size?.width ?? 0)),
+                child: SizedBox.expand(
+                  child: CustomPaint(
+                    painter: _CandlestickPainter(
+                      bars: widget.bars,
+                      lines: widget.lines,
+                      accuracyByLineId: widget.accuracyByLineId,
+                      minX: minX,
+                      maxX: maxX,
+                      hoverIdx: _hoverIdx,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
         ),
-        if (lines.isNotEmpty)
+        if (widget.lines.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: ChartLegendRow(items: [
-              if (lines.any((l) => l.kind == TrendLineKind.resistance))
+              if (widget.lines.any((l) => l.kind == TrendLineKind.resistance))
                 const ChartLegendItem(AppTheme.lossColor, 'Resistance'),
-              if (lines.any((l) => l.kind == TrendLineKind.support))
+              if (widget.lines.any((l) => l.kind == TrendLineKind.support))
                 const ChartLegendItem(AppTheme.profitColor, 'Support'),
-              if (lines.any((l) => l.kind == TrendLineKind.manual))
+              if (widget.lines.any((l) => l.kind == TrendLineKind.manual))
                 const ChartLegendItem(AppTheme.neutralColor, 'Manual'),
             ]),
           ),
       ],
     );
   }
+}
+
+/// Fixed-position date + OHLC readout. Always occupies its own row (rather
+/// than appearing/disappearing) so the chart below it doesn't shift height
+/// when a hover starts or ends.
+class _HoverInfoRow extends StatelessWidget {
+  final EquityBar? bar;
+  const _HoverInfoRow({required this.bar});
+
+  @override
+  Widget build(BuildContext context) {
+    final b = bar;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: SizedBox(
+        height: 16,
+        child: b == null
+            ? const Text('Hover a candle for its date and OHLC',
+                style: TextStyle(color: AppTheme.neutralColor, fontSize: 11))
+            : Row(
+                children: [
+                  Text(
+                    '${b.date.year}-${b.date.month.toString().padLeft(2, '0')}-'
+                    '${b.date.day.toString().padLeft(2, '0')}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(width: 10),
+                  _ohlcText('O', b.open),
+                  _ohlcText('H', b.high),
+                  _ohlcText('L', b.low),
+                  _ohlcText('C', b.close, color: b.isUp
+                      ? AppTheme.profitColor
+                      : AppTheme.lossColor),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _ohlcText(String label, double value, {Color? color}) => Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: RichText(
+          text: TextSpan(
+            style: const TextStyle(fontSize: 11, color: AppTheme.neutralColor),
+            children: [
+              TextSpan(text: '$label '),
+              TextSpan(
+                text: value.toStringAsFixed(2),
+                style: TextStyle(
+                    color: color ?? Colors.white, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      );
 }
 
 Color _kindColor(TrendLineKind k) => switch (k) {
@@ -130,6 +243,7 @@ class _CandlestickPainter extends CustomPainter {
   final Map<String, TrendLineAccuracy> accuracyByLineId;
   final double minX;
   final double maxX;
+  final int? hoverIdx;
 
   _CandlestickPainter({
     required this.bars,
@@ -137,6 +251,7 @@ class _CandlestickPainter extends CustomPainter {
     required this.accuracyByLineId,
     required this.minX,
     required this.maxX,
+    this.hoverIdx,
   });
 
   @override
@@ -184,7 +299,11 @@ class _CandlestickPainter extends CustomPainter {
     canvas.clipRect(Rect.fromLTWH(plotLeft, 0, plotWidth, size.height));
 
     _drawGridAndPriceAxis(canvas, size, lo, hi, py);
+    _drawDateAxis(canvas, size, loIdx, hiIdx, px);
     _drawCandles(canvas, loIdx, hiIdx, px, py, plotWidth);
+    if (hoverIdx != null && hoverIdx! >= loIdx && hoverIdx! <= hiIdx) {
+      _drawCrosshair(canvas, size, px(hoverIdx!.toDouble()));
+    }
 
     // Labels are collected here and painted in a SEPARATE pass after every
     // line has been stroked, rather than inline per line. Painting inline
@@ -224,6 +343,57 @@ class _CandlestickPainter extends CustomPainter {
       )..layout();
       tp.paint(canvas, Offset(2, y - tp.height / 2));
     }
+  }
+
+  /// A handful of date labels along the bottom, spaced across the CURRENTLY
+  /// VISIBLE window (not the whole history) — as the user pans/zooms these
+  /// move and re-space themselves exactly like the price gridlines do.
+  void _drawDateAxis(
+      Canvas canvas, Size size, int loIdx, int hiIdx, double Function(double) px) {
+    const targetTicks = 5;
+    final span = hiIdx - loIdx;
+    if (span <= 0) return;
+    final step = (span / (targetTicks - 1)).ceil().clamp(1, span);
+
+    int? lastYear;
+    for (int idx = loIdx; idx <= hiIdx; idx += step) {
+      final d = bars[idx].date;
+      // Year shown only when it first appears in the visible window (or on
+      // the very first tick) — matches chart_axes.dart's monthKeyBottomTitles
+      // convention of prefixing the year only where it changes, not on every
+      // label, which would be redundant for a chart spanning under a year.
+      final showYear = lastYear == null || d.year != lastYear;
+      lastYear = d.year;
+      final text = showYear
+          ? '${d.month}/${d.day}/${d.year.toString().substring(2)}'
+          : '${d.month}/${d.day}';
+      final tp = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: const TextStyle(color: AppTheme.neutralColor, fontSize: 9),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final x = px(idx.toDouble());
+      // Skip a label that would run past the right edge — better to omit the
+      // last tick than clip it against the zoom-button column.
+      if (x + tp.width / 2 > size.width) continue;
+      tp.paint(canvas,
+          Offset(x - tp.width / 2, size.height - _kBottomPad + 4));
+    }
+  }
+
+  /// Vertical line at the hovered bar. Deliberately just a line — the actual
+  /// date/OHLC readout lives in _HoverInfoRow above the chart (a plain Flutter
+  /// widget has no collision-avoidance problem to get wrong; see file header).
+  void _drawCrosshair(Canvas canvas, Size size, double x) {
+    canvas.drawLine(
+      Offset(x, _kTopPad),
+      Offset(x, size.height - _kBottomPad),
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.35)
+        ..strokeWidth = 1,
+    );
   }
 
   void _drawCandles(Canvas canvas, int loIdx, int hiIdx,
@@ -418,7 +588,7 @@ class _CandlestickPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CandlestickPainter old) =>
-      old.minX != minX || old.maxX != maxX ||
+      old.minX != minX || old.maxX != maxX || old.hoverIdx != hoverIdx ||
       old.bars.length != bars.length || old.lines != lines ||
       // Length, not deep equality: catches the real-world case (an accuracy
       // fetch completing adds an entry) cheaply. Would miss a value flipping
